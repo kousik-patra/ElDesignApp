@@ -1,0 +1,187 @@
+@page "/admin/users"
+@attribute [Authorize(Roles = "SuperAdmin")]
+@rendermode InteractiveServer
+@attribute [StreamRendering]
+
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@inject UserManager<ApplicationUser> UserManager
+@inject RoleManager<IdentityRole> RoleManager
+@inject IJSRuntime JS
+@using ElDesignApp.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+
+
+<PageTitle>User Management</PageTitle>
+
+<h3>User Management</h3>
+
+@if (_allRoles == null || usersWithRoles == null)
+{
+    <div class="text-center my-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else if (!string.IsNullOrEmpty(ErrorMessage))
+{
+    <div class="alert alert-danger">@ErrorMessage</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Email</th>
+                    <th>Username</th>
+                    <th class="text-center">Roles</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in usersWithRoles)
+                {
+                    var user = item.User;
+                    var userRoles = item.Roles;
+                    var currentUserId = item.User.Id;
+
+                    <tr>
+                        <td><strong>@user.Email</strong></td>
+                        <td>@user.UserName</td>
+                        <td class="text-center py-3">
+                            <div class="d-flex flex-wrap gap-2 justify-content-center">
+                                @foreach (var role in _allRoles!)
+                                {
+                                    var currentRoleName = role.Name!;
+                                    var vm = item; // viewmodel for toggling state
+                                    <button type="button"
+                                            class="@(userRoles.Contains(currentRoleName) ? "btn btn-success" : "btn btn-outline-secondary") btn-sm"
+                                            style="min-width: 110px;"
+                                            @onclick="async () => await ToggleRoleAsync(currentUserId, currentRoleName)"
+                                            disabled="@(vm.IsToggling && vm.TogglingRoleName == currentRoleName)">
+                                        @if (vm.IsToggling && vm.TogglingRoleName == currentRoleName)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                        }
+                                        <strong>@currentRoleName</strong>
+                                        @if (!userRoles.Contains(currentRoleName))
+                                        {
+                                            <small class="ms-1">(off)</small>
+                                        }
+                                    </button>
+                                }
+                            </div>
+                        </td>
+                        <td>
+                            <a href="/Identity/Account/Register" class="btn btn-primary btn-sm">
+                                <i class="bi bi-person-plus"></i> Add User
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<IdentityRole>? _allRoles;
+
+    private List<UserRoleViewModel> usersWithRoles = new();
+    private string? ErrorMessage;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _allRoles = await RoleManager.Roles.OrderBy(r => r.Name).ToListAsync();
+
+            var users = await UserManager.Users.OrderBy(u => u.Email).ToListAsync();
+
+            foreach (var user in users)
+            {
+                IList<string> roles = await UserManager.GetRolesAsync(user);
+                usersWithRoles.Add(new UserRoleViewModel
+                {
+                    User = user,
+                    Roles = roles.ToList(),
+                    IsToggling = false,
+                    TogglingRoleName = null
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = "Error loading users and roles: " + ex.Message;
+        }
+    }
+
+    
+    private async Task ToggleRoleAsync(string userId, string role)
+    {
+        var userViewModel = usersWithRoles.First(x => x.User.Id == userId);
+        
+        // 1. Set the state to indicate toggling has started
+        userViewModel.IsToggling = true;
+        userViewModel.TogglingRoleName = role;
+
+        // 2. Call StateHasChanged() to refresh the UI
+        //    (Show the spinner and disable the button)
+        StateHasChanged();
+
+        try
+        {
+            var user = userViewModel.User;
+            bool isInRole = userViewModel.Roles.Contains(role);
+
+            IdentityResult result;
+            if (isInRole)
+            {
+                result = await UserManager.RemoveFromRoleAsync(user, role);
+                if (result.Succeeded)
+                    userViewModel.Roles.Remove(role);
+            }
+            else
+            {
+                result = await UserManager.AddToRoleAsync(user, role);
+                if (result.Succeeded)
+                    userViewModel.Roles.Add(role);
+            }
+
+            if (!result.Succeeded)
+            {
+                var errors = string.Join("; ", result.Errors.Select(e => e.Description));
+                await JS.InvokeVoidAsync("alert", $"Failed: {errors}");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", "Error: " + ex.Message);
+        }
+        finally
+        {
+            // 3. Set the state back to not toggling
+            userViewModel.IsToggling = false;
+            
+            // 4. Call StateHasChanged() again to refresh the UI
+            //    (Hide the spinner, re-enable the button, and show the new button state/color)
+            StateHasChanged();
+        }
+    }
+    
+    
+    // Helper class to track per-user state
+    public class UserRoleViewModel
+    {
+        public required ApplicationUser User { get; set; }
+        public List<string> Roles { get; set; } = new();
+        public bool IsToggling { get; set; }
+        public string? TogglingRoleName { get; set; }  // This is the key!
+    }
+    
+
+}
