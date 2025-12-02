@@ -1,0 +1,7 @@
+﻿services:
+  eldesignapp:
+    image: eldesignapp
+    build:
+      context: .
+      dockerfile: Dockerfile
+
