@@ -447,3 +447,7 @@ obj/
 # Node / JS (if you have wwwroot with node_modules)
 node_modules/
 wwwroot/lib/
+wwwroot/dist/
+NpmJS/
+node_modules/
+.idea/
