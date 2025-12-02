@@ -1,0 +1,20 @@
+<ValidationMessage For="@(() => Errors)" />
+
+@code {
+    private Dictionary<string, List<string>> errors = new();
+    private string? Errors { get; set; }
+
+    public void DisplayErrors(Dictionary<string, List<string>> errorsToDisplay)
+    {
+        errors = errorsToDisplay;
+        Errors = string.Join("; ", errors.SelectMany(e => e.Value));
+        StateHasChanged();
+    }
+
+    public void ClearErrors()
+    {
+        errors.Clear();
+        Errors = null;
+        StateHasChanged();
+    }
+}

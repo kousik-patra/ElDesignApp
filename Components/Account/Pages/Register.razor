@@ -3,9 +3,11 @@
 @using System.ComponentModel.DataAnnotations
 @using System.Text
 @using System.Text.Encodings.Web
+@using System.Threading
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.AspNetCore.WebUtilities
 @using ElDesignApp.Data
+@using Microsoft.Extensions.Logging
 
 @inject UserManager<ApplicationUser> UserManager
 @inject IUserStore<ApplicationUser> UserStore
@@ -87,6 +89,10 @@
             identityErrors = result.Errors;
             return;
         }
+        //TODO: remove the below line once Email Confirmation partg is developed
+        // TEMPORARY: Bypass email confirmation
+        user.EmailConfirmed = true;
+        await UserManager.UpdateAsync(user);
 
         Logger.LogInformation("User created a new account with password.");
 

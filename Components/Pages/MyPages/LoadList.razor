@@ -1,0 +1,341 @@
+﻿@page "/loadList"
+
+@rendermode InteractiveServer
+
+
+@inject IJSRuntime JsRuntime
+
+@using System.Diagnostics
+@using System.Reflection
+@using System.Text.Json
+
+@using ElDesignApp.Data
+@using ElDesignApp.Models
+@inject Services.IDataRetrievalService DataService
+@inject Services.IMyTableService MyTable
+@inject Services.ICacheService CacheService
+@inject Services.IGlobalDataService GlobalData
+@inject Services.ILayoutFunctionService LayoutFunction
+@inject Services.IMyFunctionService MyFunction
+
+
+@inject NavigationManager MyNavigationManager
+
+
+<div style="width: @(GlobalData.sceneDataLoad.RendererWidthPX)px">
+
+
+    <div class="align-content-center" style="background-color:beige">
+        <h4>Load List</h4>
+    </div>
+    @if (_isLoading)
+    {
+        <img src="./images/loading-green_dots.gif" asp-append-version="true" width="300" alt="loading...."/>
+    }
+
+    else
+    {
+        <div class="container-fluid tabcontent">
+            <Table List="_list"
+                   ListOriginal="_listDb"
+                   T="Load"
+                   AutoCheck="AutoCheckOnTableChange"
+                   Update="@UpdateTableChange"
+                   Discard="@DiscardTableChange"
+                   Refresh="TableRefresh"
+                   SuccessMessage="@_tableSuccessMessage"
+                   InfoMessage="@_tableInfoMessage"
+                   WarningMessage="@_tableWarningMessage"
+                   ErrorMessage="@_tableErrorMessage"
+                   TableWidthPx="@GlobalData.sceneDataLoad.RendererWidthPX">
+                <Result>
+                    <h6>Result messages here</h6>
+                </Result>
+            </Table>
+        </div>
+        @if (_isProcessing)
+        {
+            <img src="./images/loading-green_dots.gif" asp-append-version="true" width="300" alt="processing...."/>
+            <p>Processing remaining items in the background...</p>
+        }
+
+        <br/>
+        <br/>
+        <Plot @rendermode="InteractiveServer"
+              Title="Load List"
+              DivString="loadDiv"
+              DisplayItems="_displayItems"
+              SceneInfo="GlobalData.sceneDataLoad">
+        </Plot>
+    }
+
+    <br/>
+
+</div>
+
+@code {
+
+    private List<Load>? _list = [];
+    private List<Load>? _listDb = [];
+
+    private bool _isLoading = true;
+    private bool _isProcessing = true;
+    private bool _isBalanceProcessed = true;
+
+    private bool _loadChild;
+
+    private readonly JsonSerializerOptions? _jsonSerializerOption = new()
+    {
+        IncludeFields = true,
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals
+    };
+
+    private string _tableMessage = "";
+    private string _tableSuccessMessage = "";
+    private string _tableInfoMessage = "";
+    private string _tableWarningMessage = "";
+    private string _tableErrorMessage = "";
+    private string _resultMessage = "";
+
+    private readonly List<string> _displayItems =
+    [
+        "Plot",
+        //"RawSegment",
+        //"IsolatedSegment", 
+        //"Segment",
+        //"Tray", 
+        // "Bend", 
+        // "Tee", 
+        // "Cross", 
+        // "Node", 
+        //"Sleeve",
+        // "Load", 
+        // "Cable", 
+        // "Board",
+        //"Structure"
+    ];
+
+
+    /// <summary></summary>
+    protected override void OnInitialized()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        GlobalData.selectedPage = "Load List";
+        GlobalData.sceneCurrent = "Load";
+        GlobalData.sceneDataCable.SceneName = GlobalData.sceneCurrent;
+        StateHasChanged();
+        base.OnInitialized();
+    }
+
+    /// <summary></summary>
+    protected override async Task OnInitializedAsync()
+    {
+        //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name}");
+
+        try
+        {
+            _isLoading = true;
+            StateHasChanged(); // Initial loading state
+
+            (GlobalData.Loads, string logInfo, string logWarning, string logError)
+                = await DataService.ReadFromCacheOrDb(new Load());
+
+            var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+
+            _isProcessing = true;
+            GlobalData.Loads.ForEach(load => LayoutFunction.LoadUpdate(load));
+            UpdateDbLocalVariable(GlobalData.Loads);
+            await Task.Delay(1000);
+            _isProcessing = false;
+        }
+        catch (Exception ex)
+        {
+            // Handle error (e.g., log, display error message)
+            //Console.WriteLine($"Error loading data: {ex.Message}");
+            GlobalData.Loads = [];
+        }
+        finally
+        {
+            _isLoading = false;
+            _isProcessing = false;
+            StateHasChanged(); // Update UI after loading/processing
+        }
+
+        await base.OnInitializedAsync();
+    }
+
+    protected override Task OnParametersSetAsync()
+    {
+        return base.OnParametersSetAsync();
+    }
+
+    /// <summary></summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await Load(firstRender);
+
+            var objPlot = DotNetObjectReference.Create(new Draw(LayoutFunction, GlobalData));
+            await JsRuntime.InvokeVoidAsync("initialiseObjectRef", objPlot);
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
+                            $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
+
+            StateHasChanged();
+        }
+
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+
+    protected void AutoCheckOnTableChange<T>((T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
+    {
+        // Access the parameters from args
+        var item = args.Item1;
+        var uid = args.Item2;
+        var propertyInfo = args.Item3;
+        var originalItem = args.Item4;
+        var itemsCurrent = args.Item5;
+        var itemsOriginal = args.Item6;
+        var tableSuccessMessage = args.Item7;
+        var tableInfoMessage = args.Item8;
+        var tableWarningMessage = args.Item9;
+        var tableErrorMessage = args.Item10;
+
+        var tagProperty = typeof(T).GetProperties().ToList().Where(p => p.Name == "Tag").ToList()[0];
+        var tag = tagProperty.GetValue(item);
+        var thisLoad = JsonSerializer.Deserialize<Load>
+            (System.Text.Json.JsonSerializer.Serialize(item, _jsonSerializerOption), _jsonSerializerOption);
+        LayoutFunction.LoadUpdate(thisLoad);
+        //_list.Where(load => load.UID.ToString() == uid.ToString()).ToList()[0] = thisLoad;;
+
+        int index = _list.FindIndex(load => load.UID.ToString() == uid.ToString());
+        if (index >= 0)
+        {
+            _list[index] = thisLoad;
+        }
+        else
+        {
+            // Handle the case where no matching item is found (e.g., throw an exception, log, or skip)
+            throw new InvalidOperationException($"No item with UID {uid} found in the list.");
+        }
+
+
+        StateHasChanged();
+
+        //
+        //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : {tag} : {propertyInfo.Name} : {propertyInfo.PropertyType}");
+    }
+
+
+    // public void AutoCheckOnTableChange()
+    // {
+    //     System.Diagnostics.Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+    // }
+
+    private void UpdateOnTableChange()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+    }
+
+
+    private async Task UpdateTableChange<T>((T item, List<T>? list, List<T> originalList, string success, string info, string warning, string error) parameters)
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                        $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Updating data to the database...");
+        var updatedList = parameters.list;
+        _tableSuccessMessage = parameters.success;
+        _tableInfoMessage = parameters.info;
+        _tableWarningMessage = parameters.warning;
+        _tableErrorMessage = parameters.error;
+
+        UpdateDbLocalVariable(updatedList);
+
+        GlobalData.Loads = System.Text.Json.JsonSerializer.Deserialize<List<Load>>
+            (System.Text.Json.JsonSerializer.Serialize(updatedList, _jsonSerializerOption), _jsonSerializerOption);
+        try
+        {
+            await MyTable.BulkCopyDataTableAsync(updatedList);
+            _tableSuccessMessage += "Changed Table is successfully updated to database.";
+        }
+        catch (Exception e)
+        {
+            _tableErrorMessage += $"Could not update to the database...{e.Message}";
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                            $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} {_tableErrorMessage}");
+        }
+
+        StateHasChanged();
+    }
+
+    private void DiscardTableChange()
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                                           $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name}Discarding changes...");
+
+        UpdateDbLocalVariable(_listDb);
+        GlobalData.Loads = System.Text.Json.JsonSerializer.Deserialize<List<Load>>
+            (System.Text.Json.JsonSerializer.Serialize(_listDb, _jsonSerializerOption), _jsonSerializerOption);
+
+        ResetMassages();
+        _tableWarningMessage = "Changes in table discarded, reverted to the original data.";
+        StateHasChanged();
+    }
+
+    private async Task TableRefresh()
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                                           $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Refreshing Table...");
+        await Load(false, true);
+        ResetMassages();
+        _tableMessage = $"Table loaded afresh";
+        StateHasChanged();
+    }
+
+    private void UpdateDbLocalVariable<T>(List<T>? list)
+    {
+        try
+        {
+            _listDb = JsonSerializer.Deserialize<List<Load>>
+                (System.Text.Json.JsonSerializer.Serialize(list, _jsonSerializerOption), _jsonSerializerOption);
+            _list = JsonSerializer.Deserialize<List<Load>>
+                (System.Text.Json.JsonSerializer.Serialize(list, _jsonSerializerOption), _jsonSerializerOption);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                            $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Error {ex.Message}");
+        }
+    }
+
+    private void ResetMassages()
+    {
+        _tableMessage = "";
+        _tableSuccessMessage = "";
+        _tableInfoMessage = "";
+        _tableWarningMessage = "";
+        _tableErrorMessage = "";
+        _resultMessage = "";
+    }
+
+    private async Task Load(bool firstRender, bool isRefresh = false)
+    {
+        (GlobalData.Loads, string logInfo, string logWarning, string logError) = isRefresh ? await DataService.RefreshCacheAndReadFromDb(new Load()) : await DataService.ReadFromCacheOrDb(new Load());
+
+        GlobalData.Loads.ForEach(load => LayoutFunction.LoadUpdate(load));
+        GlobalData.Loads = MyTable.AssignSequenceToList(GlobalData.Loads);
+
+        UpdateDbLocalVariable(GlobalData.Loads);
+
+        await Task.Delay(1000);
+        _loadChild = true;
+
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
+                                           $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - " +
+                                           $"First Render:{firstRender} Refresh: {isRefresh} Load Child? {_loadChild}");
+    }
+
+}

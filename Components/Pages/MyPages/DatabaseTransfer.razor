@@ -1,0 +1,394 @@
+@page "/database-transfer"
+
+@using Microsoft.Extensions.Options
+@rendermode InteractiveServer
+@inject IOptions<ConnectionStrings> ConnectionStringsOptions
+
+@inject NavigationManager MyNavigationManager
+
+
+
+@inject Services.IDataRetrievalService DataService
+@inject Services.IMyTableService MyTable 
+@inject Services.IGlobalDataService GlobalData
+@inject Services.IMyFunctionService MyFunction
+@inject Services.ILayoutFunctionService LayoutFunction
+
+
+<h3>Database Transfer</h3>
+
+<div class="container mt-4">
+    <div class="row g-3 align-items-end"> 
+        <div class="col-md-5"> 
+            <div class="form-group">
+                <label for="sourceConnection" class="form-label">Source Database Connection:</label>
+                <select id="sourceConnection" class="form-select" @bind="SourceConnectionSelection"> 
+                    <option value="">-- Select Source --</option> 
+                    <option value="@ConnectionStringsOptions.Value.DefaultConnection">Default Connection</option>
+                    <option value="@ConnectionStringsOptions.Value.MacMini">MacMini</option>
+                    <option value="@ConnectionStringsOptions.Value.MacMini">MacBook</option>
+                    <option value="@ConnectionStringsOptions.Value.OracleVM1VCU">Oracle VM (1VCU)</option>
+                    <option value="@ConnectionStringsOptions.Value.TestFeb24Context">TestFeb24Context</option>
+                    <option value="@ConnectionStringsOptions.Value.MacMiniDocker">MacMiniDocker</option>
+                </select>
+            </div>
+        </div>
+
+        @if (tables != null && tables.Any()) 
+        {
+            <div class="col-md-2"> 
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle w-100" type="button" id="tableSelectionDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        Select Tables (@SelectedTableCount)
+                    </button>
+                    <ul class="dropdown-menu" aria-labelledby="tableSelectionDropdown" style="max-height: 300px; overflow-y: auto;">
+                        @foreach (var table in tables)
+                        {
+                            <li>
+                                <div class="form-check dropdown-item px-3 py-2"> 
+                                    <input type="checkbox"
+                                           class="form-check-input"
+                                           id="table-@table"
+                                           checked="@selectedTables[table]"
+                                           @onchange="e => OnTableCheckboxChanged(table, (bool)(e.Value ?? false))" />
+                                    <label class="form-check-label" for="table-@table">@table</label>
+                                </div>
+                            </li>
+                        }
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                             <button class="dropdown-item" @onclick="SelectAllTables">Select All</button>
+                        </li>
+                        <li>
+                             <button class="dropdown-item" @onclick="DeselectAllTables">Deselect All</button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        }
+
+        <div class="col-md-5"> 
+            <div class="form-group">
+                <label for="destinationConnection" class="form-label">Destination Database Connection:</label>
+                <select id="destinationConnection" class="form-select" @bind="selectedDestinationConnection">
+                    <option value="">-- Select Destination --</option>
+                    <option value="@ConnectionStringsOptions.Value.DefaultConnection">Default Connection</option>
+                    <option value="@ConnectionStringsOptions.Value.MacMini">MacMini</option>
+                    <option value="@ConnectionStringsOptions.Value.MacMini">MacBook</option>
+                    <option value="@ConnectionStringsOptions.Value.OracleVM1VCU">Oracle VM (1VCU)</option>
+                    <option value="@ConnectionStringsOptions.Value.TestFeb24Context">TestFeb24Context</option>
+                    <option value="@ConnectionStringsOptions.Value.MacMiniDocker">MacMiniDocker</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-12">
+            <button @onclick="CopyTables" class="btn btn-success" disabled="@(string.IsNullOrEmpty(SourceConnectionSelection) ||
+            string.IsNullOrEmpty(selectedDestinationConnection) ||
+            !selectedTables.Any(kvp => kvp.Value))">Copy Selected Tables</button>
+        </div>
+    </div>
+
+    ---
+
+    @if (_loadChild)
+    {
+        <div class="mt-4 p-3 bg-light text-center rounded">
+            <h4 class="mb-0">Database Master</h4>
+        </div>
+        <div class="container-fluid mt-3">
+            <Table List="_list"
+                   ListOriginal="_listDb"
+                   T="DBMaster"
+                   AutoCheck="AutoCheckOnTableChange"
+                   Update="UpdateTableChange"
+                   Discard="DiscardTableChange"
+                   Refresh="TableRefresh"
+                   SuccessMessage="@_tableSuccessMessage"
+                   InfoMessage="@_tableInfoMessage"
+                   WarningMessage="@_tableWarningMessage"
+                   ErrorMessage="@_tableErrorMessage">
+            </Table>
+        </div>
+    }
+
+    ---
+
+    <div class="mt-4">
+        @if(!string.IsNullOrEmpty(_resultMessage))
+        {
+            <div class="alert alert-info" role="alert">@_resultMessage</div>
+        }
+        @if(!string.IsNullOrEmpty(_tableErrorMessage))
+        {
+            <div class="alert alert-danger" role="alert">@_tableErrorMessage</div>
+        }
+        @if(!string.IsNullOrEmpty(_tableWarningMessage))
+        {
+            <div class="alert alert-warning" role="alert">@_tableWarningMessage</div>
+        }
+        @if(!string.IsNullOrEmpty(_tableInfoMessage))
+        {
+            <div class="alert alert-info" role="alert">@_tableInfoMessage</div>
+        }
+        @if(!string.IsNullOrEmpty(_tableSuccessMessage))
+        {
+            <div class="alert alert-success" role="alert">@_tableSuccessMessage</div>
+        }
+    </div>
+</div>
+
+@code {
+    private string _selectedSourceConnectionField = string.Empty;
+    private string SourceConnectionSelection
+    {
+        get => _selectedSourceConnectionField;
+        set
+        {
+            if (_selectedSourceConnectionField != value)
+            {
+                _selectedSourceConnectionField = value;
+                InvokeAsync(async () => await OnSourceConnectionChangedInternal(_selectedSourceConnectionField));
+            }
+        }
+    }
+    
+    
+    private string selectedDestinationConnection = string.Empty; 
+    private List<string> tables = new(); 
+    private Dictionary<string, bool> selectedTables = new();
+    private readonly JsonSerializerOptions? jsonSerializerOption = new() { IncludeFields = true };
+
+    private bool _loadChild;
+    private string _tableMessage = "";
+    private string _tableSuccessMessage = "";
+    private string _tableInfoMessage = "";
+    private string _tableWarningMessage = "";
+    private string _tableErrorMessage = "";
+
+    private string _resultMessage = "";
+    private int SelectedTableCount => selectedTables.Count(kvp => kvp.Value);
+
+    private List<DBMaster>? _listDb = [];
+    private List<DBMaster>? _list = [];
+    
+    protected override async Task OnInitializedAsync()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        (_listDb, string logInfo, string logWarning, string logError)
+            = await DataService.RefreshCacheAndReadFromDb(new DBMaster());
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} " +
+                        $"Info: {logInfo}, Warning: {logWarning}, Error: {logError}");
+
+        await base.OnInitializedAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
+                        $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
+
+        if (firstRender)
+        {
+            await Load(firstRender);
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnSourceConnectionChangedInternal(string newConnectionValue)
+    {
+        ResetMassages();
+        if (!string.IsNullOrEmpty(newConnectionValue))
+        {
+            await LoadTables();
+        }
+        else
+        {
+            tables = new List<string>();
+            selectedTables = new Dictionary<string, bool>();
+        }
+        StateHasChanged();
+    }
+
+    private void OnTableCheckboxChanged(string tableName, bool isChecked)
+    {
+        selectedTables[tableName] = isChecked;
+        UpdateSelectedTableCount();
+    }
+
+
+    private async Task LoadTables()
+    {
+        _tableInfoMessage = "Loading tables...";
+        StateHasChanged();
+        try
+        {
+            tables = await MyTable.GetTablesAsync(SourceConnectionSelection);
+            selectedTables = tables.ToDictionary(table => table, table => false);
+            _tableInfoMessage = $"Loaded {tables.Count} tables.";
+        }
+        catch (Exception ex)
+        {
+            _tableErrorMessage = $"Error loading tables: {ex.Message}";
+            tables = new List<string>();
+            selectedTables = new Dictionary<string, bool>();
+        }
+        StateHasChanged();
+    }
+
+    private async Task Load(bool firstRender, bool isRefresh = false)
+    {
+        (GlobalData.DBMasters, string logInfo, string logWarning, string logError) = isRefresh?
+            await DataService.RefreshCacheAndReadFromDb(new DBMaster()):
+            await DataService.ReadFromCacheOrDb(new DBMaster());
+
+        UpdateDbLocalVariable(GlobalData.DBMasters);
+        
+        await Task.Delay(1000);
+        _loadChild = true;
+    }
+
+    private void UpdateDbLocalVariable<T>(List<T>? list)
+    {
+        _listDb = JsonSerializer.Deserialize<List<DBMaster>>
+            (System.Text.Json.JsonSerializer.Serialize(list, jsonSerializerOption), jsonSerializerOption);
+        _list = JsonSerializer.Deserialize<List<DBMaster>>
+            (System.Text.Json.JsonSerializer.Serialize(list, jsonSerializerOption), jsonSerializerOption);
+    }
+
+    private void UpdateSelectedTableCount()
+    {
+        StateHasChanged();
+    }
+
+    private async Task TableRefresh()
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                                           $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Refreshing Table...");
+        await Load(false, true);
+        ResetMassages();
+        _tableSuccessMessage = "Table loaded afresh from the database.";
+        StateHasChanged();
+    }
+
+    private void SelectAllTables()
+    {
+        foreach (var key in selectedTables.Keys.ToList())
+        {
+            selectedTables[key] = true;
+        }
+        StateHasChanged();
+    }
+
+    private void DeselectAllTables()
+    {
+        foreach (var key in selectedTables.Keys.ToList())
+        {
+            selectedTables[key] = false;
+        }
+        StateHasChanged();
+    }
+
+
+    private async Task CopyTables()
+    {
+        if (string.IsNullOrEmpty(SourceConnectionSelection) || string.IsNullOrEmpty(selectedDestinationConnection))
+        {
+            _tableErrorMessage = "Please select valid source and destination database connections.";
+            StateHasChanged();
+            return;
+        }
+
+        var tablesToCopy = selectedTables.Where(kvp => kvp.Value).Select(kvp => kvp.Key).ToList();
+        if (!tablesToCopy.Any())
+        {
+            _tableErrorMessage = "Please select at least one table to copy.";
+            StateHasChanged();
+            return;
+        }
+
+        ResetMassages();
+        _resultMessage = "Copying tables...";
+        StateHasChanged();
+
+        try
+        {
+            await MyTable.CopyTablesAsync(SourceConnectionSelection, selectedDestinationConnection, tablesToCopy);
+            ResetMassages();
+            _tableSuccessMessage = "Tables copied successfully.";
+            _resultMessage = "";
+        }
+        catch (Exception ex)
+        {
+            ResetMassages();
+            _tableErrorMessage = $"Error copying tables: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+
+    private void AutoCheckOnTableChange<T>((T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
+    {
+        var (item, uid, propertyInfo, originalItem, itemsCurrent, itemsOriginal, 
+             tableSuccessMessage, tableInfoMessage, tableWarningMessage, tableErrorMessage) = args;
+    
+        // Validate inputs to prevent null reference exceptions
+        if (item == null || propertyInfo == null || itemsCurrent == null || itemsOriginal == null)
+        {
+            System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  - " +
+                                              $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} : Error - " +
+                                              $"Invalid input (null item, propertyInfo, or lists)");
+        }
+        // any specific Auto check at parent side
+    }
+
+    private async Task UpdateTableChange<T>((T item, List<T>? list, List<T> originalList, string success, string info, string warning, string error) parameters)
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                        $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Updating data to the database...");
+        var updatedList = parameters.list;
+        _tableSuccessMessage = parameters.success;
+        _tableInfoMessage = parameters.info;
+        _tableWarningMessage = parameters.warning;
+        _tableErrorMessage = parameters.error;
+                
+        UpdateDbLocalVariable(updatedList);
+        
+        GlobalData.DBMasters = System.Text.Json.JsonSerializer.Deserialize<List<DBMaster>>
+            (System.Text.Json.JsonSerializer.Serialize(updatedList, jsonSerializerOption), jsonSerializerOption);
+
+        await MyTable.BulkCopyDataTableAsync(updatedList);
+        
+        ResetMassages();
+        _tableSuccessMessage = "Changed Table is successfully updated to database.";
+        StateHasChanged();
+    }
+
+    private void DiscardTableChange()
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                        $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name}Discarding changes...");
+        
+        UpdateDbLocalVariable(_listDb);
+        GlobalData.DBMasters = System.Text.Json.JsonSerializer.Deserialize<List<DBMaster>>
+            (System.Text.Json.JsonSerializer.Serialize(_listDb, jsonSerializerOption), jsonSerializerOption);
+        
+        ResetMassages();
+        _tableWarningMessage = "Changes in table discarded, reverted to the original data.";
+        StateHasChanged();
+    }
+
+    private void ResetMassages()
+    {
+        _tableMessage = "";
+        _tableSuccessMessage = "";
+        _tableInfoMessage = "";
+        _tableWarningMessage = "";
+        _tableErrorMessage = "";
+        _resultMessage = "";
+    }
+    
+}

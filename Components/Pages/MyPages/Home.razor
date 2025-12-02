@@ -1,0 +1,38 @@
+﻿@page "/home"
+@using ElDesignApp.Services
+@rendermode InteractiveServer
+@inject IJSRuntime JsRuntime
+@inject IGlobalDataService GlobalData
+
+
+
+
+<PageTitle>Home</PageTitle>
+
+
+<img src="/images/home1.jpg" asp-append-version="true" width="100%"/>
+
+
+<div class="container">
+    <div class="row">
+        <div class="col-12">
+            <Work/>
+        </div>
+    </div>
+</div>
+
+@code{
+
+    async void OnClick()
+    {
+        await JsRuntime.InvokeVoidAsync("updateValue", 60);
+    }
+
+    async void DoNothing()
+    {
+        //System.Diagnostics.Debug.WriteLine($"{DateTime.Now} Doing Nothing");
+        await JsRuntime.InvokeVoidAsync("draw");
+    }
+
+}
+

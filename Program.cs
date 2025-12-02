@@ -1,11 +1,20 @@
+using System;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using ElDesignApp.Components;
 using ElDesignApp.Components.Account;
 using ElDesignApp.Data;
+using ElDesignApp.Middleware;
 using ElDesignApp.Services;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Resend;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -49,18 +58,18 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 
-    // Add the Resend client (singleton, configured from appsettings.json)
-// builder.Services.AddSingleton<ResendClient>(sp =>
-// {
-//     var key = builder.Configuration["Resend:ApiKey"]
-//               ?? throw new InvalidOperationException("Resend:ApiKey missing");
-//     return new ResendClient(key);
-// });
-// // Register your custom email sender (we'll create this class next)
-// builder.Services.AddScoped<
-//     IEmailSender<ApplicationUser>,        // <-- note the <ApplicationUser>
-//     ResendEmailSender>();
-//
+builder.Services.AddDistributedMemoryCache();
+
+// Add custom services
+    builder.Services.Configure<ConnectionStrings>(builder.Configuration.GetSection("ConnectionStrings"));
+    builder.Services.AddScoped<IMyTableService, MyTableService>();
+    builder.Services.AddScoped<IDataRetrievalService, DataRetrievalService>();
+    builder.Services.AddScoped<IMyFunctionService, MyFunctionService>();
+    builder.Services.AddScoped<ILayoutFunctionService, LayoutFunctionService>();
+    builder.Services.AddScoped<ICacheService, CacheService>();
+    builder.Services.AddScoped<ISystemStudyFunctionService, SystemStudyFunctionService>();
+    builder.Services.AddSingleton<IGlobalDataService, GlobalDataService>();
+
 
 
 
@@ -78,6 +87,14 @@ else
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
+
+app.UseAuthentication();
+app.UseAuthorization();
+if (app.Environment.IsDevelopment())
+{
+    app.UseMiddleware<DevAutoLoginMiddleware>();
+}
+
 
 app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 app.UseHttpsRedirection();
@@ -99,6 +116,8 @@ using (var scope = app.Services.CreateScope())
     {
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
+        //var signInManager = services.GetRequiredService<SignInManager<ApplicationUser>>();
+        //await SeedData.InitializeAsync(userManager, roleManager, signInManager);
         await SeedData.InitializeAsync(userManager, roleManager);
         Console.WriteLine("Admin user seeding completed.");
     }
@@ -109,4 +128,20 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+
+
+
+
 app.Run();
+
+
+public class ConnectionStrings
+{
+    public string? DefaultConnection { get; set; }
+    public string? MacMini { get; set; }
+    public string? MacBook { get; set; }
+    public string? OracleVM1VCU { get; set; }
+    public string? TestFeb24Context { get; set; }
+    public string? MacMiniDocker { get; set; }
+    public string? Redis { get; set; }
+}

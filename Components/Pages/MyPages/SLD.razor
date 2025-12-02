@@ -1,0 +1,1518 @@
+﻿@page "/sld"
+
+@rendermode InteractiveServer
+
+
+@inject NavigationManager MyNavigationManager
+@inject IJSRuntime JsRuntime
+
+
+@inject Services.IDataRetrievalService DataService
+@inject Services.IMyTableService MyTable 
+@inject Services.ICacheService CacheService
+@inject Services.IGlobalDataService GlobalData
+@inject Services.ILayoutFunctionService LayoutFunction
+@inject Services.ISystemStudyFunctionService StudyFunction
+@inject Services.IMyFunctionService MyFunction
+
+@using Switch = ElDesignApp.Models.Switch
+
+<style>
+    /*https://www.jointjs.com/demos/shapes-drawing*/
+
+</style>
+
+@if (!loadChild)
+{
+    <h5>loading data </h5>
+    <img src="./images/loading-green_dots.gif" asp-append-version="true" width="50"/>
+}
+else
+{
+    <div class="align-content-center" style="background-color:beige">
+        <h4>SLD: Loads, Buses, Transformers, CableBraches, Switches...</h4>
+        <button type="submit" @onclick="@(() => { tablesHide = !tablesHide; })" class="btn btn-info "
+                style="float:right;">↴
+        </button>
+    </div>
+    @if (_isProcessing)
+    {
+        <h5>@_processingMessage</h5>
+        <img src="./images/working.gif"asp-append-version="true" alt=""/>
+    }
+    <br>
+    <div hidden="@(!tablesHide)" class="container-fluid">
+        <div class="row">
+
+            <div class="tab">
+                <button @onclick="()=> TabUpdate(0)"
+                        style="@(GlobalData.SLDPageTab == 0 ? tagStyleActive : tagStyleInactive)">@tabName[0]</button>
+                <button @onclick="()=> TabUpdate(1)"
+                        style="@(GlobalData.SLDPageTab == 1 ? tagStyleActive : tagStyleInactive)">@tabName[1]</button>
+                <button @onclick="()=> TabUpdate(2)"
+                        style="@(GlobalData.SLDPageTab == 2 ? tagStyleActive : tagStyleInactive)">@tabName[2]</button>
+                <button @onclick="()=> TabUpdate(3)"
+                        style="@(GlobalData.SLDPageTab == 3 ? tagStyleActive : tagStyleInactive)">@tabName[3]</button>
+                <button @onclick="()=> TabUpdate(4)"
+                        style="@(GlobalData.SLDPageTab == 4 ? tagStyleActive : tagStyleInactive)">@tabName[4]</button>
+                <button @onclick="()=> TabUpdate(5)"
+                        style="@(GlobalData.SLDPageTab == 5 ? tagStyleActive : tagStyleInactive)">@tabName[5]</button>
+
+            </div>
+            <br/>
+
+            @if (tab[0])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@tabName[0]</h4>
+                    <Table List="Loads"
+                           ListOriginal="GlobalData.Loads"
+                           T="Load"
+                           Fields="@loadFieldList"
+                           TableWidthPx="1200px"
+                           AutoCheck="@AutoCheckOnTableChange"
+                           Update="@UpdateOnTableChange"
+                           Discard="@DiscardTableChange"
+                           ActionMessage="@tableActionMessage"
+                           SuccessMessage="@tableSuccessMessage"
+                           InfoMessage="@tableInfoMessage"
+                           WarningMessage="@tableWarningMessage"
+                           ErrorMessage="@tableErrorMessage">
+                        <Result>
+                            <h6>Result messages here</h6>
+                        </Result>
+                    </Table>
+                </div>
+            }
+            @if (tab[1])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@tabName[1]</h4>
+                    <Table List="Buses"
+                           ListOriginal="GlobalData.Buses"
+                           T="Bus"
+                           Fields="@busFieldList"
+                           AutoCheck="@AutoCheckOnTableChange"
+                           Update="@UpdateOnTableChange"
+                           Discard="@DiscardTableChange"
+                           ActionMessage="@tableActionMessage"
+                           SuccessMessage="@tableSuccessMessage"
+                           InfoMessage="@tableInfoMessage"
+                           WarningMessage="@tableWarningMessage"
+                           ErrorMessage="@tableErrorMessage">
+                        <Result>
+                            <h6>Result messages here</h6>
+                        </Result>
+                    </Table>
+                </div>
+            }
+            @if (tab[2])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@tabName[2]</h4>
+                    <Table List="Transformers"
+                           ListOriginal="GlobalData.Transformers"
+                           T="Transformer"
+                           Fields="@transformerFieldList"
+                           AutoCheck="AutoCheckOnTableChange"
+                           Update="@UpdateOnTableChange"
+                           Discard="@DiscardTableChange"
+                           ActionMessage="@tableActionMessage"
+                           SuccessMessage="@tableSuccessMessage"
+                           InfoMessage="@tableInfoMessage"
+                           WarningMessage="@tableWarningMessage"
+                           ErrorMessage="@tableErrorMessage">
+                        <Result>
+                            <h6>Result messages here</h6>
+                        </Result>
+                    </Table>
+                </div>
+            }
+            @if (tab[3])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@tabName[3]</h4>
+                    <Table List="CableBranches"
+                           ListOriginal="GlobalData.CableBranches"
+                           T="CableBranch"
+                           Fields="@cableBranchFieldList"
+                           AutoCheck="@AutoCheckOnTableChange"
+                           Update="@UpdateOnTableChange"
+                           Discard="@DiscardTableChange"
+                           ActionMessage="@tableActionMessage"
+                           SuccessMessage="@tableSuccessMessage"
+                           InfoMessage="@tableInfoMessage"
+                           WarningMessage="@tableWarningMessage"
+                           ErrorMessage="@tableErrorMessage">
+                        <Result>
+                            <h6>Result messages here</h6>
+                        </Result>
+                    </Table>
+                </div>
+            }
+            @if (tab[4])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@tabName[4]</h4>
+                    <Table List="BusDucts"
+                           ListOriginal="GlobalData.BusDucts"
+                           T="BusDuct"
+                           Fields="@busDuctFieldList"
+                           AutoCheck="@AutoCheckOnTableChange"
+                           Update="@UpdateOnTableChange"
+                           Discard="@DiscardTableChange"
+                           ActionMessage="@tableActionMessage"
+                           SuccessMessage="@tableSuccessMessage"
+                           InfoMessage="@tableInfoMessage"
+                           WarningMessage="@tableWarningMessage"
+                           ErrorMessage="@tableErrorMessage">
+                        <Result>
+                            <h6>Result messages here</h6>
+                        </Result>
+                    </Table>
+                </div>
+            }
+            @if (tab[5])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@tabName[5]</h4>
+                    <Table List="Switches"
+                           ListOriginal="GlobalData.Switches"
+                           T="Switch"
+                           Fields="@switchFieldList"
+                           AutoCheck="@AutoCheckOnTableChange"
+                           Update="@UpdateOnTableChange"
+                           Discard="@DiscardTableChange"
+                           ActionMessage="@tableActionMessage"
+                           SuccessMessage="@tableSuccessMessage"
+                           InfoMessage="@tableInfoMessage"
+                           WarningMessage="@tableWarningMessage"
+                           ErrorMessage="@tableErrorMessage">
+                        <Result>
+                            <h6>Result messages here</h6>
+                        </Result>
+                    </Table>
+                </div>
+            }
+        </div>
+        <br/>
+    </div>
+    <br/>
+    <br/>
+
+    <br/>
+    <div class=".container-fluid">
+        <div>
+            <button type="submit"
+                    @onclick="@DoMainLoadFlow"
+                    class="btn btn-success" style="float:right;">
+                Run Load Flow and Short Cuircuit from SQL Data
+            </button>
+        </div>
+    </div>
+    <div class=".container-fluid">
+        <div>
+            Select SLD to be drawn
+            @{
+                sLDs = GlobalData.Buses.Where(bus => bus.Cn.Count > 2).ToList().Select(e => e.SwbdTag).Distinct().ToList();
+                if (!sLDs.Contains("Key")) sLDs.Insert(0, "Key");
+            }
+            <select for="sLD" class="form-control" @onchange="OnSelectionChanged">
+                @foreach (var sld in sLDs)
+                {
+                    if (sld == sLD)
+                    {
+                        <option value="@sld" selected>@sld</option>
+                    }
+                    else
+                    {
+                        <option value="@sld">@sld</option>
+                    }
+                }
+            </select>
+        </div>
+        @*        <div>
+    <InputFile hidden="@HideFileInput" OnChange="@MyFunction.LoadExcel" class="btn btn-info  btn-sm" style="float:left;" />
+    </div>*@
+        @*        <div>
+    <button type="submit"
+    @onclick="@MainLoadFlow"
+    class="btn btn-success" style="float:inline-end;">
+    Run Load Flow and Short Cuircuit
+    </button>
+    </div>*@
+        <div class="btn-toolbar">
+            <div>
+                <button type="submit" @onclick="@DrawKeySLD" class="btn btn-info " style="float:left;">Draw SLD
+                    - @sLD</button>
+                <button type="submit" @onclick="@UpdateSLD" class="btn btn-success " style="float:right;">Update SLD
+                </button>
+                <button type="submit" @onclick="@UpdateStudyResultsToClientPage" class="btn btn-info "
+                        style="float:right;">Refresh Study Results
+                </button>
+                <button type="submit" @onclick="@SaveResult" class="btn btn-success " style="float:right;">Save Study
+                    Results
+                </button>
+            </div>
+        </div>
+
+
+        <div hidden="@true">
+
+            @if (Branches.Count == 0)
+            {
+                <div class="p-md-1">
+                    <p class="p-sm-2"><em>Branch info not loaded yet...</em></p>
+                </div>
+            }
+            else
+            {
+                <table class="table table-striped">
+                    <thead>
+                    <tr>
+                        @foreach (var property in BranchProperties)
+                        {
+                            <th>@property.Name</th>
+                        }
+                    </tr>
+                    </thead>
+                    <tbody id="myBlockTable">
+                    @foreach (var item in Branches)
+                    {
+                        <tr>
+                            @foreach (var property in BranchProperties)
+                            {
+                                <td>@property.GetValue(item)</td>
+                            }
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+            <br/>
+        </div>
+    </div>
+}
+
+
+
+
+<br>
+<div class="p-md-1">
+    <p class="p-sm-2"><em>@resultMessage</em></p>
+</div>
+<br>
+@if (importResult == "")
+{
+    <p><em>Importing... time now @_timeTaken</em></p>
+    <p><em>Please wait...@_timeTaken</em></p>
+}
+else
+{
+    <p hidden="@importResultShow" @onchange="@(() => importResultShow = !importResultShow)"
+       class="text-md-left">@importResult</p>
+    <p hidden="@errorStringShow" @onchange="@(() => errorStringShow = !errorStringShow)"
+       class="text-sm-left">@errorString</p>
+}
+<br>
+<div>
+    <div hidden="@HideLabel" id="paper"></div>
+    <div id="@_divString" style="height: 1200px; width: 800px; "></div>
+</div>
+
+
+@if (showEquipmentPropertyModal)
+{
+    switch (modalType)
+    {
+        case "grid":
+        case "bus":
+            <ElementPropertyModal Title="Properties"
+                             Text="Provide details for new item"
+                             Item="modalBus"
+                             Fields="modalFieldList"
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+            break;
+        case "transformer":
+            <ElementPropertyModal Title="Properties"
+                             Text="Provide details for new item"
+                             Item="modalTransformer"
+                             Fields="modalFieldList"
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+            break;
+        case "cable":
+            <ElementPropertyModal Title="Properties"
+                             Text="Provide details for new item"
+                             Item="modalCableBranch"
+                             Fields="modalFieldList"
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+            break;
+        case "busduct":
+            <ElementPropertyModal Title="Properties"
+                             Text="Provide details for new item"
+                             Item="modalBusDuct"
+                             Fields="modalFieldList"
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+            break;
+        case "motor":
+        case "heater":
+        case "capacitor":
+        case "lumpload":
+            <ElementPropertyModal Title="Properties"
+                             Text="Provide details for new item"
+                             Item="modalLoad"
+                             Fields="modalFieldList"
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+            break;
+        case "switch":
+            <ElementPropertyModal Title="Properties"
+                             Text="Provide details for new item"
+                             Item="modalSwitch"
+                             Fields="modalFieldList"
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+            break;
+        default:
+            <ElementPropertyModal Title="Properties"
+                             Text="Provide details for new item"
+                             Item="modelEquipment"
+                             Fields="modalFieldList"
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+            break;
+    }
+}
+
+
+
+@code {
+
+
+    private bool loadChild = false;
+    
+    private bool _isProcessing = false;
+    private string _processingMessage = "processing";
+    
+    
+    private readonly bool[] tab = new bool[10];
+    private int clickTab = 1;
+    private readonly string[] tabName = { "Load", "Bus", "Transformer", "CableBranch", "BusDuct", "Switch" };
+    private readonly string[] loadFieldList = { "RecordId", "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Unit", "PA", "Duty", "VR", "IR", "Pf", "Eff", "Supply", "BfT", "FeederType", "L", "CblDesc", "CblAuto", "CblDescA", "VdRA", "VdSA", "CblDescM", "VdRM", "VdSM", "UpdatedBy", "UpdatedOn" };
+    private readonly string[] busFieldList = { "Tag", "TagDesc", "Category", "VR", "IR", "SC", "XR", "SwbdTag", "UpdatedBy", "UpdatedOn", "Remark" };
+    private readonly string[] transformerFieldList = { "Tag", "TagDesc", "Category", "kVA", "Z", "XR", "V1", "V2", "BfT", "BtT", "UpdatedBy", "UpdatedOn", "Remark" };
+    private readonly string[] cableBranchFieldList = { "Tag", "TagDesc", "CblDesc", "BfT", "BtT", "L", "Rl", "Xl", "R", "X", "UpdatedBy", "UpdatedOn", "Remark" };
+    private readonly string[] busDuctFieldList = { "Tag", "TagDesc", "CblDesc", "BfT", "BtT", "L", "Rl", "Xl", "R", "X", "UpdatedBy", "UpdatedOn", "Remark" };
+    private readonly string[] switchFieldList = { "Tag", "TagDesc", "VR", "IR", "SC", "T1", "T2", "Conn12", "T3", "Conn13", "Conn23", "UpdatedBy", "UpdatedOn", "Remark" };
+    private readonly string[] capacitorFieldList = { "RecordId", "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Duty", "VR", "IR", "Pf", "Supply", "BfT", "FeederType", "L", "CblDesc", "CblAuto", "CblDescA", "VdRA", "VdSA", "CblDescM", "VdRM", "VdSM", "UpdatedBy", "UpdatedOn" };
+    private readonly string[] heaterFieldList = { "RecordId", "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Duty", "VR", "IR", "Supply", "BfT", "FeederType", "L", "CblDesc", "CblAuto", "CblDescA", "VdRA", "VdSA", "CblDescM", "VdRM", "VdSM", "UpdatedBy", "UpdatedOn" };
+    private readonly string[] motorFieldList = { "RecordId", "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Unit", "PA", "Duty", "VR", "IR", "Pf", "Eff", "Supply", "BfT", "FeederType", "L", "CblDesc", "CblAuto", "CblDescA", "VdRA", "VdSA", "CblDescM", "VdRM", "VdSM", "UpdatedBy", "UpdatedOn" };
+
+
+    //private string[] capacitorFieldList = { "Tag", "TagDesc", "Category", "PR", "Unit", "PF", "Supply", "BfT", "FeederType", "L", "CblDescM", "UpdatedBy", "UpdatedOn", "Remark" };
+    //private string[] motorFieldList = { "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Unit", "PA", "Duty", "VR", "Pf", "Eff", "Supply", "BfT", "FeederType", "L", "CblDesc", "CblAuto", "CblDescA", "SpA", "VdRA", "VdSA", "CblDescM", "VdRM", "VdSM", "UpdatedBy", "UpdatedOn" };
+    //private string[] heaterFieldList = { "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Unit", "Duty", "VR", "Supply", "BfT", "FeederType", "L", "Desc", "UpdatedBy", "UpdatedOn" };
+    //private string[] lumpLoadFieldList = { "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Unit", "Duty", "VR", "Pf", "DR", "Supply", "BfT", "FeederType", "L", "Desc", "UpdatedBy", "UpdatedOn" };
+    //private string[] otherLoadFieldList = { "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Unit", "Duty", "VR", "Pf", "Eff", "DR", "Supply", "BfT", "FeederType", "L", "Desc", "UpdatedBy", "UpdatedOn" };
+
+
+    private readonly string tagStyleActive = "background-color:#808080; color: white;";
+    private readonly string tagStyleInactive = "background-color:#8080ff; color: black;";
+
+    private bool IsDisabledBttnSaveSegmentResultToDB = true;
+
+    private static List<Segment>? Segments = new();
+
+    private string tableActionMessage = "";
+    private string tableMessage = "";
+    private string tableSuccessMessage = "";
+    private string tableInfoMessage = "";
+    private string tableWarningMessage = "";
+    private string tableErrorMessage = "";
+
+    private static List<Load>? Loads = new();
+    private static List<Bus>? Buses = new();
+    private static List<Bus>? BusesToUpdate = new();
+    private static readonly List<Branch>? Branches = new();
+    private static List<CableBranch>? CableBranches = new();
+    private static List<BusDuct>? BusDucts = new();
+    private static List<Transformer>? Transformers = new();
+    private static List<Switch>? Switches = new();
+
+
+    private static List<BusStudyResult> BusStudyResults = new();
+    private static List<SLDXY> SLDXYs = new();
+    private static List<SLDComponent>? SLDComponents = new();
+
+
+    private bool tablesHide { get; set; }
+    private bool HideLabel { get; } = true;
+
+    public static string importResult = "";
+    public static string errorString = "";
+    public static string resultMessage = "";
+    public static bool HideFileInput = false;
+    public static bool importResultShow;
+    public static bool errorStringShow;
+    
+    
+    private static DateTime _timeTaken = DateTime.Now;
+
+    public class BusVisit
+    {
+        public Bus B { get; set; } // Bus
+        public bool V { get; set; } // Bus Visited
+
+        public BusVisit(Bus b, bool v)
+        {
+            B = b;
+            V = v;
+        }
+    }
+
+    public class LFResult
+    {
+        public List<Bus> BusResult { get; set; }
+        public double MS { get; set; }
+        public int IT { get; set; }
+
+        public LFResult(List<Bus> busResult, double ms, int it)
+        {
+            BusResult = busResult;
+            MS = ms;
+            IT = it;
+        }
+    }
+
+    public static double PC2Decimal(double v)
+    {
+        return v < -100 || v > 100 ? 1 : v > 1 || v < -1 ? v / 100 : v;
+    }
+
+    public static double Sb = 1000; // in MVA
+    public static double Vbg = 1; // in kV GlobalData if there is no transformer
+
+
+    public static string sLD { get; set; } = "Key"; // "Key" or switchboard "Key as default
+    public static List<string> sLDs { get; set; } // list of all SLDS "Key" and all switchboards
+
+    private static List<Bus> busesResult { get; set; }
+    private static List<Branch> branchesResult { get; set; }
+
+    public static List<Bus> StudyResultLFBus = new();
+    public static List<Branch> StudyResultLFBranch = new();
+    public static List<Bus> StudyResultSCBus = new();
+    public static List<Branch> StudyResultSCBranch = new();
+
+    public static List<BusVisit> BusVisited = new();
+
+    public static PropertyInfo[] BusProperties = typeof(Bus).GetProperties();
+    public static PropertyInfo[] BranchProperties = typeof(Branch).GetProperties();
+    public static PropertyInfo[] LoadProperties = typeof(Load).GetProperties();
+
+    //class for DrawSLDBoard and DrawKeySLD
+    public static List<BusParent> BusParentList = new();
+
+    public class BusParent
+    {
+        public string B { get; set; } // This Bus
+        public string P { get; set; } // Parent Bus towards Source
+        public string S { get; set; } // corresponding source bus
+
+        public BusParent()
+        {
+        }
+
+        public BusParent(string b, string p, string s)
+        {
+            B = b;
+            P = p;
+            S = s;
+        }
+    }
+
+
+    public static int iterationLF = 500; // 500
+    public static int iterationSC = 1000; // 1000
+    public static double precisionLF = 0.00001; // 0.00001;
+    public static double precisionSC = 0.001; // 0.001
+    public static int counterLF = 10; //10
+    public static bool loadContribution = false; // load contributioin for SC study
+
+
+    private static bool showEquipmentPropertyModal;
+    private static Load modalLoad = new();
+    private static Bus modalBus = new();
+    private static Branch modalBranch = new();
+    private static CableBranch modalCableBranch = new();
+    private static BusDuct modalBusDuct = new();
+    private static Transformer modalTransformer = new();
+    private static Switch modalSwitch = new();
+    private object modelEquipment;
+    private string[] modalFieldList;
+    private string modalType;
+    private string modalitemJSON;
+    private string itemJSON;
+
+    private static string _divString;
+
+
+    protected override void OnInitialized()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        // default tab on Bus
+        // 0: Bus, 1: Transformer, 2: Capacitor, 3: Motor, 4: Heater, 5: Other
+        tab[GlobalData.SegmentPageTab] = true;
+        //
+        GlobalData.selectedPage = "Segments: Cable Ladders, Trays, Trenches and Sleeves";
+        GlobalData.sceneCurrent = "Segment";
+        GlobalData.sceneDataCable.SceneName = GlobalData.sceneCurrent;
+        StateHasChanged();
+        base.OnInitialized();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+    }
+
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {loadChild}");
+        // do something for the first time rendere
+        if (firstRender)
+        {
+            // do something
+            // read Buses at the outset
+            //Buses = await ReadFromCacheOrDB(new Bus());
+            (Buses, string logInfo, string logWarning, string logError) 
+                = await DataService.ReadFromCacheOrDb(new Bus()) ;
+
+            var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+            Buses.ForEach(item =>
+            {
+                item.Update();
+                item.Save2DB = true;
+            });
+            // programatically generated new buses through 'BranchBusUpdate' are not to saved to DB
+
+            
+            
+            // read the transformers
+
+            (Transformers, logInfo, logWarning, logError) 
+                = await DataService.ReadFromCacheOrDb(new Transformer()) ;
+
+            displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+            
+            Transformers.ForEach(item =>
+            {
+                item.Category = "Transformer"; // Category
+                item.Save2DB = true;
+                // Branch PU Impedance Update is possible after assigning the Base Voltages as per the source to bus connection map
+                Buses = LayoutFunction.BranchBusUpdate(item.Tag, item.Category, item.BfT, item.BtT, Buses);
+            });
+            //
+            // read Cable Branch
+
+            (CableBranches, logInfo, logWarning, logError) 
+                = await DataService.ReadFromCacheOrDb(new CableBranch()) ;
+
+            displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+            
+            CableBranches.ForEach(item =>
+            {
+                item.Category = "Cable";
+                item.Save2DB = true;
+                LayoutFunction.CableRXUpdate(item);
+                Buses = LayoutFunction.BranchBusUpdate(item.Tag, item.Category, item.BfT, item.BtT, Buses);
+            });
+            //
+            // read bus duct
+
+            (BusDucts, logInfo, logWarning, logError) 
+                = await DataService.ReadFromCacheOrDb(new BusDuct()) ;
+
+            displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+            
+            BusDucts.ForEach(item =>
+            {
+                item.Category = "BusDuct";
+                item.Save2DB = true;
+                LayoutFunction.BusDuctRXUpdate(item);
+                Buses = LayoutFunction.BranchBusUpdate(item.Tag, item.Category, item.BfT, item.BtT, Buses);
+            });
+            //
+            // read Loads
+
+            (Loads, logInfo, logWarning, logError) 
+                = await DataService.ReadFromCacheOrDb(new Load()) ;
+
+            displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+            
+            // Update Load so that Power values and cable sizes are calculated
+            Loads.ForEach(item =>
+            {
+                LayoutFunction.LoadUpdate(item);
+                item.Save2DB = true;
+            });
+            //
+            // read the Switches
+            
+            (Switches, logInfo, logWarning, logError) 
+                = await DataService.ReadFromCacheOrDb(new Switch()) ;
+
+            displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+            
+            Switches.ForEach(item =>
+            {
+                item.Update();
+                item.Save2DB = true;
+            });
+            //
+            // read existing Bus System Study Results
+
+            (BusStudyResults, logInfo, logWarning, logError) 
+                = await DataService.ReadFromCacheOrDb(new BusStudyResult()) ;
+
+            displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+            
+            //
+            // read cordinates customised by the users for elements in the SLDs
+
+            (SLDXYs, logInfo, logWarning, logError) 
+                = await DataService.ReadFromCacheOrDb(new SLDXY()) ;
+
+            displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+            
+            //SLDComponents = await ReadFromCacheOrDB(new SLDComponent());
+            // read SLD components afresh from the database to avoid missing change due to old cache data
+            SLDComponents = await MyTable.GetList(new SLDComponent(), GlobalData.SelectedProject.Tag);
+            //
+            // as all the Tables are now updated, assign the same to Global Tables
+            
+            var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+            
+            GlobalData.Buses = JsonSerializer.Deserialize<List<Bus>>(JsonSerializer.Serialize(Buses, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.Transformers = JsonSerializer.Deserialize<List<Transformer>>(JsonSerializer.Serialize(Transformers, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.CableBranches = JsonSerializer.Deserialize<List<CableBranch>>(JsonSerializer.Serialize(CableBranches, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.BusDucts = JsonSerializer.Deserialize<List<BusDuct>>(JsonSerializer.Serialize(BusDucts, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.Loads = JsonSerializer.Deserialize<List<Load>>(JsonSerializer.Serialize(Loads, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.Switches = JsonSerializer.Deserialize<List<Switch>>(JsonSerializer.Serialize(Switches, jsonSerializerOptions), jsonSerializerOptions);
+
+            GlobalData.BusStudyResults = JsonSerializer.Deserialize<List<BusStudyResult>>(JsonSerializer.Serialize(BusStudyResults, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.SLDXYs = JsonSerializer.Deserialize<List<SLDXY>>(JsonSerializer.Serialize(SLDXYs, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.SLDComponents = JsonSerializer.Deserialize<List<SLDComponent>>(JsonSerializer.Serialize(SLDComponents, jsonSerializerOptions), jsonSerializerOptions);
+            //
+            loadChild = true;
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {loadChild}");
+            _timeTaken = DateTime.Now;
+
+            // intitialisation
+            _divString = "sldPaper";
+
+
+            StateHasChanged();
+        }
+    }
+
+
+    public void Dispose()
+    {
+
+    }
+
+
+    private List<List<T>?> GetItemsNOriginalItems<T>(T item)
+    {
+        var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+        List<T>? items = new();
+        List<T>? itemsOriginal = new();
+        switch (typeof(T).Name)
+        {
+            case "Load":
+                items = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(Loads, jsonSerializerOptions), jsonSerializerOptions);
+                itemsOriginal = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(GlobalData.Loads, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Bus":
+                items = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(Buses, jsonSerializerOptions), jsonSerializerOptions);
+                itemsOriginal = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(GlobalData.Buses, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Transformer":
+                items = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(Transformers, jsonSerializerOptions), jsonSerializerOptions);
+                itemsOriginal = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(GlobalData.Transformers, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Switch":
+                items = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(Switches, jsonSerializerOptions), jsonSerializerOptions);
+                itemsOriginal = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(GlobalData.Switches, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Item1":
+                // items = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(Item1, jsonSerializerOptions), jsonSerializerOptions);
+                // itemsOriginal = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(GlobalData.Item1, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Item2":
+                // items = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(Item2, jsonSerializerOptions), jsonSerializerOptions);
+                // itemsOriginal = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(GlobalData.Item2, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+        }
+
+        return new List<List<T>?> { items, itemsOriginal };
+    }
+
+
+    private void SetItems<T>(List<T> inputList)
+    {
+        var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+        
+        switch (typeof(T).Name)
+        {
+            case "CableBranch":
+                CableBranches = JsonSerializer.Deserialize<List<CableBranch>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Load":
+                Loads = JsonSerializer.Deserialize<List<Load>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Bus":
+                Buses = JsonSerializer.Deserialize<List<Bus>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Transformer":
+                Transformers = JsonSerializer.Deserialize<List<Transformer>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Switch":
+                Switches = JsonSerializer.Deserialize<List<Switch>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Item1":
+                //Item1 = JsonConvert.DeserializeObject<List<Item1>>(JsonConvert.SerializeObject(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Item2":
+                //Item2 = JsonConvert.DeserializeObject<List<Item2>>(JsonConvert.SerializeObject(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+        }
+    }
+
+    protected async void AutoCheckOnTableChange<T>((T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
+    {
+        // Access the parameters from args
+        var item = args.Item1;
+        var uid = args.Item2;
+        var propertyInfo = args.Item3;
+        var originalItem = args.Item4;
+        List<T> itemsCurrent = args.Item5;
+        List<T> itemsOriginal = args.Item6;
+        tableSuccessMessage = args.Item7;
+        tableInfoMessage = args.Item8;
+        tableWarningMessage = args.Item9;
+        tableErrorMessage = args.Item10;
+        //
+        // any further validation
+        var anyFurtherValidation = true;
+        if (anyFurtherValidation)
+        {
+            // additional validation
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : {propertyInfo.Name} further validation checks at parent side...");
+            tableErrorMessage += "";
+            // additional validation
+            tableSuccessMessage += "";
+            // var getItemsNOriginalItems = GetItemsNOriginalItems(item);
+            // List<T> items = getItemsNOriginalItems[0];
+            // List<T> itemsOriginal = getItemsNOriginalItems[1];
+            // clear cache as the data is updated
+            //await cache.RemoveAsync("NavMenu_" + typeof(T).Name + "_" + DateTime.Now.ToString("yyyyMMdd_hh"));
+            //
+            // Action for "Load"
+            if (typeof(T).Name == "Load")
+            {
+                // Get the MethodInfo for the method "MyMethod"
+                var methodInfo = typeof(T).GetMethod("Update");
+                if (methodInfo != null)
+                {
+                    // Invoke the method on the instance obj
+                    // null because MyMethod does not take any parameters
+                    methodInfo.Invoke(item, null);
+                }
+            }
+
+            //
+            // Action for CableBranch
+            if (typeof(T).Name == "CableBranch")
+            {
+                var methodCableRXUpdate = typeof(T).GetMethod("CableRXUpdate");
+                if (methodCableRXUpdate != null)
+                {
+                    // Invoke the method on the instance obj
+                    // null because MyMethod does not take any parameters
+                    methodCableRXUpdate.Invoke(item, null);
+                }
+            }
+
+            tableActionMessage = tableInfoMessage;
+        }
+
+        //var itemsNOriginalItems = GetItemsNOriginalItems(item);
+        //SetItems(itemsCurrent);
+        StateHasChanged();
+    }
+
+
+    protected async void UpdateOnTableChange<T>((T item, List<T> list, List<T> originalList, string success, string info, string warning, string error ) args)
+
+    {
+        ResetTableMessages();
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        List<T> itemslist = args.Item2;
+        List<T> origialItemslist = args.Item3;
+        //
+        await MyTable.Update(itemslist, origialItemslist);
+
+        // clear cache invoking the parent page
+        tableSuccessMessage = "Data updated to the Database";
+        tableActionMessage = tableSuccessMessage;
+        StateHasChanged();
+        
+        
+        // as the data is updated, to clear the cache entry for the current hour
+        var recordKey = "NavMenu_"  + "_" + GlobalData.SelectedProject.Tag + "_" +typeof(T).Name + "_" + DateTime.Now.ToString("yyyyMMdd_hh");
+        //await CacheService.RemoveAsync(recordKey);
+       
+        // Construct the pattern to match all hourly keys for this type.
+        // The pattern needs a wildcard for the varying parts.
+        // Original key format: "NavMenu_" + dbName + "_" + DateTime.Now.ToString("yyyyMMdd_hh")
+        // So, the pattern will be: "NavMenu_CableData_*"
+        var pattern = $"NavMenu_{typeof(T).Name}_*";
+        await CacheService.RemoveByPatternAsync(pattern);
+        System.Diagnostics.Debug.WriteLine($"Attempted to clear all cache for pattern: {pattern}");
+    }
+
+    private void ResetTableMessages()
+    {
+        tableMessage = "";
+        tableSuccessMessage = "";
+        tableInfoMessage = "";
+        tableWarningMessage = "";
+        tableErrorMessage = "";
+    }
+
+    public void DiscardTableChange<T>((T item, List<T> list, List<T> originalList) args)
+    {
+        ResetTableMessages();
+        Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        var item = args.Item1;
+        List<T> itemslist = args.Item2;
+        List<T> origialItemslist = args.Item3;
+        //
+        var itemsNOriginalItems = GetItemsNOriginalItems(item);
+        SetItems(origialItemslist);
+        tableSuccessMessage = "All changes discarded";
+        tableActionMessage = tableSuccessMessage;
+        StateHasChanged();
+    }
+
+    private void OnSelectionChanged(ChangeEventArgs e)
+    {
+        sLD = e.Value.ToString();
+        Debug.WriteLine($"'{sLD}' SLD selected.");
+        if (sLD == "Key")
+        {
+            DrawKeySLD();
+        }
+        else
+        {
+            DrawSLD();
+        }
+    }
+
+
+    private async Task DrawSLD()
+    {
+    }
+
+
+    private async Task DrawKeySLD()
+    {
+        _processingMessage = "running system study afresh before draiwng SLD";
+        _isProcessing = true;
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : _isProcessing: {_isProcessing}");
+        StateHasChanged();
+        // Give Blazor a chance to process the pending render cycle.
+        await Task.Yield(); 
+        
+        string buses ="";
+        string branches ="";
+        string loads ="";
+        string transformers ="";
+        string cableBranches ="" ;
+        string busDucts ="";
+        int xgridSize =0;
+        int ygridSize=0;
+        string xyString = "";
+        string sldComponents ="";
+        string switchboards ="";
+        
+        
+        List<Bus> finalBusesResult = new List<Bus>();
+        List<Branch> finalBranchesResult = new List<Branch>();
+        List<SLDComponent> finalSLDComponents = new List<SLDComponent>();
+        
+        await Task.Run(async () =>
+        {
+        var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+        
+        
+        var sld = "key"; // name of teh SLD: Key, DB-001, etc.
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+
+
+        // run LF SC study to obtain all the latest data for the 1st time drawing SLD
+        var tupleResult = await MainLoadFlow(CableBranches, Transformers, BusDucts, Buses, Switches, Loads);
+        busesResult = tupleResult.Item1;
+        branchesResult = tupleResult.Item2;
+
+        //BusesResult = StudyFuctions.AssignVbSwingSourcesAndAutoXY(CableBranches, BusDucts, Transformers, Switches, Buses);
+        busesResult = busesResult.OrderBy(bus => bus.CordY).ThenBy(bus => bus.CordX).ToList();
+        // set the coordinates for the elements in the KeySLD
+        // check if there are coorinates stored in the DB
+        busesResult.ForEach(bus =>
+        {
+            // in SC study Swing buses are temporarily converted as ordinary "" bus
+            // revert them with "Swing" category
+            if (Buses.Find(b => b.Tag == bus.Tag).Category == "Swing") bus.Category = "Swing";
+            //
+            var sldbuses = SLDXYs.Where(b => b.SLD == sld && b.Tag == bus.Tag).ToList();
+            if (sldbuses.Count > 0)
+            {
+                // coordinate is stored by user
+                bus.CordX = sldbuses[0].CordX;
+                bus.CordY = sldbuses[0].CordY;
+                bus.Length = sldbuses[0].Length;
+            }
+            else
+            {
+                // assign as per the Auto X-Y logic from Function AssignVbSwingSourcesAndAutoXY
+                bus.CordY = GlobalData.topSpacig + GlobalData.yGridSpacing * bus.SLDY;
+                var xs = busesResult.Where(b => b.SLDY == bus.SLDY && b.SLDX <= bus.SLDX).ToList();
+                var cordX = 0;
+                xs.ForEach(item => cordX += item.SLDL);
+                bus.CordX = GlobalData.leftSpacing + cordX * GlobalData.xGridSpacing;
+                bus.Length = (int)(0.5 * GlobalData.xGridSpacing * (bus.SLDL - 0.5));
+            }
+        });
+
+        // draw scene
+
+        buses = JsonSerializer.Serialize(busesResult, jsonSerializerOptions);
+        branches = JsonSerializer.Serialize(branchesResult, jsonSerializerOptions);
+        loads = JsonSerializer.Serialize(Loads);
+        transformers = JsonSerializer.Serialize(Transformers, jsonSerializerOptions);
+        cableBranches = JsonSerializer.Serialize(CableBranches, jsonSerializerOptions);
+        busDucts = JsonSerializer.Serialize(BusDucts, jsonSerializerOptions);
+        xgridSize = busesResult.Max(bus => bus.CordX) + 200;
+        ygridSize = busesResult.Max(bus => bus.CordY) + 150;
+        xyString = "";
+        // read SLD data afresh directly from teh DB and not from cache
+        SLDComponents = await MyTable.GetList(new SLDComponent(), GlobalData.SelectedProject.Tag);
+        sldComponents = JsonSerializer.Serialize(SLDComponents, jsonSerializerOptions);
+
+        // create switchboard strings
+        switchboards = JsonSerializer.Serialize(FindSwitchboards(busesResult), jsonSerializerOptions);
+        
+        
+        
+
+
+        var dotNetObjRef = DotNetObjectReference.Create(new Draw(LayoutFunction, GlobalData));
+        var dotNetObjRefSLD = DotNetObjectReference.Create(this);
+
+
+        await JsRuntime.InvokeVoidAsync("drawSLD", _divString,
+            xgridSize, ygridSize, GlobalData.leftSpacing, GlobalData.topSpacig, GlobalData.xGridSpacing, GlobalData.yGridSpacing,
+            buses, switchboards, branches, loads, transformers, cableBranches, busDucts, xyString, sldComponents, dotNetObjRef, dotNetObjRefSLD);
+        
+        _timeTaken = DateTime.Now;
+        });
+        _processingMessage = "processing";
+        _isProcessing = false;
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : _isProcessing: {_isProcessing}");
+
+        StateHasChanged();
+        
+    }
+
+
+    private void SaveResult()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+    }
+
+    void TabUpdate(int i)
+    {
+        tab[GlobalData.SLDPageTab] = false;
+        GlobalData.SLDPageTab = i;
+        tab[i] = true;
+    }
+
+    private async Task DoMainLoadFlow()
+    {
+        await MainLoadFlow(CableBranches, Transformers, BusDucts, Buses, Switches, Loads);
+    }
+
+    private async Task<Tuple<List<Bus>, List<Branch>>> MainLoadFlow(List<CableBranch> cableBranches, List<Transformer> transformers, List<BusDuct> busDucts, List<Bus> buses, List<Switch> switches, List<Load> loads)
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+
+        //
+        // update the Buses as per last SystemStudy (LF and SC) Result
+        buses.ForEach(bus =>
+        {
+            List<BusStudyResult> busStudyResults = BusStudyResults.Where(item => item.Tag == bus.Tag).ToList();
+            if (busStudyResults.Count > 0)
+            {
+                //bus.Vo = busStudyResults[0].Vo;
+                bus.VoJSON = busStudyResults[0].VoJSON;
+                bus.Vo = JsonSerializer.Deserialize<Complex>(busStudyResults[0].VoJSON);
+
+                //bus.SCResult = busStudyResults[0].SCResult;
+                bus.SCResultJSON = busStudyResults[0].SCResultJSON;
+                bus.SCResult = JsonSerializer.Deserialize<List<SCBusVal>>(busStudyResults[0].SCResultJSON);
+            }
+        });
+
+        var tupleLFSCResult = StudyFunction.MainLoadFlow(cableBranches, transformers, busDucts, buses, switches, loads);
+        List<Bus> busesLFSC = tupleLFSCResult.Item1;
+        List<Branch> branchesLFSC = tupleLFSCResult.Item2;
+
+        // Save LF and SC Bus SystemStudy Result to DB
+        // store the result to save to the database
+
+
+        Debug.WriteLine("\nSaving Load Flow and Short Circuit results to DB....\n");
+        //
+        busesLFSC.ForEach(bus =>
+        {
+            BusStudyResult busStudyResult;
+
+            List<BusStudyResult> busStudyResults = BusStudyResults.Where(item => item.Tag == bus.Tag).ToList();
+            if (busStudyResults.Count > 0)
+            {
+                busStudyResult = busStudyResults[0];
+            }
+            else
+            {
+                busStudyResult = new BusStudyResult();
+                busStudyResult.Tag = bus.Tag;
+                busStudyResult.UID = Guid.NewGuid();
+                busStudyResult.ProjectId = GlobalData.SelectedProject.Tag;
+                busStudyResult.OptionId = "base";
+                BusStudyResults.Add(busStudyResult);
+            }
+
+            busStudyResult.VoJSON = bus.VoJSON;
+            busStudyResult.SCResultJSON = bus.SCResultJSON;
+            busStudyResult.UpdatedBy = "KP";
+            busStudyResult.UpdatedOn = DateTime.Now;
+            busStudyResult.Save2DB = true;
+        });
+        await MyTable.Update(BusStudyResults, GlobalData.BusStudyResults);
+
+
+        // clear cache invoking the parent page
+        tableSuccessMessage = "LF and SC Result Data updated to the Database";
+        tableActionMessage = tableSuccessMessage;
+       // StateHasChanged();
+ 
+        
+        // as the data is updated, to clear the cache entry for the current hour
+        var recordKey = "NavMenu_"  + "_" + GlobalData.SelectedProject.Tag + "_" + typeof(BusStudyResult).Name + "_" + DateTime.Now.ToString("yyyyMMdd_hh");
+        //await CacheService.RemoveAsync(recordKey);
+       
+        // Construct the pattern to match all hourly keys for this type.
+        // The pattern needs a wildcard for the varying parts.
+        // Original key format: "NavMenu_" + dbName + "_" + DateTime.Now.ToString("yyyyMMdd_hh")
+        // So, the pattern will be: "NavMenu_CableData_*"
+        var pattern = $"NavMenu_{typeof(BusStudyResult).Name}_*";
+        await CacheService.RemoveByPatternAsync(pattern);
+        System.Diagnostics.Debug.WriteLine($"Attempted to clear all cache for pattern: {pattern}");
+        
+        
+
+        return new Tuple<List<Bus>, List<Branch>>(busesLFSC, branchesLFSC);
+    }
+
+
+    private async Task UpdateSLD()
+    {
+        // for SLD
+        // invoke javascript function to send the modified SLD component data back to server so that
+        // server saves the received data to the database through 'SLDComponentUpdate' function
+        Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        // the dotnet reference shall the 'this' razor page and not "Draw.cs" as the await myTable to be invoked to write data to database
+
+        await JsRuntime.InvokeVoidAsync("updateSLD");
+    }
+
+
+    [JSInvokable("PropertyUpdate")]
+    public async Task PropertyUpdate(string tag, string type)
+    {
+        Debug.WriteLine($"Server Side:PropertyUpdate..... for Element type '{type}' tag '{tag}...");
+        showEquipmentPropertyModal = true;
+        modalType = type;
+
+        switch (type)
+        {
+            case "grid":
+            case "bus":
+                modalBus = Buses.Find(item => item.Tag == tag);
+                if (modalBus is null)
+                {
+                    modalBus = new Bus();
+                    modalBus.Tag = tag;
+                    Buses.Add(modalBus);
+                }
+
+                modalFieldList = busFieldList;
+                break;
+            case "transformer":
+                modalTransformer = Transformers.Find(item => item.Tag == tag);
+                if (modalTransformer is null)
+                {
+                    modalTransformer = new Transformer();
+                    modalTransformer.Tag = tag;
+                    Transformers.Add(modalTransformer);
+                }
+
+                modalFieldList = transformerFieldList;
+                break;
+            case "cable":
+                modalCableBranch = CableBranches.Find(item => item.Tag == tag);
+                if (modalCableBranch is null)
+                {
+                    modalCableBranch = new CableBranch();
+                    modalCableBranch.Tag = tag;
+                    CableBranches.Add(modalCableBranch);
+                }
+
+                modalFieldList = cableBranchFieldList;
+                break;
+            case "busduct":
+                modalBusDuct = BusDucts.Find(item => item.Tag == tag);
+                if (modalBusDuct is null)
+                {
+                    modalBusDuct = new BusDuct();
+                    modalBusDuct.Tag = tag;
+                    BusDucts.Add(modalBusDuct);
+                }
+
+                modalFieldList = busDuctFieldList;
+                break;
+            case "motor":
+            case "heater":
+            case "capacitor":
+            case "lumpload":
+                modalLoad = Loads.Find(item => item.Tag == tag);
+                if (modalLoad is null)
+                {
+                    modalLoad = new Load();
+                    modalLoad.Tag = tag;
+                    Loads.Add(modalLoad);
+                    modalLoad.Category = type == "motor" ? "Motor" : type == "heater" ? "Heater" : type == "capacitor" ? "Capacitor" : "LumpLoad";
+                }
+
+                modalFieldList = type == "motor" ? motorFieldList : type == "heater" ? heaterFieldList : type == "capacitor" ? capacitorFieldList : loadFieldList;
+                break;
+            case "switch":
+                modalSwitch = Switches.Find(item => item.Tag == tag);
+                if (modalSwitch is null)
+                {
+                    modalSwitch = new Switch();
+                    modalSwitch.Tag = tag;
+                    Switches.Add(modalSwitch);
+                }
+
+                modalFieldList = switchFieldList;
+                break;
+            default:
+                // code block
+                //modalSwitch
+                //modalLoad
+                //modalCableBranch
+                //modalBusDuct
+                modalFieldList = switchFieldList;
+                break;
+        }
+
+        //StateHasChanged();
+    }
+
+
+    private async Task UpdateItemPropertyClientPage((string itemJSON, string Type, string originalTag, string changedTag, string button) args)
+    {
+        showEquipmentPropertyModal = false;
+        Debug.WriteLine($"Server Side: UpdatePropertyClientPage......{args.button} pressed");
+
+        var branches = JsonSerializer.Serialize(branchesResult);
+
+        if (args.originalTag != args.changedTag)
+        {
+            // besides other parameters, the tag is changed
+            // if the type of the item is cable or transformer or bus duct, there is no concern
+            // as only the link tag and source tag will get affected and are managed in client side (JS)
+            // however, if bus tag is changed, then it affects all the tables
+            if (args.Type == "Bus")
+            {
+                //CableBranches, Transformers, BusDucts, Buses, Switches, Loads
+                CableBranches?.ForEach(item =>
+                {
+                    if (item.BfT == args.originalTag) item.BfT = args.changedTag;
+                    if (item.BtT == args.originalTag) item.BtT = args.changedTag;
+                });
+                Transformers?.ForEach(item =>
+                {
+                    if (item.BfT == args.originalTag) item.BfT = args.changedTag;
+                    if (item.BtT == args.originalTag) item.BtT = args.changedTag;
+                });
+                BusDucts?.ForEach(item =>
+                {
+                    if (item.BfT == args.originalTag) item.BfT = args.changedTag;
+                    if (item.BtT == args.originalTag) item.BtT = args.changedTag;
+                });
+                Loads?.ForEach(item =>
+                {
+                    if (item.BfT == args.originalTag) item.BfT = args.changedTag;
+                });
+
+                Switches?.ForEach(item =>
+                {
+                    if (item.T1 == args.originalTag) item.T1 = args.changedTag;
+                    if (item.T2 == args.originalTag) item.T2 = args.changedTag;
+                    if (item.T3 == args.originalTag) item.T3 = args.changedTag;
+                });
+            }
+        }
+
+        // load flow is not done unless asked by the user as it takes some time to run
+        // minor changes like the tag, and ratings are only required to be reflected on the SLD only
+        await JsRuntime.InvokeVoidAsync("updateSLDItem", args.itemJSON, args.Type, args.originalTag, branches);
+        //
+    }
+
+
+    private List<List<string>> FindSwitchboards(List<Bus> buses)
+    {
+        // create switchboard strings from buses info
+        List<List<string>> switchboards = new();
+
+        buses
+            .GroupBy(i => i.SwbdTag)
+            .Select(g => g.First())
+            .ToList().ForEach(bus =>
+            {
+                var switchboard = bus.SwbdTag;
+                var busesOfThisBoard = buses.FindAll(item => item.SwbdTag == switchboard).ToList();
+                var busTags = busesOfThisBoard.Select(item => item.Tag).ToList();
+                var busSections = busesOfThisBoard.Select(item => item.SwitchboardSection).ToList();
+                if (busTags.Count > 1)
+                {
+                    switchboards.Add(new List<string> { switchboard, JsonSerializer.Serialize(busTags), JsonSerializer.Serialize(busSections) });
+                }
+            });
+
+        return switchboards;
+    }
+
+
+    public async Task UpdateStudyResultsToClientPage()
+    {
+        Debug.WriteLine("Server Side: Refreshng study results to the client page......");
+        // run LF SC study to generate all the latest data
+        var tupleResult = await MainLoadFlow(CableBranches, Transformers, BusDucts, Buses, Switches, Loads);
+        var BusesResult = tupleResult.Item1;
+        var BranchesResult = tupleResult.Item2;
+
+        if (BusesResult.Count == 0 || BranchesResult.Count == 0) return;
+
+        var buses = JsonSerializer.Serialize(BusesResult);
+        var switchboards = JsonSerializer.Serialize(FindSwitchboards(BusesResult));
+        var switches = JsonSerializer.Serialize(Switches);
+        var branches = JsonSerializer.Serialize(BranchesResult);
+        var loads = JsonSerializer.Serialize(Loads);
+        var transformers = JsonSerializer.Serialize(Transformers);
+        var cableBranches = JsonSerializer.Serialize(CableBranches);
+        var busDucts = JsonSerializer.Serialize(BusDucts);
+
+        // as SLD is already created, only parameters are passed on
+
+        await JsRuntime.InvokeVoidAsync("updateSLDWithStudyResults", buses, switchboards, switches, branches, loads, transformers, cableBranches, busDucts);
+    }
+
+
+    [JSInvokable("SLDComponentUpdate")]
+    public async Task SLDComponentUpdate(string sldComponentsString)
+    {
+        // assumption: only changed data is received
+        Debug.WriteLine("Server Side:SLDComponentUpdate......");
+
+        // read data from the database afresh, not from cache
+        GlobalData.SLDComponents = await MyTable.GetList(new SLDComponent(), GlobalData.SelectedProject.Tag);
+        SLDComponents = await MyTable.GetList(new SLDComponent(), GlobalData.SelectedProject.Tag);
+
+        try
+        {
+            var sldComponents = JsonSerializer.Deserialize<List<SLDComponent>>(sldComponentsString);
+            Debug.WriteLine($"Server Side:SLDComponentUpdate.....{sldComponents.Count} data changed.");
+
+            foreach (var sldJS in sldComponents)
+            {
+                // find existing entry is available
+                var sld = SLDComponents.Find(item =>
+                    item.Tag == sldJS.Tag &&
+                    item.Type == sldJS.Type &&
+                    item.SLD == sldJS.SLD
+                );
+                // if not found new SLDComponent will be created
+                if (sld is not null)
+                {
+                    Debug.WriteLine($"Tag '{sld.Tag}', Type '{sld.Type}' SLD '{sld.SLD}' : data changed from '{sld.PropertyJSON}' to '{sldJS.PropertyJSON}'.");
+                    // update the JSON Property
+                    sld.PropertyJSON = sldJS.PropertyJSON;
+                    // update existing record
+                    await MyTable.UpdateItem(sld, sld.UID);
+                }
+                else
+                {
+                    Debug.WriteLine($"Tag '{sldJS.Tag}', Type '{sldJS.Type}' SLD '{sldJS.SLD}': new data '{sldJS.PropertyJSON}' to be added.");
+                    // create a new SLDComponent afresh
+                    sld = new SLDComponent();
+                    sld.Tag = sldJS.Tag;
+                    sld.Type = sldJS.Type;
+                    sld.SLD = sldJS.SLD;
+                    sld.PropertyJSON = sldJS.PropertyJSON;
+                    sld.UID = Guid.NewGuid();
+                    sld.UpdatedOn = DateTime.Now;
+                    sld.UpdatedBy = "KP";
+                    sld.Save2DB = true;
+                    // add the new item
+                    await MyTable.InsertItem(sld);
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine($"Server Side:SLDComponentUpdate.....Error {e.Message}.");
+        }
+    }
+
+    /// <summary>
+    /// this function validates all the consequences for a modified link
+    /// return outcome (success or failure) and changes in SLD item(s), if any
+    /// </summary>
+    /// <param name="linkDataString"></param>
+    /// <returns></returns>
+    [JSInvokable("SLDValidateLink")]
+    public async Task<bool> SLDValidateLink(string linkDataString)
+    {
+        // Parse the JSON string into a JsonDocument
+        using (var doc = JsonDocument.Parse(linkDataString))
+        {
+            var root = doc.RootElement;
+
+            // You can navigate the JsonElement and read values
+            var sourceTag = root.TryGetProperty("sourceTag", out var sourceTagElement) 
+                ? sourceTagElement.GetString() 
+                : null;
+            var targetTag = root.TryGetProperty("targetTag", out var targetTagElement) 
+                ? sourceTagElement.GetString() 
+                : null;
+            var sourcePort = root.TryGetProperty("sourcePort", out var sourcePortElement) 
+                ? sourceTagElement.GetString() 
+                : null;
+            var targetPort = root.TryGetProperty("targetPort", out var targetPortElement) 
+                ? sourceTagElement.GetString() 
+                : null;
+
+            Debug.WriteLine($"Server Side: Source {sourceTag} Port {sourcePort} Target {targetTag} Port{targetPort} to be validated...");
+
+        
+            
+        }
+        
+        
+        
+
+        return true;
+    }
+
+
+    [JSInvokable("SLDRemoveLink")]
+    public async Task<bool> SLDRemoveLink(string linkDataString)
+    {
+        // Parse the JSON string into a JsonDocument
+        using (var doc = JsonDocument.Parse(linkDataString))
+        {
+            var root = doc.RootElement;
+
+            // You can navigate the JsonElement and read values
+            var sourceTag = root.GetProperty("sourceTag").GetString();
+            var targetTag = root.GetProperty("targetTag").GetString();
+            var sourcePort = root.GetProperty("sourcePort").GetString();
+            var targetPort = root.GetProperty("targetPort").GetString();
+            Debug.WriteLine($"Server Side: Removing Link between Source {sourceTag} Port {sourcePort} Target {targetTag} Port{targetPort} ...");
+        }
+
+        return true;
+    }
+
+    
+
+    private async Task ClearCache<T>(T item)
+    {
+        //var dbName = typeof(T).Name;
+        //var recordKey = "NavMenu_" + dbName + "_" + DateTime.Now.ToString("yyyyMMdd_hh");
+        //await cache.RemoveAsync(recordKey);
+        
+        // Construct the pattern to match all hourly keys for this type.
+        // The pattern needs a wildcard for the varying parts.
+        // Original key format: "NavMenu_" + dbName + "_" + DateTime.Now.ToString("yyyyMMdd_hh")
+        // So, the pattern will be: "NavMenu_CableData_*"
+        var pattern = $"NavMenu_{typeof(T).Name}_*";
+        await CacheService.RemoveByPatternAsync(pattern);
+        System.Diagnostics.Debug.WriteLine($"Attempted to clear all cache for pattern: {pattern}");
+        
+        
+    }
+
+
+    // public class DefaultClass
+    // { }
+
+    // public T ItemOfType<T>(string tag, string classType) where T : class
+    // {
+    //     switch (classType)
+    //     {
+    //         case "transformer": return Transformers.Find(item => item.Tag == tag) as T;
+    //         case "bus": return Buses.Find(item => item.Tag == tag) as T;
+    //         case "cable": return CableBranches.Find(item => item.Tag == tag) as T;
+    //         case "busduct": return BusDucts.Find(item => item.Tag == tag) as T;
+    //         case "loads": return Loads.Find(item => item.Tag == tag) as T;
+    //         default: return new DefaultClass() as T;
+    //     }
+    // }
+
+
+}

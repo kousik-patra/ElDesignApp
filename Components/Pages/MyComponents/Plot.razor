@@ -1,0 +1,493 @@
+
+@using System.Diagnostics
+@using System.Numerics
+@using System.Reflection
+@using System.Runtime
+@using System.Text.Json
+@inject NavigationManager MyNavigationManager;
+@inject IJSRuntime JSRuntime;
+@using ElDesignApp.Models;
+@using ElDesignApp.Data;
+
+
+@inject Services.IDataRetrievalService DataService
+@inject Services.IMyTableService MyTable
+@inject Services.IGlobalDataService GlobalData
+@inject Services.IMyFunctionService MyFunction
+@inject Services.ILayoutFunctionService LayoutFunction
+
+
+
+<button @onclick="@HidePlotPlan" data-toggle="button" class="btn btn-info" style="float:left;" title="Hide/Show 3D">Plot
+    Plan for @_title: @(show3D ? "Hide" : "Show")</button>
+@if (show3D)
+{
+    <h5>@Header</h5>
+    @if (isWorking)
+    {
+        <img src="/images/working.gif" asp-append-version="true" width="300" alt=""/>
+    }
+
+    <h6>
+        <pre>    @timeStamp @_sceneInfo.Display[0] @_sceneInfo.Display[1] @_sceneInfo.Display[2]</pre>
+    </h6>
+}
+<div class="progress" style="display:@(show3D ? "block" : "none")">
+    <div class="progress-bar progress-bar-striped bg-success" role="progressbar" style="width:@progress%"
+         aria-valuenow="@progress" aria-valuemin="0" aria-valuemax="100">@progressItem @progress%
+    </div>
+</div>
+<div id="@_divString" onclick="@UpdatePage"
+     style="height: 1200px; width: 800px; display:@(show3D ? "block" : "none")"></div>
+<h5>@Footer</h5>
+<br/>
+
+@code {
+    [Parameter] public RenderFragment? Header { get; set; }
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? DivString { get; set; }
+    private static string? _title;
+    [Parameter] public SceneInfo SceneInfo { get; set; } = new();
+    private static SceneInfo? _sceneInfo;
+    [Parameter] public List<ClickedPoint> ClickedPoints { get; set; } = new();
+    private static List<ClickedPoint>? _clickedPoints;
+    [Parameter] public RenderFragment? Footer { get; set; }
+    [Parameter] public List<string> DisplayItems { get; set; } = [];
+
+    private static string _divString;
+    private static float _rendererWidth;
+    private static float _rendererHeight;
+    private DotNetObjectReference<Draw>? objPlot;
+    private bool shouldRenderUIChanges = true;
+    private string timeStamp = "";
+
+    private int progress;
+    private static string progressItem = "";
+    private bool isWorking;
+
+    private static bool show3D;
+
+    private readonly JsonSerializerOptions _jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+
+    public async Task HidePlotPlan()
+    {
+        if (show3D)
+        {
+            //await JSRuntime.InvokeVoidAsync("clearScene");
+        }
+
+        show3D = !show3D;
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override void OnInitialized()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        _title = Title;
+        _divString = DivString;
+        _sceneInfo = SceneInfo;
+        _clickedPoints = ClickedPoints;
+        //
+        base.OnInitialized();
+    }
+
+    
+    protected override async Task OnInitializedAsync()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        await base.OnInitializedAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table -  {MethodBase.GetCurrentMethod()?.Name}");
+
+        base.OnParametersSet();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender}");
+
+        if (firstRender)
+        {
+            //
+            // reading existing trays, bends, cross, nodes, sleeves, etc. from the database
+            if (GlobalData.Trays != null && GlobalData.Trays.Count == 0 && show3D)
+            {
+                // retrieve previously generated and saved segment items from the already read segmentresults
+                isWorking = true;
+                StateHasChanged();
+                if (GlobalData.SegmentResults != null)
+                {
+                    var tuple = LayoutFunction.ReadSegNodeEtc(GlobalData.SegmentResults);
+                    GlobalData.Trays = tuple.Item1;
+                    GlobalData.Bends = tuple.Item2;
+                    GlobalData.Tees = tuple.Item3;
+                    GlobalData.Crosses = tuple.Item4;
+                    GlobalData.Sleeves = tuple.Item5;
+                    GlobalData.Nodes = tuple.Item6;
+                }
+
+                isWorking = false;
+                StateHasChanged();
+            }
+
+            //
+            // draw the scene
+            objPlot = DotNetObjectReference.Create(new Draw(LayoutFunction, GlobalData));
+            await JSRuntime.InvokeVoidAsync("drawScene", _divString, _sceneInfo.SceneJSON, objPlot);
+            //
+            GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+            GC.Collect();
+            // draw planes
+            if (GlobalData.PlotPlans != null)
+            {
+                var plotPlans = GlobalData.PlotPlans.ToList();
+                //
+                _rendererWidth = _sceneInfo.RendererWidth;
+                _rendererHeight = _sceneInfo.RendererHeight;
+                //
+                // draw plot plans
+                if (plotPlans.Count != 0 && DisplayItems.Contains("Plot"))
+                {
+                    try
+                    {
+                        for (var i = 0; i < plotPlans.Count; i++)
+                        {
+                            var im = plotPlans[i];
+                            var planeName = $"{_title} - {im.Tag}";
+                            var planeTag = $"plotplan{(i + 1).ToString("D" + 2)}";
+                            var scaleX = im.ScaleX * im.RendererWidth / _rendererWidth; // global.SegRendererWidth;
+                            var scaleY = im.ScaleY * im.RendererHeight / _rendererHeight; // global.SegRendererHeight;
+                            Debug.WriteLine($"Drawing Plot Plan -> planeName {planeName}, planeTag {planeTag}, " +
+                                            $"im.ScaleX: {im.ScaleX}, im.ScaleY: {im.ScaleY}, " +
+                                            $"im.RendererWidth: {im.RendererWidth}, im.RendererHeight: {im.RendererHeight}, " +
+                                            $"_rendererWidth: {_rendererWidth}, _rendererHeight: {_rendererHeight}, " +
+                                            $"scaleX: {scaleX}, scaleY: {scaleY}, im.CentreX: {im.CentreX}, im.CentreY: {im.CentreY}, " +
+                                            $"im.Z, {im.Z}, im.Opacity {im.Opacity}");
+                            //await JSRuntime.InvokeVoidAsync("consoleLog", $"Step 1: Drawing Plane from Blazor : {planeTag}");
+                            await JSRuntime.InvokeVoidAsync("drawPlane", planeName, planeTag, im.ImgString,
+                                scaleX, scaleY, im.CentreX, im.CentreY, im.Z, im.Opacity);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.WriteLine($"Error : {e.Message}");
+                    }
+                }
+            }
+
+            //
+            // draw trays
+
+            var trays = GlobalData.Segments.ToList();
+            if (trays.Count != 0 && DisplayItems.Contains("RawSegment"))
+            {
+                var validTrays = trays.Where(tray => tray.End1 != tray.End2 && Math.Abs(Vector3.Dot(Vector3.Normalize(tray.End2 - tray.End1), Vector3.Normalize(tray.Face))) < 0.95f).ToList();
+
+                // var batch = validTrays.Select(tray => new
+                // {
+                //     Tag = tray.Tag,
+                //     Points = LayoutFunction.DrawLadderJSONPoints(tray.Width, tray.Height, tray.End1, tray.End2, tray.Face),
+                //     Color = tray.AllowableTypes != null && tray.AllowableTypes.Contains("LV") ? 
+                //         GlobalData.segmentColorLV : tray.AllowableTypes != null && tray.AllowableTypes.Contains("HV") ? 
+                //             GlobalData.segmentColorHV : GlobalData.segmentColorNeutral,
+                //     Opacity = 0.5
+                // }).ToList();
+                // await JSRuntime.InvokeVoidAsync("consoleLog", $"Step 1: Drawing Trays as batch from Blazor for {validTrays.Count} trays.");
+                // await JSRuntime.InvokeVoidAsync("drawLadderBatch", JsonSerializer.Serialize(batch, _jsonSerializerOptions));
+
+
+                // process ony by one
+                //await DrawTraysAsync(validTrays);
+
+                // process in the chunck
+                const int chunkSize = 1000;
+                for (int i = 0; i < validTrays.Count; i += chunkSize)
+                {
+                    var chunk = validTrays.Skip(i).Take(chunkSize).ToList();
+                    var dataList = new List<LadderJsData>();
+                    chunk.ForEach(tray =>
+                    {
+                        dataList.Add(new LadderJsData
+                        {
+                            Tag = tray.Tag,
+                            JsonPoints = LayoutFunction.DrawLadderJSONPoints(tray.Width, tray.Height, tray.End1, tray.End2, tray.Face),
+                            Color = JsonSerializer.Serialize(tray.AllowableTypes != null && tray.AllowableTypes.Contains("LV") ? GlobalData.segmentColorLV : tray.AllowableTypes != null && tray.AllowableTypes.Contains("HV") ? GlobalData.segmentColorHV : GlobalData.segmentColorNeutral, _jsonSerializerOptions)
+                        });
+                    });
+
+                    // Serialize the list to a JSON string
+                    string jsonDataList = JsonSerializer.Serialize(dataList, _jsonSerializerOptions);
+                    var opacity = 1;
+                    await JSRuntime.InvokeVoidAsync("drawLadderChunk", jsonDataList, opacity);
+                }
+
+
+                // if (trays.Count != 0 && DisplayItems.Contains("RawSegment"))
+                // {
+                //     try
+                //     {
+                //         progress = 0;
+                //         for (int i = 0; i < Math.Min(1000,trays.Count); i++)
+                //         {
+                //             var tray = trays[i];
+                //             var jSONstring = LayoutFunctions.DrawLadderJSONPoints(tray.Width, tray.Height, tray.End1, tray.End2, tray.Face);
+                //             var color = (tray.AllowableTypes.Contains("LV")) ? GlobalData.segmentColorLV : (tray.AllowableTypes.Contains("HV")) ? GlobalData.segmentColorHV : GlobalData.segmentColorNeutral;
+                //             var opacity = 0.5;
+                //             await JSRuntime.InvokeVoidAsync("drawLadder", tray.Tag, jSONstring, JsonSerializer.Serialize(color), opacity);
+                //             if ((int)(100 * i / trays.Count) == progress)
+                //             {
+                //                 progress++;
+                //                 progressItem = $"Drawing Straight Sections {i + 1}/{trays.Count}";
+                //                 StateHasChanged();
+                //             }
+                //         }
+                //     }
+                //     catch (Exception e)
+                //     {
+                //         System.Diagnostics.Debug.WriteLine($"Error : {e.Message.ToString()}");
+                //     }
+                // }
+            }
+
+
+            // draw Bend
+            var bends = GlobalData.Bends.ToList();
+            if (bends.Count != 0 && DisplayItems.Contains("Bend"))
+            {
+                try
+                {
+                    progress = 0;
+                    for (var i = 0; i < bends.Count; i++)
+                    {
+                        var bend = bends[i];
+                        var jSONstring = LayoutFunction.DrawBendJSONPoints(bend.X, bend.P1, bend.P2, bend.W1, bend.W2, bend.F1, bend.F2, bend.H1, bend.H2, bend.Step);
+                        var color = GlobalData.segmentColorNeutral;
+                        var opacity = 1;
+                        //await JSRuntime.InvokeVoidAsync("drawBend", bend.Tag, jSONstring, JsonSerializer.Serialize(color), opacity);
+                        if (100 * i / bends.Count == progress)
+                        {
+                            progress++;
+                            progressItem = $"Drawing Bends {i + 1}/{bends.Count}";
+                            StateHasChanged();
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message}");
+                }
+            }
+
+            // draw Tee
+            var tees = GlobalData.Tees.ToList();
+            if (tees.Count != 0 && DisplayItems.Contains("Tee"))
+            {
+                try
+                {
+                    progress = 0;
+                    for (var i = 0; i < tees.Count; i++)
+                    {
+                        var tee = tees[i];
+                        var jSONstring = LayoutFunction.DrawTeeJSONPoints(tee.X, tee.P1, tee.P2, tee.P3, tee.W1, tee.W2, tee.W3, tee.F1, tee.F2, tee.F3, tee.H1, tee.H2, tee.H3, tee.Step);
+                        var color = GlobalData.segmentColorNeutral;
+                        var opacity = 1;
+                        //await JSRuntime.InvokeVoidAsync("drawTee", tee.Tag, jSONstring, JsonSerializer.Serialize(color), opacity);
+                        if (100 * i / tees.Count == progress)
+                        {
+                            progress++;
+                            progressItem = $"Drawing Tee Junctions {i + 1}/{tees.Count}";
+                            StateHasChanged();
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message}");
+                }
+            }
+
+            // draw Cross
+            var crosses = GlobalData.Crosses.ToList();
+            if (crosses.Count != 0 && DisplayItems.Contains("Cross"))
+            {
+                try
+                {
+                    progress = 0;
+                    for (var i = 0; i < crosses.Count; i++)
+                    {
+                        var cross = crosses[i];
+                        var jSONstring = LayoutFunction.DrawCrossJSONPoints(cross.X, cross.P1, cross.P2, cross.P3, cross.P4, cross.W1, cross.W2, cross.W3, cross.W4,
+                            cross.F1, cross.F2, cross.F3, cross.F4, cross.H1, cross.H2, cross.H3, cross.H4, cross.Step);
+
+                        var color = GlobalData.segmentColorNeutral;
+                        var opacity = 1;
+                        //await JSRuntime.InvokeVoidAsync("drawCross", cross.Tag, jSONstring, JsonSerializer.Serialize(color), opacity);
+                        if (100 * i / crosses.Count == progress)
+                        {
+                            progress++;
+                            progressItem = $"Drawing Crosses {i + 1}/{crosses.Count}";
+                            StateHasChanged();
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message}");
+                }
+            }
+
+            // draw Node
+            var nodes = GlobalData.Nodes.ToList();
+            if (nodes.Count != 0 && DisplayItems.Contains("Node"))
+            {
+                try
+                {
+                    progress = 0;
+                    for (var i = 0; i < nodes.Count; i++)
+                    {
+                        var node = nodes[i];
+                        var jSONstring = JsonSerializer.Serialize(node.Point);
+
+
+                        var color = GlobalData.nodeColor;
+                        var opacity = 1;
+                        //await JSRuntime.InvokeVoidAsync("drawNode", node.Tag, jSONstring, JsonSerializer.Serialize(color), opacity);
+                        if (100 * i / nodes.Count == progress)
+                        {
+                            progress++;
+                            progressItem = $"Drawing Node {i + 1}/{nodes.Count}";
+                            StateHasChanged();
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message}");
+                }
+            }
+
+            // draw sleeve
+            var sleeves = GlobalData.Sleeves.ToList();
+            if (sleeves.Count != 0 && DisplayItems.Contains("Sleeve"))
+            {
+                try
+                {
+                    progress = 0;
+                    for (var i = 0; i < sleeves.Count; i++)
+                    {
+                        var sleeve = sleeves[i];
+                        var jsonPoints = LayoutFunction.DrawSleeveJSONPoints(sleeve.Points, sleeve.BendRadius);
+
+                        var color = GlobalData.nodeColor;
+                        var opacity = .5;
+                        var tag = sleeve.Tag;
+                        var radious = sleeve.Dia / 2;
+                        var segment = 5;
+                        var radialSegments = 10;
+                        await JSRuntime.InvokeVoidAsync("drawSleeveZ", tag, jsonPoints, radious, segment, radialSegments, JsonSerializer.Serialize(color), opacity);
+                        if (100 * i / sleeves.Count == progress)
+                        {
+                            progress++;
+                            progressItem = $"Drawing Sleeves {i + 1}/{sleeves.Count}";
+                            StateHasChanged();
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message}");
+                }
+            }
+
+            // draw structural steel
+        }
+
+        base.OnAfterRenderAsync(firstRender);
+    }
+
+    public class LadderJsData
+    {
+        public string? Tag { get; set; }
+        public string JsonPoints { get; set; }
+        public string Color { get; set; }
+    }
+
+
+    protected override bool ShouldRender()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table -  {MethodBase.GetCurrentMethod()?.Name}");
+        return base.ShouldRender();
+    }
+
+    public void Dispose()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table -  {MethodBase.GetCurrentMethod()?.Name}");
+        objPlot?.Dispose();
+    }
+
+
+    [JSInvokable]
+    public static void SaveSceneInfo(string sceneInfoJSON)
+    {
+        Debug.WriteLine($"sceneInfoJSON: {sceneInfoJSON}");
+    }
+
+
+    private void UpdatePage(MouseEventArgs e)
+    {
+        // await Task.Delay(20);
+        // var mousePointerMessage = $"Mouse coordinates: {e.ScreenX}:{e.ScreenY}";
+        timeStamp = $"[{DateTime.Now:HH:mm:ss.f}]";
+        // StateHasChanged();
+    }
+
+
+    private async Task DrawTraysAsync(List<Segment> trays)
+    {
+        Debug.WriteLine($"Drawing trays  : {trays.Count}");
+        var totalTrays = trays.Count;
+        var processedTrays = 0;
+        var validTrays = trays.Where(tray => tray.End1 != tray.End2 && Math.Abs(Vector3.Dot(Vector3.Normalize(tray.End2 - tray.End1), Vector3.Normalize(tray.Face))) < 0.95f).ToList();
+        await Parallel.ForEachAsync(validTrays, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, async (tray, cancellationToken) =>
+            //for (int i = 0; i < totalTrays; i++)
+        {
+            try
+            {
+                //var tray = trays[i];
+                //if (tray.End1 != tray.End2 && Math.Abs(Vector3.Dot(Vector3.Normalize(tray.End2 - tray.End1), Vector3.Normalize(tray.Face))) < 0.95f)
+                {
+                    // the tray length is not too short, and the tray face is not reasonably parallel to the tray length vector
+                    // then draw the tray
+
+                    var jSONstring = LayoutFunction.DrawLadderJSONPoints(tray.Width, tray.Height, tray.End1, tray.End2, tray.Face);
+                    var color = tray.AllowableTypes.Contains("LV") ? GlobalData.segmentColorLV : tray.AllowableTypes.Contains("HV") ? GlobalData.segmentColorHV : GlobalData.segmentColorNeutral;
+                    var opacity = 1;
+                    await JSRuntime.InvokeVoidAsync("drawLadder", tray.Tag, jSONstring, JsonSerializer.Serialize(color, _jsonSerializerOptions), opacity);
+                }
+
+                processedTrays++;
+                //Debug.WriteLine($"{processedTrays}");
+                //UpdateProgress(processedTrays, totalTrays, $"Drawing Straight Sections {processedTrays}/{totalTrays}");
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine($"Error : {e.Message}");
+            }
+        });
+    }
+
+    private void UpdateProgress(int processed, int total, string item)
+    {
+        progress = (int)(100.0 * processed / total);
+        progressItem = item;
+        InvokeAsync(StateHasChanged); // Use InvokeAsync for thread safety
+    }
+
+
+}

@@ -1,0 +1,1620 @@
+@attribute [StreamRendering]
+
+
+@using System.Diagnostics
+@using System.IO
+@using System.Linq.Expressions
+@using System.Reflection
+@using System.Text.Json
+@using System.Xml.XPath
+@using ElDesignApp.Models
+@using ElDesignApp.Services
+@using ElDesignApp.Components.MyModals
+
+@typeparam T;
+
+@inject NavigationManager MyNavigationManager
+@inject IJSRuntime Js;
+
+
+@using ElDesignApp.Services
+@inject Services.IDataRetrievalService DataService
+@inject Services.IMyTableService MyTable 
+@inject Services.IGlobalDataService GlobalData
+@inject Services.IMyFunctionService MyFunction
+
+<style>
+
+    .tableFixHead {
+        height: 600px;
+        overflow-x: auto;
+        overflow-y: auto
+    }
+
+    .tableFixHead thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+    .tableFixHead tbody th {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+    }
+
+    /* Hide the spinners */
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+
+    input[type="number"] {
+        -moz-appearance: textfield;
+    }
+
+</style>
+
+
+<script>
+    // Function to set width of dynamicDiv based on window size
+    function setDynamicDivWidth() {
+        var dynamicDiv = document.getElementById('dynamicDiv');
+        if (dynamicDiv) {
+            var windowWidth = window.innerWidth;
+            // Example calculation, adjust as per your requirements
+            var newWidth = windowWidth * 0.8; // 80% of window width
+            dynamicDiv.style.width = newWidth + 'px';
+            //console.log("width ", dynamicDiv.style.width);
+        }
+    }
+
+    // Run setDynamicDivWidth on page load and window resize
+    document.addEventListener('DOMContentLoaded', function () {
+        setDynamicDivWidth();
+    });
+    document.addEventListener('click', function () {
+        setDynamicDivWidth();
+    });
+
+    window.addEventListener('resize', function () {
+        setDynamicDivWidth();
+    });
+
+</script>
+
+<div id="dynamicDiv" class="container-fluid float-left">
+    <div class="row float-left">
+        <h3>@Header</h3>
+        @ChildContent
+    </div>
+    @if (List is null)
+    {
+        <div class="row float-left">
+            <p><em>Loading data ...</em></p>
+        </div>
+    }
+    else
+    {
+        <div class="row float-left">
+            <div class="container-fluid">
+
+
+                <div class="container-fluid">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <!-- Header (Extreme Left) -->
+                        <div class="header">
+                            <span style="width: 100px; font-weight: bolder;">@Header</span>
+                        </div>
+
+                        <!-- Extra Buttons and Button Groups (Extreme Right) -->
+                        <div class="d-flex align-items-center">
+                            <!-- Extra Buttons (RenderFragment) -->
+                            <div class="me-3"> <!-- Add a gap between extra buttons and the button groups -->
+                                @ExtraButtons
+                            </div>
+
+                            <!-- Button Groups -->
+                            <div class="btn-toolbar" role="toolbar" aria-label="Toolbar with button groups">
+                                <!-- First Button Group -->
+                                <div class="btn-group me-2" role="group" aria-label="First group">
+                                    <button hidden="@(!_showInputFile)" @onclick="@(() => { _showInputFile = false; })"
+                                            title="Import to add the existing table" data-toggle="button"
+                                            class="btn btn-outline-info">Import
+                                    </button>
+                                    <InputFile hidden="@_showInputFile" OnChange="@ImportRecord"
+                                               class="btn btn-outline-secondary btn-sm"/>
+                                </div>
+
+                                <!-- Second Button Group -->
+                                <div class="btn-group me-2" role="group" aria-label="Second group">
+                                    <button @onclick="DeleteRecord" data-toggle="button" class="btn btn-outline-danger"
+                                            title="Delete selected record">Delete
+                                    </button>
+                                    <button @onclick="AddRecord" data-toggle="button" class="btn btn-outline-info"
+                                            title="Add new (copied from last/selected record)">Add
+                                    </button>
+                                    <button @onclick="MoveUp" data-toggle="button" class="btn btn-outline-info"
+                                            title="Add new (move the record up in the order)">MoveUp
+                                    </button>
+                                    <button @onclick="MoveDown" data-toggle="button" class="btn btn-outline-info"
+                                            title="Add new (move the record down the order)">MoveDown
+                                    </button>
+                                </div>
+
+                                <!-- Third Button Group -->
+                                <div class="btn-group" role="group" aria-label="Third group">
+                                    <button @onclick="ParentRefresh" data-toggle="button"
+                                            class="btn btn-outline-info" title="Refresh Data">Refresh
+                                    </button>
+                                    <button @onclick="ParentDiscard" data-toggle="button"
+                                            class="btn btn-outline-warning" title="Discard Changes">Discard
+                                    </button>
+                                    <button @onclick="ParentUpdate" data-toggle="button" class="btn btn-outline-success"
+                                            title="Verify and Update Changes">Update
+                                    </button>
+                                    <button @onclick="Download" data-toggle="button" class="btn btn-outline-primary"
+                                            title="Download the table">Download
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row" style="width: auto">
+                    @if (_showBasicModal)
+                    {
+                        <BasicModal
+                            DialogType="BasicModal.ModalDialogType.AppendReplaceDiscard"
+                            Title="Import from File"
+                            Text=@_basicModalText
+                            OnClose="@(e =>
+                                     {
+                                         if (e != string.Empty)
+                                         {
+                                             if (e == "Append")
+                                             {
+                                                 AppendRecord();
+                                             }
+                                             else if (e == "Replace")
+                                             {
+                                                 ReplaceRecord();
+                                             }
+                                         }
+
+                                         _showBasicModal = false;
+                                     })"
+                        ></BasicModal>
+                    }
+                </div>
+                <br>
+                @if (List.Count == 0)
+                {
+                    <p>Loading.....</p>
+                }
+                else
+                {
+                    <div class="row float-left" style="padding-left: 0">
+                        <input class="form-control" type="text" placeholder="type key words to filter the list..."
+                               @oninput="e => { _filterInputString = e?.Value?.ToString(); DoFilter(); }">
+                    </div>
+                    <div class="row float-left">
+                        <div class="tableFixHead">
+                            <table
+                                class="table table-striped table-bordered table-hover table-responsive-lg text-nowrap"
+                                data-toggle="table" data-show-columns="true" data-resizable="true">
+                                <thead>
+                                <tr class="table-borderless">
+                                    <th>
+                                        <input type="number" style="margin-left: 0; margin-right: 0"
+                                               class="form-control" placeholder="..."
+                                               @oninput="e => { _searchRecordSeq = int.TryParse(e?.Value?.ToString(), out var f) ? f : default; _displayPageNo = 1; DoFilter(); }">
+                                    </th>
+                                    @foreach (var property in from property in _tableProperties let j = _tableProperties.IndexOf(property) select property)
+                                    {
+                                        // column width not working
+                                        //style="max-width: @ColWidth[j]%; min-width: @ColWidth[j]%;"
+                                        <th data-toggle="tooltip" data-placement="right"
+                                            title="Enter double space to filter for blank data">
+                                            <input class="form-control" type="text" placeholder="..."
+                                                   @oninput="e => { _fieldSearchStringList[_tableProperties.IndexOf(property)] = e?.Value?.ToString(); _displayPageNo = 1; DoFilter(); }">
+                                        </th>
+                                    }
+                                </tr>
+                                <tr class="thead-light">
+                                    <th>S.N.</th>@* data original sequence no*@
+                                    @foreach (var property in _tableProperties)
+                                    {
+                                        @* if(property.Name == "Rl")
+                                        {
+                                        // Get the XML documentation comments for the property
+                                        string xmlComments = GetXmlDocumentation(property);
+                                        // Parse XML documentation to extract <remarks> content
+                                        string remarks = GetRemarksFromXml(xmlComments);
+                                        Console.WriteLine($"Remarks for property 'Name': {remarks}");
+                                        } *@
+
+                                        var j = _tableProperties.IndexOf(property);
+                                        var fields = _dbMaster.Where(list => list.FieldName == property.Name).ToList();
+                                        var shortFieldName = fields.Any() ? fields[0].ShortFieldName : property.Name;
+                                        var fieldDisplay = fields.Any() ? fields[0].DisplayFieldName : property.Name;
+                                        // column width not working
+                                        //style="max-width: @ColWidth[j]%; min-width: @ColWidth[j]%;"
+                                        <th style="width: @(_colWidth[j])%;" data-toggle="tooltip" data-placement="right" title="@fieldDisplay"
+                                            @onclick="() => { // 0-not index, 1-ascending, 2 descending
+    if (_propertyIndexed[j] == 1) 
+    { 
+        // current list is in ascending order
+        // sort in descending order by this property
+        List = List.OrderByDescending(x => Convert.ToString(property.GetValue(x))).ToList(); 
+        ListOriginal = ListOriginal!.OrderByDescending(x => Convert.ToString(property.GetValue(x))).ToList(); 
+        _propertyIndexed[j] = 2; 
+    }else if (_propertyIndexed[j] == 2) 
+    { 
+        // current list is in descending order
+        // revert to original order of Sequence
+        if (SeqProperty != null) { List = List.OrderBy(x => Convert.ToString(SeqProperty.GetValue(x))).ToList(); 
+            ListOriginal = ListOriginal!.OrderBy(x => Convert.ToString(SeqProperty.GetValue(x))).ToList(); 
+            _propertyIndexed[j] = 0; } }else { // current list is in order of sequence
+        // sort in ascending order by this property
+        List = List.OrderBy(x => Convert.ToString(property.GetValue(x))).ToList(); 
+        ListOriginal = ListOriginal!.OrderBy(x => Convert.ToString(property.GetValue(x))).ToList(); 
+        _propertyIndexed[j] = 1; } DoPagination(); StateHasChanged(); }">
+                                            @(_propertyIndexed[j] == 1 ? char.ConvertFromUtf32(0x2191) : _propertyIndexed[j] == 2 ? char.ConvertFromUtf32(0x2193) : char.ConvertFromUtf32(0x0020))
+                                            @shortFieldName
+                                        </th>
+                                    }
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @if (_displayList != null)
+                                {
+                                    for (var i = 0; i < _displayList.Count(); i++)
+                                    {
+                                        var thisUid = (Guid)_uidProperty.GetValue(_displayList[i]);
+                                        <tr @onclick="@(async () =>
+                                                      {
+                                                          if (SelectedItemUid == thisUid)
+                                                          {
+                                                              // already selected
+                                                              SelectedItemUid = Guid.Empty;
+                                                          }
+                                                          else
+                                                          {
+                                                              SelectedItemUid = thisUid;
+                                                              _selectedIndex = List.FindIndex(item => SelectedItemUid == (Guid)_uidProperty.GetValue(item));
+                                                              _selectedItem = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(List[_selectedIndex]));
+                                                              var args = (_selectedItem, SelectedItemUid);
+                                                              await SelectedItem.InvokeAsync(args);
+                                                          }
+
+                                                          DoSelection(); // to act on Server side
+                                                          //System.Diagnostics.Debug.WriteLine($"Clicked item sequence: {selectedIndex} UID:{selectedItemUID}");
+                                                      })"
+                                            class="@CssClassTableRow(thisUid)">
+                                            <th>@(_seqList[i] + 1)</th>@* data original sequence no*@
+                                            @foreach (var property in _tableProperties)
+                                            {
+                                                var j = _tableProperties.IndexOf(property);
+                                                // check for any cell specific CSS received from parent
+                                                var css = "";
+                                                var csss = CssProperty?.GetValue(_displayList[i]);
+                                                if (csss is List<string> list)
+                                                {
+                                                    var prop = AllTProperties.Where(p => p.Name == property.Name).ToList();
+                                                    var ind = AllTProperties.IndexOf(prop[0]);
+                                                    css = list[ind];
+                                                }
+
+                                                //
+                                                var existingCellStatus = _cellStatusRecord.Where(record => record.Uid == thisUid && record.FieldName == property.Name).ToList();
+                                                CellStatus thisCellStatus;
+                                                if (existingCellStatus.Count == 0)
+                                                {
+                                                    thisCellStatus = new CellStatus();
+                                                    thisCellStatus.Uid = thisUid;
+                                                    thisCellStatus.Seq = _seqList[i];
+                                                    thisCellStatus.FieldName = property.Name;
+                                                    thisCellStatus.ClickedStatus = false;
+                                                    thisCellStatus.DblClickedStatus = false;
+                                                    _cellStatusRecord.Add(thisCellStatus);
+                                                }
+                                                else
+                                                {
+                                                    thisCellStatus = existingCellStatus[0];
+                                                }
+
+                                                <td @onmouseover="@(() =>
+                                                                  {
+                                                                      var tempcurrentCells = _cellStatusRecord.Where(record => record.Uid == thisUid && record.FieldName == property.Name).ToList();
+                                                                      _currentCell = tempcurrentCells.Count > 0 ? tempcurrentCells[0] : null;
+                                                                      //System.Diagnostics.Debug.WriteLine($"Mousehovered row : {currentCell.Seq} and field: {currentCell.FieldName}.");
+                                                                  })"
+                                                    @onclick="() => { _lastClickedCell = _currentClickedCell; _lastClickedCell.ClickedStatus = false; _currentClickedCell = _cellStatusRecord.Where(record => record.Uid == thisUid && record.FieldName == property.Name).ToList()[0]; _currentClickedCell.ClickedStatus = true; }"
+                                                    @ondblclick="@(() =>
+                                                                 {
+                                                                     if (_sqlFieldsNames.Contains(property.Name))
+                                                                     {
+                                                                         _lastDblClickedCell = _currentDblClickedCell;
+                                                                         _lastDblClickedCell.DblClickedStatus = false;
+                                                                         _currentDblClickedCell = _cellStatusRecord.Where(record => record.Uid == thisUid && record.FieldName == property.Name).ToList()[0];
+                                                                         _currentDblClickedCell.DblClickedStatus = true;
+                                                                         //System.Diagnostics.Debug.WriteLine($"Last double clicked row : {lastDblClickedCell.Seq} and field: {lastDblClickedCell.FieldName}.  Current double clicked row : {currentDblClickedCell.Seq} and field: {currentDblClickedCell.FieldName} out of total {CellStatusRecord.Count} cells");
+                                                                     }
+                                                                 })"
+                                                    class="@CssClassCell(thisCellStatus) @css">
+                                                    @if (thisCellStatus.DblClickedStatus)
+                                                    {
+                                                        var nullable = Nullable.GetUnderlyingType(property.PropertyType);
+                                                        //System.Diagnostics.Debug.WriteLine($"Current Cell {currentDblClickedCell.Seq} Thiscell {thisCellStatus.Seq}");
+                                                        var val = property.GetValue(_displayList[i]);
+                                                        if (val == null)
+                                                        {
+                                                            val = "";
+                                                        }
+
+                                                        if (property.PropertyType.Name == "String")
+                                                        {
+                                                            <text>
+                                                                <input class="form-control" type="text"
+                                                                       value="@((string)val)"
+                                                                       @onblur="@OnBlur" @onkeydown="@KeyPressHandler"
+                                                                       @onkeypress:preventDefault
+                                                                       @oninput="e => { property.SetValue(_iteratedList[thisCellStatus.Seq], e?.Value?.ToString()); }"></text>
+                                                        }
+                                                        else
+                                                        {
+                                                            if (property.PropertyType.Name == "Single")
+                                                            {
+                                                                <text>
+                                                                    <input class="form-control" type="number"
+                                                                           value="@((float)val)"
+                                                                           @onblur="@OnBlur"
+                                                                           @onkeydown="@KeyPressHandler"
+                                                                           @onkeypress:preventDefault
+                                                                           @oninput="e => { property.SetValue(_iteratedList[thisCellStatus.Seq], float.TryParse(e?.Value?.ToString(), out var f) ? f : (float)val); }"></text>
+                                                            }
+                                                            else if (property.PropertyType.Name == "Double")
+                                                            {
+                                                                <text>
+                                                                    <input class="form-control" type="number"
+                                                                           value="@((double)val)"
+                                                                           @onblur="@OnBlur"
+                                                                           @onkeydown="@KeyPressHandler"
+                                                                           @onkeypress:preventDefault
+                                                                           @oninput="e => { property.SetValue(_iteratedList[thisCellStatus.Seq], double.TryParse(e?.Value?.ToString(), out var f) ? f : (double)val); }"></text>
+                                                            }
+                                                            else if (property.PropertyType.Name.Contains("Int"))
+                                                            {
+                                                                <text>
+                                                                    <input class="form-control" type="number" min="0"
+                                                                           step="1" value="@((int)val)"
+                                                                           @onblur="@OnBlur"
+                                                                           @onkeydown="@KeyPressHandler"
+                                                                           @onkeypress:preventDefault
+                                                                           @oninput="e => { property.SetValue(_iteratedList[thisCellStatus.Seq], int.TryParse(e?.Value?.ToString(), out var f) ? f : (int)val); }"></text>
+                                                            }
+                                                            else if (property.PropertyType.Name == "Boolean")
+                                                            {
+                                                                var nullAble = Nullable.GetUnderlyingType(property.PropertyType); // null means Not Nullable
+                                                                <select @onkeydown="@KeyPressHandler"
+                                                                        @onkeypress:preventDefault
+                                                                        @oninput="e => { property.SetValue(_iteratedList[thisCellStatus.Seq], bool.TryParse(e?.Value?.ToString(), out var f) ? f : (bool)val); }">
+                                                                    @if ((bool)val)
+                                                                    {
+                                                                        <option value="true" selected> Yes</option>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <option value="true"> Yes</option>
+                                                                    }
+                                                                    @if ((bool)val == false)
+                                                                    {
+                                                                        <option value="false" selected> No</option>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <option value="false"> No</option>
+                                                                    }
+                                                                    @if (nullAble != null)
+                                                                    {
+                                                                        // property can be nullable
+                                                                        if ((string)val == "")
+                                                                        {
+                                                                            <option value="null" selected> Not
+                                                                                Applicable
+                                                                            </option>
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            <option value="null">Not Applicable</option>
+                                                                        }
+                                                                    }
+                                                                </select>
+                                                            }
+                                                            else
+                                                            {
+                                                                // other type - no editing yet
+                                                                @property.GetValue(_displayList[i])
+                                                            }
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        if (property.PropertyType.Name == "Single")
+                                                        {
+                                                            @($"{property.GetValue(_displayList[i]):F2}")
+                                                        }
+                                                        else
+                                                        {
+                                                            @property.GetValue(_displayList[i])
+                                                        }
+                                                        
+                                                    }
+                                                    @if (Button != null)
+                                                    {
+                                                        if (Button[thisCellStatus.Seq].Contains(property.Name))
+                                                        {
+                                                            var buttonText = ButtonText != null ? ButtonText[thisCellStatus.Seq][Button[thisCellStatus.Seq].IndexOf(property.Name)] : property.Name;
+                                                            <button @onclick="@(() => DoCellButton(_currentCell))"
+                                                                    data-toggle="button"
+                                                                    class="btn btn-sm btn-outline-primary mr-1"
+                                                                    style="float:right;"
+                                                                    title="@buttonText">@buttonText</button>
+                                                        }
+                                                    }
+                                                    @if (ItemTemplate != null)
+                                                    {
+                                                        <div>@ItemTemplate(_displayList[i])</div>
+                                                    }
+                                                    @if (FieldTemplate != null)
+                                                    {
+                                                        <div>@FieldTemplate(property)</div>
+                                                    }
+                                                    @if (ItemFieldTemplate != null)
+                                                    {
+                                                        <div>@ItemFieldTemplate(new ContextItemField(_displayList[i], property))</div>
+                                                    }
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    <div class="row justify-content-md-left">
+        <span style="width:900px; text-overflow:ellipsis; font-weight:lighter">@Result : @ActionMessage</span>
+        @if (SuccessMessage != "")
+        {
+            <div class="alert alert-success" role="alert">
+                Row @_selectedRecord, Column @_selectedColumn : @SuccessMessage
+            </div>
+        }
+        @if (InfoMessage != "")
+        {
+            <div class="alert alert-info" role="alert">
+                Row @_selectedRecord, Column @_selectedColumn : @InfoMessage
+            </div>
+        }
+        @if (WarningMessage != "")
+        {
+            <div class="alert alert-warning" role="alert">
+                Row @_selectedRecord, Column @_selectedColumn : @WarningMessage
+            </div>
+        }
+        @if (ErrorMessage != "")
+        {
+            <div class="alert alert-danger" role="alert">
+                Row @_selectedRecord, Column @_selectedColumn : @ErrorMessage
+            </div>
+        }
+    </div>
+
+    <div class="d-flex justify-content-center mb-4">
+        Showing page &#160;<b>@_displayPageNo</b>&#160; of &#160;<b>@_maxDisplayPage</b>&#160;
+        pages. Filtered records: &#160;<b>@_filteredList?.Count</b>&#160; out of total &#160;<b>@_totalRecords</b>&#160;
+        records.&emsp; Records per page: &#160;
+        <input type="number" class="form-control align-content-center" placeholder="10"
+               style="width:30px; padding:0;text-align: center; margin-right: 10px"
+               @oninput="e=>{_recordsPerPage = int.TryParse(e?.Value?.ToString(), out var f) ? f : 10; DoPagination();}">
+        <button disabled="@(_displayPageNo > 2 ? false : false)" @onclick="@(e =>
+                                                                           {
+                                                                               _displayPageNo = 1;
+                                                                               DoPagination();
+                                                                           })" type="button"
+                class="btn btn-outline-primary btn-sm mr-2 ml-3">❰
+        </button>
+        <button disabled="@(_displayPageNo > 1 ? false : false)" @onclick="@(e =>
+                                                                           {
+                                                                               _displayPageNo = Math.Max(1, _displayPageNo - 1);
+                                                                               DoPagination();
+                                                                           })" type="button"
+                class="btn btn-outline-primary btn-sm mr-2">❬
+        </button>
+        <input type="number" class="form-control align-content-center" placeholder="@_displayPageNo"
+               style="width:30px; padding:0;text-align: center;"
+               @oninput="e=>{_displayPageNo = Math.Max(1,Math.Min(_maxDisplayPage,int.TryParse(e?.Value?.ToString(), out var f) ? f : 1)); DoPagination();}">
+        <button disabled="@(_displayPageNo < _maxDisplayPage ? false : false)" @onclick="@(e =>
+                                                                                         {
+                                                                                             _displayPageNo = Math.Min(_maxDisplayPage, _displayPageNo + 1);
+                                                                                             DoPagination();
+                                                                                         })" type="button"
+                class="btn btn-outline-primary btn-sm mr-2">❭
+        </button>
+        <button disabled="@(_displayPageNo < _maxDisplayPage - 1 ? false : false)" @onclick="@(e =>
+                                                                                             {
+                                                                                                 _displayPageNo = _maxDisplayPage;
+                                                                                                 DoPagination();
+                                                                                             })" type="button"
+                class="btn btn-outline-primary btn-sm mr-2"> ❱
+        </button>
+
+    </div>
+
+    <div class="row float-left">
+        <div class="container float-left">
+            <br/>
+            @_displayMsgAction
+        </div>
+    </div>
+
+    <div class="row float-left">
+        <footer class="bg-light text-center text-lg-start">
+            <div class="text-center p-1" style="background-color: rgba(0, 0, 0, 0.2);">
+                © 2023 Copyright:@Footer
+                <a class="text-dark" href="https://encompasselectrical.com/">Encompass - Electrical</a>
+            </div>
+        </footer>
+    </div>
+</div>
+
+
+
+
+
+@code {
+
+    /// <summary>
+    ///     Render fragment in ChildContent
+    /// </summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    ///     Render fragment in Header
+    /// </summary>
+    [Parameter]
+    public RenderFragment? Header { get; set; }
+
+    /// <summary>
+    ///     Render fragment in ExtraButtons
+    /// </summary>
+    [Parameter]
+    public RenderFragment? ExtraButtons { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public List<T>? List { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public List<T>? ListOriginal { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public string[]? Fields { get; set; } // field list to display
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public List<List<string>>? Button { get; set; } // field list where button needed
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public List<List<string>>? ButtonText { get; set; } // text in the buttons
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public EventCallback<(T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string)> AutoCheck { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public EventCallback Refresh { get; set; }
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public EventCallback<(T, List<T>, List<T>)> Discard { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public EventCallback<(T, List<T>, List<T>, string, string, string, string)> Update { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public EventCallback<Guid> SetSelectedUid { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public EventCallback<(T, Guid)> SelectedItem { get; set; }
+
+    //[Parameter] public EventCallback<CellStatus> CellButton { get; set; }
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public string? ActionMessage { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public string? SuccessMessage { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public string? InfoMessage { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public string? WarningMessage { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public string? ErrorMessage { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public RenderFragment? Result { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public RenderFragment? Footer { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public RenderFragment<T>? ItemTemplate { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public RenderFragment<PropertyInfo>? FieldTemplate { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public RenderFragment<ContextItemField>? ItemFieldTemplate { get; set; }
+
+    /// <summary>
+    /// </summary>
+    [Parameter]
+    public string? TableWidthPx { get; set; }
+
+    private List<PropertyInfo> _tableProperties = null!;
+    private List<DBMaster>? _dbMaster;
+    private List<T>? _iteratedList;
+    private List<T>? _filteredList;
+    private List<T>? _displayList;
+    private List<T?>? _importedItemsFromExcel;
+    private string? _excelImportSummary;
+    private PropertyInfo? _uidProperty;
+    private int _searchRecordSeq;
+    private string _filterInputString = "";
+    private List<string> _fieldSearchStringList = [];
+    private Guid SelectedItemUid { get; set; }
+    private T? _selectedItem;
+    private readonly List<Guid> _addedItemUiDs = [];
+    private readonly List<Guid> _deletedItemUiDs = [];
+    private readonly List<Guid> _editedItemUiDs = [];
+    private int _selectedIndex;
+    private string _basicModalText = "";
+
+    private List<string>? _sqlFieldsNames;
+
+    private bool _showInputFile;
+    private bool _showBasicModal;
+
+    private PropertyInfo? SeqProperty { get; set; }
+    private PropertyInfo? CssProperty { get; set; }
+    private List<PropertyInfo>? AllTProperties { get; set; }
+    private readonly List<int> _propertyIndexed = []; // 0-not index, 1-assending, 2 descending
+
+    private int _totalRecords;
+    private int _recordsPerPage = 10;
+    private int _displayPageNo = 1;
+    private int _maxDisplayPage = 1;
+    private readonly List<int> _seqList = [];
+    private readonly List<int> _colWidth = [];
+
+    private int _selectedRecord;
+    private string? _selectedColumn;
+
+    private readonly List<CellStatus> _cellStatusRecord = [];
+    private CellStatus _currentDblClickedCell = new();
+    private CellStatus _lastDblClickedCell = new();
+    private CellStatus _currentClickedCell = new();
+    private CellStatus _lastClickedCell = new();
+    private CellStatus _currentCell = new(); //mousehovered
+
+    private string _displayMsgAction = "";
+
+
+    // used in Table Component
+    private class CellStatus
+    {
+        public int Seq { get; set; }
+        public Guid Uid { get; set; }
+        public string? FieldName { get; set; }
+        public string? FieldType { get; set; } // string, boolean, int32, etc.
+        public bool ClickedStatus { get; set; }
+        public bool DblClickedStatus { get; set; }
+        public bool Edited { get; set; }
+    }
+
+
+    /// <summary>
+    /// </summary>
+    public class ContextItemField
+    {
+        //used in cable component to refer to the RenderFragment
+        /// <summary>
+        /// </summary>
+        public T? Item { get; set; }
+
+        /// <summary>
+        /// </summary>
+        public PropertyInfo? Field { get; set; }
+
+        /// <summary>
+        /// </summary>
+        public ContextItemField()
+        {
+        }
+
+        /// <summary>
+        /// </summary>
+        /// <param name="item"></param>
+        /// <param name="field"></param>
+        public ContextItemField(T item, PropertyInfo field)
+        {
+            Item = item;
+            Field = field;
+        }
+    }
+
+
+    private Expression<Func<TPropertyType>>? ValueExpression<TPropertyType>(PropertyInfo property)
+    {
+        try
+        {
+            if (List != null)
+            {
+                var constant = Expression.Constant(List[0]);
+                var exp = Expression.Property(constant, property!.Name);
+                return Expression.Lambda<Func<TPropertyType>>(exp);
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine($"Exception {e.Message}");
+        }
+
+        return null;
+    }
+    
+   
+
+    /// <summary>
+    /// </summary>
+    protected override void OnInitialized()
+    {
+     // Log method entry for debugging
+    System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name}");
+
+    // Initialize database metadata
+    _dbMaster = GlobalData.DBMasters?.Where(m => m.DBName == typeof(T).Name).ToList() ?? [];
+
+    // Cache properties to avoid repeated reflection calls
+    var allProperties = typeof(T).GetProperties().ToList();
+
+    // Initialize table properties based on Fields or database metadata
+    var fieldIndices = Fields?.Select((f, i) => (f, i)).ToDictionary(x => x.f, x => x.i) ?? [];
+    _tableProperties = fieldIndices.Any()
+        ? allProperties
+            .Where(p => fieldIndices.ContainsKey(p.Name))
+            .OrderBy(p => fieldIndices[p.Name])
+            .ToList()
+        : _dbMaster.Any()
+            ? allProperties
+                .Where(p => _dbMaster.Any(m => m.FieldName == p.Name && m.Display))
+                .OrderBy(p => _dbMaster.FirstOrDefault(m => m.FieldName == p.Name)?.FieldOrder ?? int.MaxValue)
+                .ToList()
+            : allProperties;
+
+    // Log for debugging
+    System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name} : " +
+                                      $"Found {_dbMaster.Count} metadata entries, {Fields?.Length ?? 0} fields, {_tableProperties.Count} properties");
+
+    // Set Seq and CellCSS properties
+    SeqProperty = typeof(T).GetProperty("Seq");
+    CssProperty = typeof(T).GetProperty("CellCSS");
+    AllTProperties = allProperties;
+
+    // Initialize UID property safely
+    _uidProperty = allProperties.FirstOrDefault(p => p.Name == "UID");
+    if (_uidProperty == null)
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name} : Warning - UID property not found");
+    }
+
+    // Initialize SQL field names
+    _sqlFieldsNames = MyTable.GetSQLFieldsNames(typeof(T).Name) ?? [];
+
+    // Initialize property indexing (0 = not indexed, 1 = ascending, 2 = descending)
+    _propertyIndexed.Clear();
+    _propertyIndexed.AddRange(Enumerable.Repeat(0, _tableProperties.Count));
+
+    // Calculate column widths
+    _colWidth.Clear();
+    if (List?.Count > 0)
+    {
+        var totalWidth = 0;
+        var widths = _tableProperties.Select(property =>
+        {
+            var maxLength = List
+                .Select(x => Convert.ToString(property.GetValue(x))?.Length ?? 0)
+                .Max();
+            return Math.Max(Math.Min(maxLength, 100), property.Name.Length);
+        }).ToList();
+
+        totalWidth = widths.Sum();
+        _colWidth.AddRange(totalWidth > 0
+            ? widths.Select(w => 100 * w / totalWidth)
+            : _tableProperties.Select(_ => 100 / _tableProperties.Count));
+
+        // Create deep copy for _iteratedList
+        _iteratedList = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(List)) ?? [];
+        // _backupList = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(List)) ?? []; // Uncomment if needed
+        _totalRecords = List.Count;
+    }
+    else
+    {
+        _colWidth.AddRange(_tableProperties.Select(_ => 100 / _tableProperties.Count));
+        _iteratedList = [];
+        // _backupList = []; // Uncomment if needed
+        _totalRecords = 0;
+    }
+
+    // Initialize search and display lists
+    _fieldSearchStringList = new List<string>(Enumerable.Repeat("", _tableProperties.Count));
+    _filteredList = GetFilteredList(_tableProperties, List ?? [], _filterInputString, _fieldSearchStringList, _searchRecordSeq) ?? [];
+    _displayList = _filteredList
+        .Skip((_displayPageNo - 1) * _recordsPerPage)
+        .Take(Math.Min(_filteredList.Count, _recordsPerPage))
+        .ToList();
+
+    // Initialize sequence list
+    _seqList.Clear();
+    _seqList.AddRange(_displayList.Select(item => List?.IndexOf(item) ?? -1));
+
+    base.OnInitialized();
+    }
+
+    /// <summary>
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        //Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        //return base.OnInitializedAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        //Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
+        base.OnParametersSet();
+
+        // find max width of the columns
+        //var tempeData = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(DisplayList));
+        //ColWidth = new List<int>(Enumerable.Range(0, TableProperties.Count).Select(i => Math.Min(40, Math.Max(TableProperties[i].Name.Length, TableProperties[i].GetValue(tempeData.OrderByDescending(s => (TableProperties[i].GetValue(s) == null ? "" : TableProperties[i].GetValue(s)).ToString().Length).First()).ToString().Length))));
+        DoPagination();
+    }
+
+    /// <summary>
+    /// </summary>
+    /// <param name="firstRender"></param>
+    /// <returns></returns>
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        //System.Diagnostics.Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
+        return base.OnAfterRenderAsync(firstRender);
+    }
+
+
+    /// <summary>
+    /// </summary>
+    /// <returns></returns>
+    protected override bool ShouldRender()
+    {
+        //System.Diagnostics.Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
+        return base.ShouldRender();
+        //return ShouldRenderAgain;
+    }
+
+    /// <summary>
+    /// </summary>
+    public void Dispose()
+    {
+        //Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
+        //System.Diagnostics.Debug.WriteLine("Table - Dispose");
+    }
+
+
+    private async Task KeyPressHandler(KeyboardEventArgs args)
+    {
+        // on pressing enter run DoSubmit
+        if (args.Key == "Enter")
+        {
+            //System.Diagnostics.Debug.WriteLine($"Table - KeyPressHandler - pressed {args.Key}");
+            await DoSubmit();
+        }
+        else if (args.Key == "Escape")
+        {
+            //System.Diagnostics.Debug.WriteLine($"Table - KeyPressHandler - pressed {args.Key}");
+            OnBlur();
+        }
+    }
+
+    protected void OnBlur()
+    {
+        // this function to work if the current double clickked cell is still active
+        if (_currentDblClickedCell.DblClickedStatus == false) return;
+        var currentSeq = _currentDblClickedCell.Seq;
+        var currentProperty = _tableProperties.Where(p => p.Name == _currentDblClickedCell.FieldName).ToList()[0];
+        var currentValue = currentProperty.GetValue(_iteratedList[_currentDblClickedCell.Seq]);
+        var previousValue = currentProperty.GetValue(List[_currentDblClickedCell.Seq]);
+        //System.Diagnostics.Debug.WriteLine($"Table - OnBlur : reverting '{currentValue}' back to '{previousValue}'");
+        // IterateList is reset back to previous value of the List
+        currentProperty.SetValue(_iteratedList[_currentDblClickedCell.Seq], previousValue);
+        _currentDblClickedCell.DblClickedStatus = false;
+        _currentDblClickedCell.Edited = false;
+    }
+
+    private async Task DoSubmit()
+    {
+        if (_currentDblClickedCell.DblClickedStatus == false) return;
+        var currentSeq = _currentDblClickedCell.Seq;
+        var currentProperty = typeof(T).GetProperty(_currentDblClickedCell.FieldName);
+        var currentValue = currentProperty.GetValue(_iteratedList[_currentDblClickedCell.Seq]);
+        //
+        var uidProperty = typeof(T).GetProperty("UID");
+        var currentuid = (Guid)uidProperty.GetValue(_iteratedList[_currentDblClickedCell.Seq]);
+        //
+        var previousValue = currentProperty.GetValue(List[_currentDblClickedCell.Seq]);
+        //System.Diagnostics.Debug.WriteLine($"Table - DoSubmit : updating '{previousValue}' to '{currentValue}'");
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name} " +
+                        $":Record # {currentSeq + 1} field '{currentProperty.Name}' : '{previousValue}' being changed to '{currentValue}'");
+        //System.Diagnostics.Debug.WriteLine($"Table - DoSubmit : checking '{currentValue}' with server...");
+        //
+        // validate the input data
+        _iteratedList[currentSeq] = ValidatedGeneralInput(_iteratedList[currentSeq], currentProperty, _iteratedList, List);
+
+        // If Validated then only update List as per changed value (IterateList)
+        if (ErrorMessage == "")
+        {
+            List[_currentDblClickedCell.Seq] = _iteratedList[currentSeq];
+        }
+
+        _selectedRecord = currentSeq + 1;
+        _selectedColumn = currentProperty.Name;
+        StateHasChanged();
+        //
+        // further validation at Parent Component
+        var args = (_iteratedList[currentSeq], currentuid, currentProperty, ListOriginal[currentSeq], List, ListOriginal, SuccessMessage, WarningMessage, InfoMessage, ErrorMessage);
+
+        await AutoCheck.InvokeAsync(args!);
+
+        _currentDblClickedCell.DblClickedStatus = false;
+        _currentDblClickedCell.Edited = true;
+        DoFilter();
+    }
+
+    private async Task DoCellButton(CellStatus cell)
+    {
+        // do CellButton action on server side
+        Debug.WriteLine($"Table - DoCellButton for Seq:{cell.Seq} Field: {cell.FieldName}");
+        //await CellButton.InvokeAsync(cell);
+    }
+
+    private void AddRecord()
+    {
+        // add a default new record or copy of the last selected record.
+        // new blank record
+        var newItem = (T)Activator.CreateInstance(typeof(T))!;
+        if (_selectedItem == null)
+        {
+            _selectedItem = newItem;
+            WarningMessage = "No item was selected for copying. Therefore, a new item with default data is considered for adding as new record. All data may not be available. New Item added at the end of the table.";
+            return;
+        }
+
+            SuccessMessage = "Data (except tag) of the selected item is considered for adding as new record. New Item added next to the selected item.";
+
+        var copyItem = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(_selectedItem));
+        var newItemUID = Guid.NewGuid();
+        _uidProperty.SetValue(copyItem, newItemUID);
+        var TagProperty = typeof(T).GetProperty("Tag");
+        TagProperty.SetValue(copyItem, $"Copy of {TagProperty.GetValue(copyItem)}");
+        _addedItemUiDs.Add(newItemUID);
+        if (_selectedItem != null)
+        {
+            List.Insert(_selectedIndex + 1, copyItem);
+            _iteratedList.Insert(_selectedIndex + 1, copyItem);
+        }
+        else
+        {
+            List.Add(copyItem);
+            _iteratedList.Add(copyItem);
+        }
+
+        Debug.WriteLine($"Table - new record added at {_selectedIndex + 2}");
+        Debug.WriteLine(WarningMessage + SuccessMessage);
+        DoFilter();
+    }
+
+    private void DeleteRecord()
+    {
+        // delete selected record
+        _deletedItemUiDs.Add((Guid)_uidProperty.GetValue(_selectedItem));
+        // remove later from the list when "Update" button is pressed
+        // now only change the CSS
+        //IterateList.Remove(selectedItem);
+        WarningMessage = $"Table - record # {_selectedIndex + 1} will be permanetly deleted when table is updated.";
+        Debug.WriteLine(WarningMessage);
+        DoFilter();
+    }
+    
+    private bool HasItemWithSameUid(T? selectedItem)
+    {
+        if (selectedItem == null || _iteratedList == null)
+            return false;
+
+        if (_uidProperty == null || _uidProperty.PropertyType != typeof(Guid))
+            return false;
+
+        var selectedUid = (Guid?)_uidProperty.GetValue(selectedItem);
+        if (selectedUid == null)
+            return false;
+
+        return _iteratedList.Any(item => (Guid?)_uidProperty.GetValue(item) == selectedUid);
+    }
+    
+    private void MoveDown()
+    {
+ 
+        if (_selectedItem == null || !HasItemWithSameUid(_selectedItem))
+        {
+            ErrorMessage = "No item selected or item not found in list.";
+            StateHasChanged();
+            return;
+        }
+
+        var index = _iteratedList.FindIndex(i => 
+            (Guid?)_uidProperty?.GetValue(i) == (Guid?)_uidProperty?.GetValue(_selectedItem));
+
+        if (index < 0 || index >= _iteratedList.Count - 1)
+        {
+            ErrorMessage = "Cannot move down: Item is last or not found.";
+            StateHasChanged();
+            return;
+        }
+
+        var seqProperty = typeof(T).GetProperty("Seq");
+        if (seqProperty == null || seqProperty.PropertyType != typeof(int))
+        {
+            ErrorMessage = "Seq property not found or not an integer.";
+            StateHasChanged();
+            return;
+        }
+
+        // Get sequence values
+        var sequenceVal1 = (int)seqProperty.GetValue(_iteratedList[index]);
+        var sequenceVal2 = (int)seqProperty.GetValue(_iteratedList[index + 1]);
+
+        // Swap sequence values
+        seqProperty.SetValue(_iteratedList[index], sequenceVal2);
+        seqProperty.SetValue(_iteratedList[index + 1], sequenceVal1);
+
+        // Swap items in _iteratedList
+        (_iteratedList[index], _iteratedList[index + 1]) = (_iteratedList[index + 1], _iteratedList[index]);
+        (List[index], List[index + 1]) = (List[index + 1], List[index]); 
+
+        // Reapply filter or sorting
+        DoFilter();
+        StateHasChanged();
+        
+    }
+    
+    
+    
+ 
+    private async Task MoveUp()
+    {
+
+        if (_selectedItem == null || !HasItemWithSameUid(_selectedItem))
+        {
+            ErrorMessage = "No item selected or item not found in list.";
+            StateHasChanged();
+            return;
+        }
+
+        var index = _iteratedList.FindIndex(i => 
+            (Guid?)_uidProperty?.GetValue(i) == (Guid?)_uidProperty?.GetValue(_selectedItem));
+        
+        if (index <= 0)
+        {
+            ErrorMessage = "Cannot move up: Item is first or not found.";
+            StateHasChanged();
+            return;
+        }
+
+        var seqProperty = typeof(T).GetProperty("Seq");
+        if (seqProperty == null || seqProperty.PropertyType != typeof(int))
+        {
+            ErrorMessage = "Seq property not found or not an integer.";
+            StateHasChanged();
+            return;
+        }
+
+        // Get sequence values
+        int sequenceVal1 = (int)seqProperty.GetValue(_iteratedList[index])!;
+        int sequenceVal2 = (int)seqProperty.GetValue(_iteratedList[index - 1])!;
+
+        // Swap sequence values
+        seqProperty.SetValue(_iteratedList[index], sequenceVal2);
+        seqProperty.SetValue(_iteratedList[index - 1], sequenceVal1);
+
+        // Swap items in _iteratedList
+        (_iteratedList[index], _iteratedList[index - 1]) = (_iteratedList[index - 1], _iteratedList[index]);
+        (List[index], List[index - 1]) = (List[index - 1], List[index]);
+
+        // Reapply filter or sorting
+        DoFilter();
+        StateHasChanged();
+    }
+    
+
+
+    private T ValidatedGeneralInput(T itemChanged, PropertyInfo? propertyInfo, List<T> itemsExistingIteration, List<T> itemsExisting)
+    {
+        // validate general input like tag duplication and regex format
+        // Functions.ValidateGeneralInput does not validate based on any other business case logic, which are to be implemented case to case basis
+
+        var validatedInput = MyFunction.ValidateGeneralInput(itemChanged, propertyInfo, itemsExistingIteration, itemsExisting);
+
+        itemChanged = validatedInput.Item1;
+
+        InfoMessage = validatedInput.Item2[0];
+        SuccessMessage = validatedInput.Item2[1];
+        WarningMessage = validatedInput.Item2[2];
+        ErrorMessage = validatedInput.Item2[3];
+        StateHasChanged();
+        //
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}: {ErrorMessage} {SuccessMessage}");
+        return itemChanged;
+    }
+
+
+    private async Task ImportRecord(InputFileChangeEventArgs e)
+    {
+        Debug.WriteLine("Generic Table Excel Import Function ");
+        _showInputFile = !_showInputFile;
+
+        var result = await MyTable.ImportFromExcel(e, (T)Activator.CreateInstance(typeof(T)));
+
+        _importedItemsFromExcel = result.Items;
+        _excelImportSummary = result.Summary;
+
+        Debug.WriteLine($"Import Result: {_excelImportSummary} ");
+
+
+        ResetMassages();
+        SuccessMessage = $"{_importedItemsFromExcel.Count} Records imported";
+        _basicModalText = $"{_importedItemsFromExcel.Count.ToString()} Records imported from file. What would you like to do?";
+        _showBasicModal = true;
+    }
+
+    private void AppendRecord()
+    {
+        Dictionary<string, PropertyInfo> propertyMap = typeof(T).GetProperties()
+            .ToDictionary(p => p.Name.Trim(), p => p);
+        HashSet<object> existingUIDs = new HashSet<object>();
+
+        var uidProperty = propertyMap.TryGetValue("UID", out var prop) ? prop : null;
+        List.ForEach(item =>
+        {
+            var uidValue = uidProperty.GetValue(item);
+            existingUIDs.Add(uidValue);
+        });
+
+        var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
+
+        _importedItemsFromExcel.ForEach(item =>
+        {
+            var uidValue = uidProperty.GetValue(item);
+            // if the record does not exist
+            if (!existingUIDs.Add(uidValue))
+            {
+                Debug.WriteLine($"Duplicate UID '{uidValue}'.");
+            }
+            else
+            {
+                List.Add(JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(item, jsonSerializerOption), jsonSerializerOption));
+                _iteratedList.Add(JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(item, jsonSerializerOption), jsonSerializerOption));
+            }
+        });
+
+        ResetMassages();
+        SuccessMessage = $"{_importedItemsFromExcel.Count} Records appended.";
+        DoPagination();
+        StateHasChanged();
+        _showInputFile = false;
+    }
+
+    private void ReplaceRecord()
+    {
+        var jsonSerializerOption = new JsonSerializerOptions
+        {
+            IncludeFields = true
+        };
+        List = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(_importedItemsFromExcel, jsonSerializerOption), jsonSerializerOption);
+        _iteratedList = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(_importedItemsFromExcel, jsonSerializerOption), jsonSerializerOption);
+        ResetMassages();
+        SuccessMessage = $"{_importedItemsFromExcel.Count} Records replaced";
+        DoPagination();
+        StateHasChanged();
+        _showInputFile = false;
+    }
+
+
+    private async void Download()
+    {
+        // download total records to excel
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} : Table {typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        var excelBytes = MyTable.GenerateExcelWorkbookByte(_iteratedList);
+        await Js.InvokeVoidAsync("saveAsFile", $"{typeof(T).Name}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", Convert.ToBase64String(excelBytes));
+
+        if (_iteratedList == null) return;
+        _displayMsgAction = _iteratedList.Count + " record(s) saved in Excel successfully.";
+        Debug.WriteLine($"Table - downloading {_iteratedList.Count} records");
+    }
+
+
+    /// <summary>
+    /// </summary>
+    protected Task ParentAutoCheck()
+    {
+        // check as and when the table gets updated and Enter key pressed
+        // check is done at Server side
+        //System.Diagnostics.Debug.WriteLine("Table - ParentAutoCheck");
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} : Table {typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
+        return Task.CompletedTask;
+        //await AutoCheck.InvokeAsync();
+    }
+
+    /// <summary>
+    /// </summary>
+    private async Task ParentUpdate()
+    {
+        //System.Diagnostics.Debug.WriteLine("Table - Update");
+        // this is to update parent side main data as per this child component
+        // update the list by removing the deleted items
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} : Table {typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        // IterateList.RemoveAll(item => deletedItemUIDs.Contains((Guid)UIDProperty.GetValue(item)));
+        // List.RemoveAll(item => deletedItemUIDs.Contains((Guid)UIDProperty.GetValue(item)));
+
+
+        // update the DB always through Parent as there could be different business logic
+        // await myTable.Update(List);
+        // // clear cache invoking the parent page
+
+        // delete form the list all the items, which are identified for the deletion
+        _deletedItemUiDs.ForEach(deletedItemUid =>
+        {
+            if (List == null) return;
+            var itemToRemove = List.Single(item => _uidProperty.GetValue(item).ToString() == deletedItemUid.ToString());
+            List.Remove(itemToRemove);
+        });
+        _deletedItemUiDs.Clear();
+
+        // further validation at Parent Component
+        //var args = (_iteratedList[_currentDblClickedCell.Seq], List, ListOriginal);
+
+        var args = (_iteratedList[_currentDblClickedCell.Seq], List, ListOriginal, SuccessMessage, WarningMessage, InfoMessage, ErrorMessage);
+
+        await Update.InvokeAsync(args);
+    }
+    
+    
+    private async Task ParentRefresh()
+    {
+        await Refresh.InvokeAsync();
+    }
+    
+
+    /// <summary>
+    /// </summary>
+    private async Task ParentDiscard()
+    {
+        // although discard is done at Chiled component, however on parent side the List is not reset
+        // hence only reset at Child component is not sufficient
+        //await Discard.InvokeAsync();
+        //System.Diagnostics.Debug.WriteLine("Table - Discard");
+        // this is to discard all changes at child side data
+        // and reset back to the parameterised backup list
+        // however this is done now from parent side
+        //IterateList = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(BackupList));
+        //BackupList to use for Discard Change Function
+        //BackupList should not be altered in this Component
+        //List = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(BackupList));
+        //DoPagination();
+        //
+        // all selected reset
+        SelectedItemUid = new Guid();
+        _deletedItemUiDs.Clear();
+        _addedItemUiDs.Clear();
+        var args = (_iteratedList[_currentDblClickedCell.Seq], List, ListOriginal);
+        await Discard.InvokeAsync(args);
+    }
+
+    /// <summary>
+    /// </summary>
+    private async void DoSelection()
+    {
+        await SetSelectedUid.InvokeAsync(SelectedItemUid);
+    }
+
+    /// <summary>
+    /// </summary>
+    public void DoPagination()
+    {
+        //System.Diagnostics.Debug.WriteLine("Table - Pagination");
+        //
+        if (_recordsPerPage < 1) _recordsPerPage = 10;
+        _maxDisplayPage = Math.Max(1, (_filteredList.Count - 1) / _recordsPerPage + 1);
+        //
+        if (_displayPageNo < 1) _displayPageNo = 1;
+        if (_displayPageNo > _maxDisplayPage) _displayPageNo = _maxDisplayPage;
+        //
+        DoFilter();
+    }
+
+    /// <summary>
+    /// </summary>
+    public void DoFilter()
+    {
+        _filteredList = GetFilteredList(_tableProperties, List, _filterInputString, _fieldSearchStringList, _searchRecordSeq);
+        _displayList = _filteredList.Skip((_displayPageNo - 1) * _recordsPerPage).Take(Math.Min(_filteredList.Count, _recordsPerPage)).ToList();
+        _seqList.Clear();
+        _displayList.ForEach(list => _seqList.Add(List.IndexOf(list)));
+        _cellStatusRecord.Clear();
+        StateHasChanged();
+    }
+
+
+    /// <summary>
+    /// </summary>
+    /// <param name="properties"></param>
+    /// <param name="list"></param>
+    /// <param name="searchString"></param>
+    /// <param name="searchStringList"></param>
+    /// <param name="searchRecordSeq"></param>
+    /// <returns></returns>
+    public List<T> GetFilteredList(List<PropertyInfo> properties, List<T> list, string searchString, List<string> searchStringList, int? searchRecordSeq)
+    {
+        //System.Diagnostics.Debug.WriteLine($"GetFilteredList called for {list.Count} items");
+        //check if there is no input in the search strings, then return the list
+        if (searchRecordSeq == null && string.Join("", searchStringList) == "" && searchString == "") return list;
+        // check for input in search record sequence
+        if (searchRecordSeq != null && searchRecordSeq > 0 && searchRecordSeq <= list.Count) return list.Where(item => (list.IndexOf(item) + 1).ToString().Contains(searchRecordSeq.ToString())).ToList();
+        //
+        List<T> filteredList = list;
+        //
+        if (string.Join("", searchStringList) != "")
+        {
+            List<int> indexList = new();
+            for (var i = 0; i < searchStringList.Count; i++)
+            {
+                if (searchStringList[i] != "")
+                {
+                    indexList.Add(i);
+                }
+
+                ;
+            }
+
+            filteredList = list.Where(item => indexList.Where(i => searchStringList[i] != "").ToList().All(i => IsFulfil((properties[i].GetValue(item) == null ? "  " : properties[i].GetValue(item) == "" ? "  " : properties[i].GetValue(item)).ToString(), searchStringList[i]))).ToList();
+            // double space "  " above to signify null value. user to type double spece to filter null values
+        }
+
+        //
+        if (searchString != "")
+        {
+            filteredList = filteredList.Where(item => properties.Any(property => IsFulfil((property.GetValue(item) == null ? "" : property.GetValue(item)).ToString(), searchString))).ToList();
+        }
+
+        //
+        //System.Diagnostics.Debug.WriteLine($"Main list count : {list.Count}, search string : {searchString} / {String.Join("", searchStringList)}, Filtered List count : {filteredList.Count}");
+        //
+        return filteredList;
+
+        //
+        bool IsFulfil(string value, string searchStr)
+        {
+            var isTrue = true;
+
+            List<string> operatingStr = ["<>", "=", "</=", ">/=", ">", "<", "!"];
+            if (operatingStr.Any(searchStr.Contains))
+            {
+                var i = operatingStr.IndexOf(operatingStr.Where(searchStr.Contains).ToList()[0]);
+                var oprtr = operatingStr[i];
+                var subStr = searchStr.Replace(operatingStr[i], "");
+                // check if the subString is a decimal
+                if (decimal.TryParse(subStr, out var checkDecimal) && decimal.TryParse(value, out var valueDecimal))
+                {
+                    isTrue = oprtr == "<>" ? valueDecimal != checkDecimal
+                        : oprtr == "=" ? valueDecimal == checkDecimal
+                        : oprtr == "</=" ? valueDecimal <= checkDecimal
+                        : oprtr == ">/=" ? valueDecimal >= checkDecimal
+                        : oprtr == ">" ? valueDecimal > checkDecimal
+                        : oprtr != "<" || valueDecimal < checkDecimal;
+                }
+                else
+                {
+                    // non decimal comparison
+                    isTrue = oprtr == "<>" ? value != subStr
+                        : oprtr == "=" ? value == subStr
+                        : oprtr != "!" || !value.Contains(subStr);
+                }
+            }
+            else
+            {
+                isTrue = value.Contains(searchStr);
+            }
+
+            //
+            return isTrue;
+        }
+    }
+
+    /// <summary>
+    /// </summary>
+    public void GenericFormSubmitted()
+    {
+        Debug.WriteLine("Generic Form Submitted : ");
+    }
+
+
+    string CssClassTableRow(Guid guid)
+    {
+        var cssClass = "";
+
+        if (_editedItemUiDs.Contains(guid))
+        {
+            cssClass = "table-warning";
+        }
+        else if (guid == SelectedItemUid)
+        {
+            cssClass = "table-primary";
+        }
+        else if (_addedItemUiDs.Contains(guid))
+        {
+            cssClass = "table-info";
+        }
+        else if (_deletedItemUiDs.Contains(guid))
+        {
+            cssClass = "table-danger";
+        }
+
+        //
+        return cssClass;
+    }
+
+    string CssClassCell(CellStatus cellStat)
+    {
+        var cssClass = "";
+
+        if (cellStat.Edited)
+        {
+            cssClass = "table-active";
+        }
+
+        //
+        return cssClass;
+    }
+
+
+    // Helper method to get XML documentation for a member
+    // got from ChatGPT
+    // Not working as unable to read from the xml file
+    private string GetXmlDocumentation(MemberInfo memberInfo)
+    {
+        // Get the assembly where the member is defined
+        var assembly = memberInfo.Module.Assembly;
+
+        // Load the XML documentation file for the assembly
+        var assemblyPath = assembly.Location;
+        var xmlFilePath = Path.ChangeExtension(assemblyPath, ".xml");
+        var xmlDoc = new XPathDocument(xmlFilePath);
+
+        // Create XPathNavigator for the XML document
+        var nav = xmlDoc.CreateNavigator();
+
+        // Construct XPath query to find documentation for the member
+        var memberXPath = $"//member[starts-with(@name, '{memberInfo.MemberType}:{memberInfo.DeclaringType.FullName}.{memberInfo.Name}')]/remarks";
+
+        // Select the remarks node from XML documentation
+        var remarksNode = nav.SelectSingleNode(memberXPath);
+
+        return remarksNode != null ? remarksNode.InnerXml.Trim() : string.Empty;
+    }
+
+    // Helper method to extract <remarks> content from XML documentation
+    private string GetRemarksFromXml(string xmlComments)
+    {
+        try
+        {
+            // Load the XML comments into an XPathDocument
+            var xmlDoc = new XPathDocument(new StringReader(xmlComments));
+            var nav = xmlDoc.CreateNavigator();
+
+            // Select the <remarks> node
+            var remarksNode = nav.SelectSingleNode("/member/remarks");
+
+            if (remarksNode != null)
+            {
+                // Return the inner text of <remarks>
+                return remarksNode.InnerXml.Trim();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error extracting remarks: {ex.Message}");
+        }
+
+        return string.Empty;
+    }
+
+    private void ResetMassages()
+    {
+        ActionMessage = "";
+        SuccessMessage = "";
+        InfoMessage = "";
+        WarningMessage = "";
+        ErrorMessage = "";
+    }
+
+
+}

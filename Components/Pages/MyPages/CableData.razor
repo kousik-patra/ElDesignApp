@@ -1,0 +1,189 @@
+@page "/cableData"
+
+@rendermode InteractiveServer
+
+@inject IDataRetrievalService DataService
+@inject IMyTableService MyTable 
+@inject IMyFunctionService MyFunction
+@inject ILayoutFunctionService LayoutFunction
+@inject IDistributedCache Cache;
+@inject IGlobalDataService Global;
+@inject NavigationManager MyNavigationManager
+
+
+<h3>Cable Data</h3>
+
+<div class="container mt-4">
+    @if (_loadChild)
+    {
+        <div class="mt-4 p-3 bg-light text-center rounded">
+            <h4 class="mb-0">Database Master</h4>
+        </div>
+        <div class="container-fluid mt-3">
+            <Table List="_list"
+                   ListOriginal="_listDb"
+                   T="Models.CableData"
+                   AutoCheck="AutoCheckOnTableChange"
+                   Update="UpdateTableChange"
+                   Discard="DiscardTableChange"
+                   Refresh="TableRefresh"
+                   SuccessMessage="@_tableSuccessMessage"
+                   InfoMessage="@_tableInfoMessage"
+                   WarningMessage="@_tableWarningMessage"
+                   ErrorMessage="@_tableErrorMessage">
+            </Table>
+        </div>
+    }
+
+    <div class="mt-4">
+        @if(!string.IsNullOrEmpty(_resultMessage))
+        {
+            <div class="alert alert-info" role="alert">@_resultMessage</div>
+        }
+        @if(!string.IsNullOrEmpty(_tableErrorMessage))
+        {
+            <div class="alert alert-danger" role="alert">@_tableErrorMessage</div>
+        }
+        @if(!string.IsNullOrEmpty(_tableWarningMessage))
+        {
+            <div class="alert alert-warning" role="alert">@_tableWarningMessage</div>
+        }
+        @if(!string.IsNullOrEmpty(_tableInfoMessage))
+        {
+            <div class="alert alert-info" role="alert">@_tableInfoMessage</div>
+        }
+        @if(!string.IsNullOrEmpty(_tableSuccessMessage))
+        {
+            <div class="alert alert-success" role="alert">@_tableSuccessMessage</div>
+        }
+    </div>
+</div>
+
+@code {
+    
+
+    private readonly JsonSerializerOptions? jsonSerializerOption = new() { IncludeFields = true };
+
+    private bool _loadChild;
+    private string _tableMessage = "";
+    private string _tableSuccessMessage = "";
+    private string _tableInfoMessage = "";
+    private string _tableWarningMessage = "";
+    private string _tableErrorMessage = "";
+
+    private string _resultMessage = "";
+
+    private List<Models.CableData>? _listDb = [];
+    private List<Models.CableData>? _list = [];
+    
+    
+    
+    
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
+                        $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
+
+        if (firstRender)
+        {
+            await Load(firstRender);
+            StateHasChanged();
+        }
+    }
+    
+
+    private async Task Load(bool firstRender, bool isRefresh = false)
+    {
+        (Global.CableData, string logInfo, string logWarning, string logError) = isRefresh?
+            await DataService.RefreshCacheAndReadFromDb(new Models.CableData()):
+            await DataService.ReadFromCacheOrDb(new Models.CableData());
+
+        UpdateDbLocalVariable(Global.CableData);
+        
+        await Task.Delay(1000);
+        _loadChild = true;
+    }
+
+    private void UpdateDbLocalVariable<T>(List<T>? list)
+    {
+        _listDb = JsonSerializer.Deserialize<List<Models.CableData>>
+            (System.Text.Json.JsonSerializer.Serialize(list, jsonSerializerOption), jsonSerializerOption);
+        _list = JsonSerializer.Deserialize<List<Models.CableData>>
+            (System.Text.Json.JsonSerializer.Serialize(list, jsonSerializerOption), jsonSerializerOption);
+    }
+
+
+    private async Task TableRefresh()
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                                           $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Refreshing Table...");
+        await Load(false, true);
+        ResetMassages();
+        _tableSuccessMessage = "Table loaded afresh from the database.";
+        StateHasChanged();
+    }
+
+
+    private void AutoCheckOnTableChange<T>((T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
+    {
+        var (item, uid, propertyInfo, originalItem, itemsCurrent, itemsOriginal, 
+             tableSuccessMessage, tableInfoMessage, tableWarningMessage, tableErrorMessage) = args;
+    
+        // Validate inputs to prevent null reference exceptions
+        if (item == null || propertyInfo == null || itemsCurrent == null || itemsOriginal == null)
+        {
+            System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  - " +
+                                              $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} : Error - " +
+                                              $"Invalid input (null item, propertyInfo, or lists)");
+        }
+        // any specific Auto check at parent side
+    }
+
+    private async Task UpdateTableChange<T>((T item, List<T>? list, List<T> originalList, string success, string info, string warning, string error) parameters)
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                        $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Updating data to the database...");
+        var updatedList = parameters.list;
+        _tableSuccessMessage = parameters.success;
+        _tableInfoMessage = parameters.info;
+        _tableWarningMessage = parameters.warning;
+        _tableErrorMessage = parameters.error;
+                
+        UpdateDbLocalVariable(updatedList);
+        
+        Global.CableData = System.Text.Json.JsonSerializer.Deserialize<List<Models.CableData>>
+            (System.Text.Json.JsonSerializer.Serialize(updatedList, jsonSerializerOption), jsonSerializerOption);
+
+        await MyTable.BulkCopyDataTableAsync(updatedList);
+        
+        ResetMassages();
+        _tableSuccessMessage = "Changed Table is successfully updated to database.";
+        StateHasChanged();
+    }
+
+    private void DiscardTableChange()
+    {
+        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                        $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name}Discarding changes...");
+        
+        UpdateDbLocalVariable(_listDb);
+        Global.CableData = System.Text.Json.JsonSerializer.Deserialize<List<Models.CableData>>
+            (System.Text.Json.JsonSerializer.Serialize(_listDb, jsonSerializerOption), jsonSerializerOption);
+        
+        ResetMassages();
+        _tableWarningMessage = "Changes in table discarded, reverted to the original data.";
+        StateHasChanged();
+    }
+
+    private void ResetMassages()
+    {
+        _tableMessage = "";
+        _tableSuccessMessage = "";
+        _tableInfoMessage = "";
+        _tableWarningMessage = "";
+        _tableErrorMessage = "";
+        _resultMessage = "";
+    }
+    
+}

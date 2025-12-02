@@ -1,0 +1,2605 @@
+@page "/systemStudy"
+@using System.Reflection.Metadata.Ecma335
+@using MathNet.Numerics.LinearAlgebra.Double
+@using System.Numerics;
+@using MathNet.Numerics.LinearAlgebra;
+@using OfficeOpenXml.VBA
+@rendermode InteractiveServer
+
+@namespace BlazorNPM.Components.Pages.MyPages
+
+
+<PageTitle>NewtonRaphson</PageTitle>
+
+<h1>Newton Raphson Load Flow Study</h1>
+
+<button @onclick="HandleClick">Do Load Flow Study</button>
+<p>@messageNRresult</p>
+
+<div>
+
+    <h3>Bus List</h3>
+
+    @if (busesResult == null || !busesResult.Any())
+    {
+        <p>No data available.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+            <tr>
+                @foreach (var prop in typeof(Bus).GetProperties())
+                {
+                    <th>@prop.Name</th>
+                }
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in busesResult)
+            {
+                <tr>
+                    @foreach (var prop in typeof(Bus).GetProperties())
+                    {
+                        <td>
+                            @{
+                                var value = prop.GetValue(item);
+                                if (value is decimal decimalValue)
+                                {
+                                    @decimalValue.ToString("F3")
+                                }
+                                else if (value is double doubleValue)
+                                {
+                                    @doubleValue.ToString("F3")
+                                }
+                                else if (value is float floatValue)
+                                {
+                                    @floatValue.ToString("F3")
+                                }
+                                else
+                                {
+                                    @value
+                                }
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+
+    <br/>
+
+
+    <h3>Branch List</h3>
+
+    @if (branchesResult == null || !branchesResult.Any())
+    {
+        <p>No data available.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+            <tr>
+                @foreach (var prop in typeof(Branch).GetProperties())
+                {
+                    if (prop.Name == "I" || prop.Name.Contains("Admittance")) continue;
+                    <th>@prop.Name</th>
+                }
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in branchesResult)
+            {
+                <tr>
+                    @foreach (var prop in typeof(Branch).GetProperties())
+                    {
+                        if (prop.Name == "I" || prop.Name.Contains("Admittance")) continue;
+                        <td>
+                            @{
+                                var value = prop.GetValue(item);
+                                if (value is decimal decimalValue)
+                                {
+                                    @decimalValue.ToString("F"+(decimalValue>100?"1":decimalValue>10?"2":"3"))
+                                }
+                                else if (value is double doubleValue)
+                                {
+                                    @doubleValue.ToString("F"+(doubleValue>100?"1":doubleValue>10?"2":"3"))
+                                }
+                                else if (value is float floatValue)
+                                {
+                                    @floatValue.ToString("F"+(floatValue>100f?"1":floatValue>10f?"2":"3"))
+                                }
+                                else
+                                {
+                                    @value
+                                }
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+    
+    
+    <br/>
+
+
+    <h3>Loads Details</h3>
+
+    @if (pqLoadResult == null || !pqLoadResult.Any())
+    {
+        <p>No data available.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+            <tr>
+                @foreach (var prop in typeof(PQLoad).GetProperties())
+                {
+                    if (prop.Name == "I" || prop.Name.Contains("Admittance")) continue;
+                    <th>@prop.Name</th>
+                }
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in pqLoadResult)
+            {
+                <tr>
+                    @foreach (var prop in typeof(PQLoad).GetProperties())
+                    {
+                        if (prop.Name == "I" || prop.Name.Contains("Admittance")) continue;
+                        <td>
+                            @{
+                                var value = prop.GetValue(item);
+                                if (value is decimal decimalValue)
+                                {
+                                    @decimalValue.ToString("F"+(decimalValue>100?"1":decimalValue>10?"2":"3"))
+                                }
+                                else if (value is double doubleValue)
+                                {
+                                    @doubleValue.ToString("F"+(doubleValue>100?"1":doubleValue>10?"2":"3"))
+                                }
+                                else if (value is float floatValue)
+                                {
+                                    @floatValue.ToString("F"+(floatValue>100f?"1":floatValue>10f?"2":"3"))
+                                }
+                                else
+                                {
+                                    @value
+                                }
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+
+    
+    
+    
+    
+    
+    <br/>
+
+
+    <h3>Short Circuit Results</h3>
+
+    @if (scResults == null || !scResults.Any())
+    {
+        <p>No data available.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+            <tr>
+                @foreach (var prop in typeof(ShortCircuit).GetProperties())
+                {
+                    if (prop.Name == "I" || prop.Name.Contains("Admittance")) continue;
+                    <th>@prop.Name</th>
+                }
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in scResults)
+            {
+                <tr>
+                    @foreach (var prop in typeof(ShortCircuit).GetProperties())
+                    {
+                        if (prop.Name == "I" || prop.Name.Contains("Admittance")) continue;
+                        <td>
+                            @{
+                                var value = prop.GetValue(item);
+                                if (value is decimal decimalValue)
+                                {
+                                    @decimalValue.ToString("F"+(decimalValue>100?"1":decimalValue>10?"2":"3"))
+                                }
+                                else if (value is double doubleValue)
+                                {
+                                    @doubleValue.ToString("F"+(doubleValue>100?"1":doubleValue>10?"2":"3"))
+                                }
+                                else if (value is float floatValue)
+                                {
+                                    @floatValue.ToString("F"+(floatValue>100f?"1":floatValue>10f?"2":"3"))
+                                }
+                                else
+                                {
+                                    @value
+                                }
+                            }
+                        </td>
+                    }
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
+    
+</div>
+<div>
+    @alertMessages
+</div>
+
+@code {
+
+    private NewtonRaphsonLoadFlow solver;
+    private static readonly List<string> alertMessages = [];
+
+    private static List<Bus> busesResult = [];
+    private static List<Branch> branchesResult = [];
+    private static List<PQLoad> pqLoadResult = [];
+    private static List<ShortCircuit> scResults = [];
+    
+    private static string messageNRresult;
+
+
+    protected override void OnInitialized()
+    {
+    }
+
+    private void HandleClick()
+    {
+        busesResult = [];
+        branchesResult = [];
+        pqLoadResult = [];
+        alertMessages.Clear();
+        messageNRresult = "";
+        StateHasChanged();
+        
+        // Example input
+        var busList = new List<(string, double)>
+        {
+            ("Bus01", 33),
+            ("Bus001", 33),
+            ("Bus02", 33),
+            ("Bus03", 33),
+            ("Bus04", 33),
+            ("Bus05", 33),
+            ("Bus06", 33),
+            ("Bus07", 33),
+            ("Bus08", 33),
+            ("Bus09", 11),
+            ("Bus10", 33),
+            ("Bus11", 11),
+            ("Bus12", 11),
+            ("Bus13", 11),
+            ("Bus14", 11),
+            ("Bus15", 11),
+            ("Bus16", 11),
+            ("Bus17", 11),
+            ("Bus18", 11),
+            ("Bus19", 11),
+            ("Bus20", 11),
+            ("Bus21", 11),
+            ("Bus122", 11),
+            ("Bus23", 0.415),
+            ("Bus25", 0.415),
+            ("Bus27", 0.415),
+            ("Bus24", 0.415),
+            ("Bus26", 0.415),
+            ("Bus28", 0.415),
+        };
+        
+        var swingBuses = new List<(string tag, double volatge)> { ("Bus01", 33) ,("Bus001", 33) };
+        var pvBuses = new List<(string, double, double, double, double)>
+        {
+            // +ve P for generators
+            // no generators for this ETAP sample
+            // P in MVA, V in kV
+            //("Bus09", 11.3, 3, 3000,-3000),
+        };
+        var pqBuses1 = new List<(string, double, double, double)>
+        {
+            // -ve P and Q for inductive loads
+            // P and Q in MW and MVAR
+            //("Bus02", -8.495, -5.265, 0.92), 
+        };
+
+        var motors = new List<(string tag, string bus, double kW, double kV, double pf, double eff, double ab, string cable, double l)>
+        {
+            ("Mtr30", "Bus02", 10000, 33, .9344, 94.92, 100, "2Rx3Cx300", 400),
+            ("Mtr3", "Bus11", 6450, 11, .9326, 94.7, 100, "", 0),
+            ("Mtr12", "Bus13", 3450, 11, .9216, 93.32, 100, "2Rx3Cx300", 0),
+            ("Mtr16", "Bus15", 3450, 11, .9216, 93.32, 100, "2Rx3Cx300", 0),
+            ("Mtr31", "Bus23", 100, .415, .9154, 83.23, 100, "3Cx120", 400),
+            ("Mtr33", "Bus25", 100, .415, .9154, 83.23, 100, "2Rx3Cx300", 0),
+            ("Mtr35", "Bus27", 100, .415, .9154, 83.23, 100, "2Rx3Cx300", 0),
+            ("Mtr7", "Bus12", 2450, 11, .9216, 93.32, 100, "", 0),
+            ("Mtr14", "Bus14", 2450, 11, .9216, 93.32, 100, "2Rx3Cx300", 0),
+            ("Mtr18", "Bus16", 2450, 11, .9216, 93.32, 100, "2Rx3Cx300", 0),
+        };
+        var lumploads = new List<(string tag, string bus, double kVA, double kV, double pf, double df, string cable, double l)>
+        {
+            ("Lump2", "Bus02", 10000, 33, .85, 60, "3Cx300", 200),
+            ("Lump1", "Bus23", 1500, .415, .8, 60, "3Cx300", 200),
+            ("Lump7", "Bus25", 1500, .415, .8, 60, "3Cx300", 200),
+            ("Lump9", "Bus27", 1500, .415, .8, 60, "3Cx300", 200),
+            ("Lump3", "Bus24", 1500, .415, .8, 60, "3Cx300", 200),
+            ("Lump6", "Bus26", 1500, .415, .8, 60, "3Cx300", 200),
+            ("Lump8", "Bus28", 1500, .415, .8, 60, "3Cx300", 200),
+        };
+        
+        
+        var switches = new List<(string, string, string, bool, double)>
+        {
+            // current in A
+            // ("CB1", "Bus5", "Bus13", true, 1000),
+            // ("CB1", "Bus23", "Bus26", true, 1000)
+           ("CB01", "Bus02", "Bus03", true, 2500)
+        };
+        var cableBranches = new List<(string, string, string, double, string)>
+        {
+            ("Cable01", "Bus01", "Bus02", 800, "2Rx1Cx400"),
+            ("Cable3", "Bus001", "Bus03", 400, "2Rx1Cx400"),
+            ("Cable04", "Bus02", "Bus04", 5250, "2Rx3Cx300"),
+            ("Cable06", "Bus02", "Bus06", 500, "3Cx300"),
+            ("Cable11", "Bus02", "Bus08", 50, "3Cx300"),
+            ("Cable13", "Bus11", "Bus17", 260, "3Cx400"),
+            ("Cable31", "Bus13", "Bus19", 60, "3Cx400"),
+            ("Cable37", "Bus15", "Bus21", 60, "3Cx400"),
+            ("Cable50", "Bus15", "Bus09", 100, "3Rx3Cx300"),
+
+            ("Cable08", "Bus03", "Bus05", 50, "3Cx300"),
+            ("Cable07", "Bus03", "Bus07", 50, "3Cx300"),
+            ("Cable12", "Bus03", "Bus10", 50, "3Cx300"),
+            ("Cable15", "Bus12", "Bus18", 60, "3Cx400"),
+            ("Cable30", "Bus14", "Bus20", 60, "3Cx400"),
+            ("Cable36", "Bus16", "Bus22", 60, "3Cx400"),
+            
+        };
+
+        var transformers = new List<(string, string, string, double, double, double, double, double)>
+        {
+            // voltages in kV, rating in MVA
+            
+            ("T01", "Bus04", "Bus11", 33, 11.5, 12, 8.35, 13),
+            ("T03", "Bus06", "Bus13", 33, 11.5, 12, 8.35, 13),
+            ("T08", "Bus08", "Bus15", 33, 11.5, 12, 8.35, 13),
+            ("T10", "Bus17", "Bus23", 11, 0.433, 2, 6.25, 6),
+            ("T16", "Bus19", "Bus25", 11, 0.433, 2, 6.25, 6),
+            ("T18", "Bus21", "Bus27", 11, 0.433, 2, 6.25, 6),
+            
+            ("T05", "Bus05", "Bus12", 33, 11.5, 12, 8.35, 13),
+            ("T04", "Bus07", "Bus14", 33, 11.5, 12, 8.35, 13),
+            ("T09", "Bus10", "Bus16", 33, 11.5, 12, 8.35, 13),
+            ("T12", "Bus18", "Bus24", 11, 0.433, 2, 6.25, 6),
+            ("T15", "Bus20", "Bus26", 11, 0.433, 2, 6.25, 6),
+            ("T17", "Bus22", "Bus28", 11, 0.433, 2, 6.25, 6),
+        };
+
+        var cableData = new List<(double, double, double, string, double, double, double, double, double, double)>
+        {
+            // R and X are in Ohm/km
+            // ETAP: If Option 'Library' is chosen, then baseT, maxT and minT and hence Calculated R has no relevance
+            // Therefore, if 'Library' option is selected, then the baseT, maxt and minT should be same fo the program does not change R values
+            // ETAP: Calculated R changes with the base temperature
+            // ETAP: Min.T. taken for SC study, Max.T taken for LF, MS study
+            //kV, core, size, mat, Rac, X, Y, baseT, maxT, minT
+            (33, 1, 400, "CU", 0.064, 0.116, 85.8, 90, 90, 75), // ETAP library
+            //(33, 1, 400, "CU", 0.05864, 0.20763, 81.4276,  75, 75, 75), // ETAP calculated
+            (33, 3, 300, "CU", 0.08, 0.105, 81.1, 90, 90, 75),
+            (11, 3, 400, "CU", 0.064, 0.0849, 182.2, 90, 90, 75),
+            (11, 3, 300, "CU", 0.08, 0.0874, 164.6, 90, 90, 75),
+            (11, 3, 240, "CU", 0.098, 0.08, 170, 90, 90, 75),
+            // (11, 3, 400, "CU", 0.07924, 0.08352, 75),
+            (.415, 3, 120, "CU", 0.1964, 0.072, 0, 90, 90, 75),
+        };
+        
+
+        var initialBusValue = new List<(string, double, double)>
+        {
+            ("Bus01", 1, 0),
+            ("Bus02", 0.99682, -0.0026),
+            ("Bus04", 0.99193, -0.00526),
+            ("Bus06", 0.99679, -0.00261),
+            ("Bus08", 0.99679, -0.00261),
+            ("Bus11", 0.96526, -0.06087),
+            ("Bus13", 0.97923, -0.03542),
+            ("Bus15", 0.97923, -0.03542),
+            ("Bus17", 0.96504, -0.061),
+            ("Bus19", 0.97918, -0.03545),
+            ("Bus21", 0.97918, -0.03545),
+            ("Bus23", 0.94447, -0.09463),
+            ("Bus25", 0.95886, -0.06809),
+            ("Bus27", 0.95886, -0.06809),
+        };
+        
+        initialBusValue.Clear();
+        // Process input data before calling the Newton-Raphson class function
+        var starTime = DateTime.Now;
+        
+        
+        // Step 0: initialise pQBuses as per motors, heaters, capacitors, lump loads
+        (var pqBuses, cableBranches) = InitialisePQBuses(cableBranches,motors, lumploads);
+        
+        // Step 1: Grid/Swing buses cannot be directly connected between them or through closed switches
+        // If any such cases found, then exclude BusTo of the Switch from the grid/swing buses' list
+        // and sorted cable branches from the list and generate alert
+        var (filterSwingBuses, filteredCableBranches, filteredTransformers, alertFilterSwingBuses) = 
+                FilterPowerSystemComponents(swingBuses, cableBranches, transformers, switches);
+
+        // Step 2: replace all BusTo with the BusFrom for all non-swing buses connected by closed switches
+        (var updatedPVBuses, var updatedPQBuses, var updatedCableBranches, var updatedTransformers,
+         var replacedBusTable) = ReplaceBusToWithBusFrom(switches, pvBuses, pqBuses, cableBranches, transformers);
+
+        // Step 3: Assign Base Voltage to all the buses starting from the Grid/Swing Buses
+        var (busesWithBaseVoltage, alertAssignBaseVoltages) = AssignBaseVoltages(filterSwingBuses, updatedCableBranches, updatedTransformers, switches);
+        
+        // Step 4: Exclude any pV or pq bus, which are not connected to grid, i.e., having Base Voltage still zero
+        // Decide baseMVA (typically largest of Pv or PQ ceiling to multiples of 10MVA
+        // Update pvBus and pqBus voltage and powers into the per unit values
+        var (swingBusesNR, pvBusesNR, pqBusesNR,baseMVA) = 
+                FilterUnconnectedBuses(busesWithBaseVoltage, filterSwingBuses, updatedPVBuses, updatedPQBuses, filteredTransformers);
+            
+        // Step 5: Generate Y-table for all the branches in pu
+        var (yTableFull, alertGenerateYTable) = GenerateYTable(updatedCableBranches, updatedTransformers, cableData, busesWithBaseVoltage, baseMVA);
+
+        // Step 6: Excludes single-connection branches from yTableCombined
+        // remove only those open-ended cables which have relatively less shunt Capacitance w.r.t branch Imedenace.
+        // ignore capacitiveAdmittance in the updatedTable
+        var (updatedYTable, removedSingleConnectedBranches) = RemoveSingleConnectionBranches(yTableFull, swingBuses, pvBusesNR, pqBusesNR);
+        
+        // Step 7: Remove nodes (two series branches replaced by an equivalent branch)
+        // generate the mapping of original branches and their corresponding simplified branch
+        var branchMappings = SimplifyBranches(swingBusesNR, pvBusesNR, pqBusesNR, updatedYTable);
+
+        // Step 7a: Generating equivalent Y-Table keeping the charging current into the consideration
+        // (different values of charging current at fromBus and at toBus)
+        var yTableNR = CalculateSimplifiedBranchAdmittances(branchMappings, updatedYTable);
+
+        
+        if (solver == null)
+        {
+            solver = new NewtonRaphsonLoadFlow(swingBusesNR, pvBusesNR, pqBusesNR, yTableNR, initialBusValue);
+            //solver = new NewtonRaphsonLoadFlow(swingBusesNR, pvBusesNR, pqBusesNR, yTableX, initialBusValue);
+            //solver = new NewtonRaphsonLoadFlow(swingBuses1, pvBuses1, pqBuses1, yTable);
+            solver.Tolerance = 1e-7;
+            solver.MaxIterations = 1000;
+        }
+        
+        // Capture end time and calculate elapsed time
+        var endTime = DateTime.Now;
+        messageNRresult = $"Input data processed in {(endTime - starTime).Milliseconds} ms.";
+        solver.Solve("Sparse Matrix");
+        //solver.Solve("Gauss Elimination");
+        alertMessages.Add($"{DateTime.Now:HH:mm:ss.fff tt}");
+        
+        
+        // Processing Results
+        busesResult = solver.buses;
+        branchesResult = solver.branches;
+        
+        // add all BusTo buses of 'closed' switches which were earlier replaced in Step 2:
+        foreach (var (_, busFrom,busTo, isClosed, _) in switches)
+        {
+            if (isClosed)
+            {
+                var fromBus = busesResult.Find(bus => bus.Tag == busFrom);
+                if (fromBus != null)
+                    busesResult.Add(new Bus
+                    {
+                        Tag = busTo,
+                        Type = "Switched",
+                        Voltage = fromBus.Voltage,
+                        Angle = fromBus.Angle,
+                        RatedVoltage = fromBus.RatedVoltage,
+                        OperatingVoltage = fromBus.OperatingVoltage,
+                        AngleDeg = fromBus.AngleDeg
+                            // reactive power to be recalculated later
+                    });
+            }
+        }
+        
+        
+
+        // calculate voltages of the intermediate buses
+        (busesResult, branchesResult) = CalculateIntermediateBusesAndBranches(busesResult, branchesResult, busesWithBaseVoltage, branchMappings, yTableNR, yTableFull);
+        
+        // Step 6: Add single-ended buses if removed earlier due to the negligible Yc/Yz ratio
+        if (removedSingleConnectedBranches.Count > 0)
+        {
+            foreach (var branch in removedSingleConnectedBranches)
+            {
+                var openEndedBusTag = busesResult.Any(b => b.Tag == branch.ToBus) ? branch.FromBus : branch.ToBus;
+                var connectedBusTag = branch.FromBus == openEndedBusTag ? branch.ToBus : branch.FromBus;
+                var connectedBus = busesResult.Find(b => b.Tag == connectedBusTag);
+                var z = 1/new Complex(branch.RealAdmittance, branch.ImaginaryAdmittance);
+                var v1 = connectedBus.Voltage * new Complex(Math.Cos(connectedBus.Angle), Math.Sin(connectedBus.Angle));
+                var iCharging = branch.CapacitiveAdmittance / 2;
+                var v2 = v1 + (iCharging / 3) * z; // charging current per phase
+                busesResult.Add(new Bus
+                    {
+                        Tag = openEndedBusTag,
+                        Type = "OpenEnded", // Not PQ, PV, or Swing
+                        Voltage = v2.Magnitude, // p.u.
+                        Angle = v2.Phase, // radians
+                    });
+                branchesResult.Add(new Branch
+                {
+                    Tag = branch.Tag,
+                    FromBus = branch.FromBus,
+                    ToBus = branch.ToBus,
+                    RealAdmittance = branch.RealAdmittance,
+                    ImaginaryAdmittance = branch.ImaginaryAdmittance,
+                    CapacitiveAdmittanceFromBus = branch.CapacitiveAdmittance/2,
+                    CapacitiveAdmittanceToBus = branch.CapacitiveAdmittance/2,
+                    I = new Complex(0,iCharging/3),
+                });
+            }
+        }
+        
+        //busesResult = CalculateIntermediateBusVoltages(branchesResult, branchMappings, busesResult, updatedYTable, busesWithBaseVoltage);
+        // Sort buses by tag Tag
+        busesResult = busesResult.OrderBy(b => b.Tag ).ToList();
+        branchesResult = branchesResult.OrderBy(b => b.Tag ).ToList();
+        
+        // calculate bus voltages (kV) and power
+        busesResult.ForEach(bus =>
+        {
+            var baseVoltage = busesWithBaseVoltage.Find(b => b.Tag == bus.Tag).BaseVoltage;
+            bus.OperatingVoltage  = bus.Voltage * baseVoltage;
+            bus.RatedVoltage = baseVoltage;
+            bus.AngleDeg = 30 + bus.Angle * 180 / Math.PI;
+            try{ bus.RatedVoltage = busList.Find(b => b.Item1 == bus.Tag).Item2; }catch { }
+            bus.RealPower *= baseMVA;
+            bus.ReactivePower *= baseMVA;
+        });
+        
+        // calculate branch current for the simplified branches
+        
+        for (var i = 0; i < branchesResult.Count; i++)
+        {
+            branchesResult[i] = CalculateBranchPower(baseMVA, branchesResult[i], yTableFull, busesWithBaseVoltage);
+        }
+        
+        
+        
+        // calculate PQ Load details
+        for (var i = 0; i < pqBuses.Count; i++)
+        {
+            var bus = pqBuses[i].Item1;
+            if(!busesResult.Any(b=>b.Tag == bus)) continue;
+            
+            var tag = pqBuses[i].Item5;
+            var type = pqBuses[i].Item6;
+            
+            var operatingVoltage = busesResult.Find(b => b.Tag == bus).OperatingVoltage;
+            var p = 0.0;
+            var q = 0.0;
+            var s = 0.0;
+            var ab = 0.0;
+            var imag = 0.0;
+            var ipf = 0.0;
+            string cable = "";
+            string powerIn = "";
+            if (type == "Motor")
+            {
+                var motor = motors.Find(item => item.tag == tag);
+                p = motor.kW * motor.ab / motor.eff;
+                q = p * Math.Tan(Math.Acos(motor.pf));
+                s = System.Math.Sqrt(p * p + q * q);
+                imag = ((p / motor.pf) / operatingVoltage) / Math.Sqrt(3);
+                ipf = motor.pf * 100;
+                cable = $"{motor.cable} {motor.l}m";
+            }
+            else if (type == "Lump")
+            {
+                var lump = lumploads.Find(item => item.tag == tag);
+                
+                // Constant kVA part remains fixed; constant Z part is proportionate to the square of the bus voltage
+                var const_part_p = lump.kVA * lump.pf* (lump.df / 100.0);
+                var z_part_p = lump.kVA * lump.pf* (1.0 - lump.df  / 100.0) * System.Math.Pow(operatingVoltage / lump.kV,2);
+                p = const_part_p + z_part_p;
+                q = p * Math.Tan(Math.Acos(lump.pf));
+                s = System.Math.Sqrt(p * p + q * q);
+                imag = (s / operatingVoltage) / Math.Sqrt(3);
+                ipf = lump.pf * 100;
+                cable = "na";
+            }
+            else if (type == "Capacitor")
+            {
+                
+            }
+            else
+            {
+            }
+        pqLoadResult.Add(new PQLoad
+        {
+            Tag = tag,
+            Bus = bus,
+            Type = type,
+            Imag = imag,
+            Ipf = ipf,
+            KV = operatingVoltage,
+            PowerIn = $"{s:F1}kVA [{p:F1}, {q:F1}]",
+            Cable = cable,
+        });
+        }
+      
+        messageNRresult += $"\nResult obtained in {solver.Iterations} iteration ({solver.ElapsedTime.TotalMicroseconds} microseconds).";
+
+        // Calculate short circuit currents using the full yTable and busesResult
+        scResults = CalculateShortCircuitCurrents(yTableFull, busesResult, baseMVA);
+
+        // Trigger UI update
+        StateHasChanged();
+    }
+    
+    
+    private Branch CalculateBranchPower(
+        double baseMVA,
+        Branch branch, List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)> yTableCombined, 
+        List<(string Tag, double BaseVoltage)> busesWithBaseVoltage)
+    {
+        if (branch.I == default) return branch;
+        var I = branch.I; // pu
+        
+        var i = busesResult.FindIndex(b => b.Tag == branch.FromBus);
+        var j = busesResult.FindIndex(b => b.Tag == branch.ToBus);
+        var vi = new Complex(busesResult[i].Voltage * Math.Cos(busesResult[i].Angle), busesResult[i].Voltage * Math.Sin(busesResult[i].Angle));
+        var vj = new Complex(busesResult[j].Voltage * Math.Cos(busesResult[j].Angle), busesResult[j].Voltage * Math.Sin(busesResult[j].Angle));
+ 
+        var baseVoltageFromBus = busesWithBaseVoltage.Find(b => b.Tag == branch.FromBus).BaseVoltage;
+        var iBase = (1000 * baseMVA / baseVoltageFromBus);
+
+        // calculate loss across the branch for Z
+        var lossZ = 1000*baseMVA* System.Math.Pow(3,.5)*(vi - vj) * Complex.Conjugate(I);
+        var y = new Complex(branch.RealAdmittance, branch.ImaginaryAdmittance);
+        var vDelta = I/y;
+        var lossZ1 = 1000*baseMVA *3*vDelta * Complex.Conjugate(I);
+        
+        // calculate loss due to the charging current for this branch
+        var chargingCurrent = new Complex(0,branch.CapacitiveAdmittanceFromBus + branch.CapacitiveAdmittanceToBus) * vi;
+        var lossCharging = 1000*baseMVA*vi * Complex.Conjugate(chargingCurrent);
+        
+        // calculate branch current including the cable charging current
+        branch.I += chargingCurrent/3; // /3 for charging current per phase
+        branch.Imag = I.Magnitude * iBase;
+        branch.Ipf  = 100 *Math.Cos(vi.Phase - I.Phase);
+        
+        // calculate total loss
+        var loss = lossZ + lossCharging;
+        
+        // calculate branch in and branch out power
+        var S1 = 1000*baseMVA* Math.Pow(3,0.5)*vi * Complex.Conjugate(I+chargingCurrent);;
+        var S2 = 1000*baseMVA * Math.Pow(3,0.5)*vj * Complex.Conjugate(I);
+        
+        // for display
+        branch.PowerIn =$"{S1.Magnitude:F1}kVA [{S1.Real:F1}, {S1.Imaginary:F1}]";
+        branch.PowerOut =$"{S2.Magnitude:F1}kVA [{S2.Real:F1}, {S2.Imaginary:F1}]";
+        
+        branch.Loss = $"{loss.Real:F1}kW {loss.Imaginary:F1}kVAR";
+        
+        // voltage drop in v to be displayed (ETAP displayes line voltage drop, not phase)
+        branch.Vd = 1000*(busesResult[i].Voltage - busesResult[j].Voltage) * baseVoltageFromBus/Math.Pow(3,0.5);
+        
+        return branch;
+    }
+    
+    private (List<Bus> busResultAll, List<Branch> branchResultsAll) CalculateIntermediateBusesAndBranches(
+        List<Bus> busResult,
+        List<Branch> branchesResult,
+        List<(string Tag, double BaseVoltage)> busesWithBaseVoltage,
+        List<(string FromBus, string ToBus, List<(string From, string To)> OriginalBranches)> branchMappings,
+        List<(string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittanceBusFrom, double CapacitiveAdmittanceBusTo)> yTableNR,
+        List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)> yTable
+        )
+    {
+        // Create dictionaries for bus voltages and base voltages
+        var busVoltageLookup = busResult.ToDictionary(b => b.Tag, b => new Complex(b.Voltage * Math.Cos(b.Angle), b.Voltage * Math.Sin(b.Angle)));
+        var baseVoltageLookup = busesWithBaseVoltage.ToDictionary(b => b.Tag, b => b.BaseVoltage);
+
+        // Calculate currents for simplified branches
+        foreach (var branch in branchesResult)
+        {
+            // Find bus voltages
+            if (!busVoltageLookup.TryGetValue(branch.FromBus, out var vi) ||
+                !busVoltageLookup.TryGetValue(branch.ToBus, out var vj))
+                continue;
+
+            // Calculate branch current: I = (Vi - Vj) / sqrt(3) * branch
+            var I = (vi - vj) / Math.Sqrt(3) * new Complex(branch.RealAdmittance, branch.ImaginaryAdmittance);
+
+            // Subtract the charging current at ToBus (split across three phases)
+            var chargingCurrentSimplified = new Complex(0, branch.CapacitiveAdmittanceToBus) * vj / 3.0;
+            branch.I = I - chargingCurrentSimplified; // Current excluding charging current injected at ToBus
+        }
+
+        // Initialize output lists
+        var busResultAll = new List<Bus>(busResult);
+        var branchResultsAll = new List<Branch>(); // Initialize empty to exclude equivalent branches
+
+        // Process each simplified branch
+        foreach (var mapping in branchMappings)
+        {
+            if (mapping.OriginalBranches.Count == 1)
+            {
+                var br = branchesResult.Find(br => 
+                    (br.FromBus == mapping.FromBus && br.ToBus == mapping.ToBus) || 
+                    (br.FromBus == mapping.ToBus && br.ToBus == mapping.FromBus));
+                var brTag = yTable.FirstOrDefault(b =>
+                    (b.FromBus ==  mapping.FromBus && b.ToBus ==  mapping.ToBus) ||
+                    (b.FromBus ==  mapping.ToBus && b.ToBus ==  mapping.FromBus)).Tag;
+                branchResultsAll.Add(new Branch
+                {
+                    Tag = brTag,
+                    FromBus = br.FromBus,
+                    ToBus = br.ToBus,
+                    RealAdmittance = br.RealAdmittance,
+                    ImaginaryAdmittance = br.ImaginaryAdmittance,
+                    CapacitiveAdmittanceFromBus = br.CapacitiveAdmittanceFromBus,
+                    CapacitiveAdmittanceToBus = br.CapacitiveAdmittanceToBus,
+                    I = br.I,
+                    Imag = br.Imag,
+                    Ipf = br.Ipf, 
+                    PowerIn = br.PowerIn, 
+                    PowerOut = br.PowerOut, 
+                    Loss = br.Loss, 
+                    Vd = br.Vd
+                });
+                continue;
+            }
+            // Find the simplified branch in branchesResult
+            var simplifiedBranch = branchesResult.FirstOrDefault(b => b.FromBus == mapping.FromBus && b.ToBus == mapping.ToBus);
+            if (simplifiedBranch == null)
+                continue;
+
+            // Get the complex current of the simplified branch (in p.u.), which is excluding the ToBus charging current
+            var simplifiedCurrent = simplifiedBranch.I;
+
+            // Get the starting bus voltage (FromBus) and ToBus voltage
+            if (!busVoltageLookup.TryGetValue(mapping.FromBus, out var currentVoltage) ||
+                !busVoltageLookup.TryGetValue(mapping.ToBus, out var toBusVoltage))
+                continue;
+
+            // Get the simplified branch's capacitive admittance
+            var simplifiedBranchData = branchesResult.FirstOrDefault(b =>
+                (b.FromBus == mapping.FromBus && b.ToBus == mapping.ToBus) ||
+                (b.FromBus == mapping.ToBus && b.ToBus == mapping.FromBus));
+            var simplifiedCapAdmittance = simplifiedBranchData.CapacitiveAdmittanceFromBus + simplifiedBranchData.CapacitiveAdmittanceToBus;
+
+            // Track the current bus and accumulated charging currents (up to previous branches)
+            string currentBus = mapping.FromBus;
+            var accumulatedChargingCurrent = new Complex(0, 0);
+
+            // Process each original branch in the mapping
+            foreach (var (origFrom, origTo) in mapping.OriginalBranches)
+            {
+                // Find the original branch in yTable
+                var origBranch = yTable.FirstOrDefault(b =>
+                    (b.FromBus == origFrom && b.ToBus == origTo) ||
+                    (b.FromBus == origTo && b.ToBus == origFrom));
+                if (origBranch.Tag == null)
+                    continue;
+
+                // Calculate impedance Z = 1/Y
+                var yComplex = new Complex(origBranch.RealAdmittance, origBranch.ImaginaryAdmittance);
+                Complex zComplex;
+                if (yComplex.Magnitude == 0)
+                {
+                    zComplex = new Complex(0, 0); // Avoid division by zero
+                }
+                else
+                {
+                    zComplex = 1 / yComplex; // Z = 1/Y
+                }
+
+                // Calculate voltage drop: V_drop = I * Z
+                var voltageDrop = Math.Sqrt(3) * simplifiedCurrent * zComplex;
+
+                // Determine direction (FromBus -> ToBus or reverse)
+                bool isReverse = origBranch.FromBus == currentBus ? false : true;
+                var nextBus = isReverse ? origBranch.FromBus : origBranch.ToBus;
+
+                // Update voltage: V_next = V_current - V_drop (if reverse) or V_current + V_drop (if not reverse)
+                var nextVoltage = isReverse ? currentVoltage + voltageDrop : currentVoltage - voltageDrop;
+
+                // Extract magnitude and angle
+                var voltageMagnitude = nextVoltage.Magnitude;
+                var voltageAngle = nextVoltage.Phase; // in radians
+                var angleDeg = voltageAngle * 180 / Math.PI + 30; // Add 30-degree phase shift
+
+                // Get base voltage for the next bus
+                if (!baseVoltageLookup.TryGetValue(nextBus, out var ratedVoltage))
+                {
+                    ratedVoltage = 0.0; // Default if not found
+                }
+
+                // Calculate operating voltage (in kV)
+                var operatingVoltage = voltageMagnitude * ratedVoltage;
+
+                // Add or update the intermediate bus in busResultAll
+                var existingBus = busResultAll.FirstOrDefault(b => b.Tag == nextBus);
+                if (existingBus == null)
+                {
+                    busResultAll.Add(new Bus
+                    {
+                        Tag = nextBus,
+                        Type = "Intermediate", // Not PQ, PV, or Swing
+                        Voltage = voltageMagnitude, // p.u.
+                        Angle = voltageAngle, // radians
+                        RealPower = 0.0, // No power data for intermediate bus
+                        ReactivePower = 0.0,
+                        RatedVoltage = ratedVoltage, // kV
+                        OperatingVoltage = operatingVoltage, // kV
+                        AngleDeg = angleDeg // degrees with 30-degree shift
+                    });
+                }
+
+                // Calculate branch current (excluding charging current)
+                var fullChargingCurrentSimplified = new Complex(0, simplifiedCapAdmittance) * toBusVoltage / 3.0;
+                var simplifiedCurrentWithFullChargingCurrent = simplifiedCurrent + fullChargingCurrentSimplified;
+                var chargingCurrentCurrentBranch = new Complex(0, origBranch.CapacitiveAdmittance) * currentVoltage / 3.0;
+                var intermediateCurrent = simplifiedCurrentWithFullChargingCurrent - accumulatedChargingCurrent;
+                // Update accumulated charging current to include the current branch for the next iteration
+                accumulatedChargingCurrent += chargingCurrentCurrentBranch;
+
+                // Create new Branch object for the intermediate branch
+                var newBranch = new Branch
+                {
+                    Tag = origBranch.Tag,
+                    FromBus = origFrom,
+                    ToBus = origTo,
+                    RealAdmittance = origBranch.RealAdmittance,
+                    ImaginaryAdmittance = origBranch.ImaginaryAdmittance,
+                    CapacitiveAdmittanceFromBus = origBranch.CapacitiveAdmittance/2,
+                    CapacitiveAdmittanceToBus = origBranch.CapacitiveAdmittance/2,
+                    I = intermediateCurrent,
+                    Imag = intermediateCurrent.Magnitude,
+                    Ipf = simplifiedBranch.Ipf, 
+                    PowerIn = simplifiedBranch.PowerIn, 
+                    PowerOut = simplifiedBranch.PowerOut, 
+                    Loss = simplifiedBranch.Loss, 
+                    Vd = simplifiedBranch.Vd 
+                };
+
+                // Add to branchResultsAll
+                branchResultsAll.Add(newBranch);
+
+                // Update current bus and voltage for the next iteration
+                currentBus = nextBus;
+                currentVoltage = nextVoltage;
+            }
+        }
+
+        return (busResultAll, branchResultsAll);
+    }
+
+
+    
+ 
+    
+    
+    // Class to represent a bus in the power system
+    public class Bus
+    {
+        public string Tag { get; set; }
+        public string Type { get; set; } // "Swing", "PV", "PQ"
+        public double Voltage { get; set; } // Magnitude in p.u.
+        public double Angle { get; set; } // Angle in radians
+        public double RealPower { get; set; } // P in p.u.
+        public double ReactivePower { get; set; } // Q in p.u.
+        public double RatedVoltage { get; set; } // in kV
+        public double OperatingVoltage { get; set; } // in kV
+        public double AngleDeg { get; set; } // in deg with 30 deg added for Phase
+        public double MaxReactivePower { get; set; } // Max Q in p.u.
+        public double MinReactivePower { get; set; } // Min Q in p.u.
+    }
+
+    // Class to represent a branch in the Y-phase table
+    public class Branch
+    {
+        public string Tag { get; set; }
+        public string FromBus { get; set; }
+        public string ToBus { get; set; }
+        public double RealAdmittance { get; set; } // in p.u.
+        public double ImaginaryAdmittance { get; set; } // in p.u. -ve for inductive
+        public double CapacitiveAdmittanceFromBus { get; set; } // in p.u. (shunt susceptance to be injected at From Bus)
+        public double CapacitiveAdmittanceToBus{ get; set; } // to be injected at To Bus
+        public Complex I { get; set; } // pu
+        public double Imag { get; set; }
+        public double Ipf { get; set; } // power factor w.r.t busFrom voltage
+        public string PowerIn { get; set; }
+        public string PowerOut { get; set; }
+        public string Loss { get; set; }
+        public double Vd { get; set; }
+    }
+    
+    public class PQLoad
+    {
+        public string Tag { get; set; }
+        public string Type { get; set; }
+        public string Bus { get; set; }
+        public double KV { get; set; }
+        public double Imag { get; set; }
+        public double Ipf { get; set; } // power factor w.r.t busFrom voltage
+        public string PowerIn { get; set; }
+        public string Cable { get; set; } // cable description with length
+    }
+    
+    public class ShortCircuit
+    {
+        public string Tag { get; set; }
+        public double Isc { get; set; }
+    }
+
+    public class NewtonRaphsonLoadFlow
+    {
+        public List<Bus> buses;
+        public List<Branch> branches;
+        private double[,] Ymag; // Admittance matrix magnitudes
+        private double[,] Yphase; // Admittance matrix phases
+        private readonly int n; // Total number of buses
+        private int npv; // Number of PV buses
+        private readonly int npq; // Number of PQ buses
+        public double Tolerance ; // Convergence tolerance
+        public int MaxIterations ;
+        public int Iterations;
+        public TimeSpan ElapsedTime;
+        public string Message;
+        private List<(string tag, double realPower, double reactivePower, double dynamicRatio, string loadTag, string loadType)> PQBuses;
+
+        public NewtonRaphsonLoadFlow(
+            List<(string tag, double ratedVoltage)> swingBuses,
+            List<(string tag, double voltage, double realPower, double maxQ, double minQ)> pvBuses,
+            List<(string tag, double realPower, double reactivePower, double dynamicRatio, string loadTag, string loadType)> pqBuses,
+            List<(string fromBus, string toBus, double realAdmittance, double imaginaryAdmittance, double capacitiveAdmittanceFromBus, double capacitiveAdmittanceToBus)> yTable,
+            List<(string tag, double initialVoltage, double initialAngle)> initialBusValue)
+        {
+            
+            // Step 1: Initialize buses from input data
+            InitializeBuses(swingBuses, pvBuses, pqBuses, yTable, initialBusValue);
+
+            // Initialize branches with capacitive admittance
+            branches = yTable.Select(b => new Branch
+            {
+                FromBus = b.fromBus,
+                ToBus = b.toBus,
+                RealAdmittance = b.realAdmittance,
+                ImaginaryAdmittance = b.imaginaryAdmittance,
+                CapacitiveAdmittanceFromBus = b.capacitiveAdmittanceFromBus,
+                CapacitiveAdmittanceToBus = b.capacitiveAdmittanceToBus,
+                
+            }).ToList();
+
+            n = buses.Count;
+            npv = buses.Count(b => b.Type == "PV");
+            npq = buses.Count(b => b.Type == "PQ" || b.Type == "Isolated");
+            PQBuses = pqBuses; // with multiple entries and with dynamic factors
+            
+            // Step 2: Build Ybus matrix (magnitude and phase)
+            BuildYBusMatrix();
+        }
+ 
+        // Step 1 Initialize buses from input data
+        private void InitializeBuses(
+            List<(string tag, double ratedVoltage)> swingBuses,
+            List<(string tag, double voltage, double realPower, double maxQ, double minQ)> pvBuses,
+            List<(string tag, double realPower, double reactivePower, double DynamicRatio, string LoadTag, string LoadType)> pqBuses,
+            List<(string fromBus, string toBus, double realAdmittance, double imaginaryAdmittance, double capacitiveAdmittanceFromBus, double capacitiveAdmittanceToBus)> yTable,
+            List<(string tag, double initialVoltage, double initialAngle)> initialBusValue)
+        {
+            buses = new List<Bus>();
+            // Add swing buses
+            foreach (var bus in swingBuses)
+            {
+                buses.Add(new Bus
+                {
+                    Tag = bus.tag,
+                    Type = "Swing",
+                    Voltage = 1.0,
+                    Angle = 0,
+                    RatedVoltage = bus.ratedVoltage
+                });
+            }
+
+            // Add PV buses
+            foreach (var pv in pvBuses)
+            {
+                var initialValue = initialBusValue.FirstOrDefault(b=> b.tag == pv.tag);
+                var angle = initialValue.initialAngle>0 ? initialValue.initialAngle : 0.0;
+                buses.Add(new Bus
+                {
+                    Tag = pv.tag,
+                    Type = "PV",
+                    Voltage = pv.voltage,
+                    RealPower = pv.realPower,
+                    Angle = angle,// Initial guess
+                    MaxReactivePower = pv.maxQ,
+                    MinReactivePower = pv.minQ
+                        
+                });
+            }
+
+            // Before adding PQ bus, check the branch table
+            // Add PQ buses
+            foreach (var pq in pqBuses)
+            {
+                
+                var initialValue = initialBusValue.FirstOrDefault(b=> b.tag == pq.tag);
+                var volatge = initialValue.initialVoltage>0 ? initialValue.initialVoltage : 1.0;
+                var angle = Math.Abs(initialValue.initialAngle)>0 ? initialValue.initialAngle : 0.0;
+                
+                // check if the bus already exists (for multiple entries)
+                if (buses.Any(b => b.Tag == pq.tag))
+                {
+                    var bus = buses.Find(b => b.Tag == pq.tag);
+                    bus.RealPower += pq.realPower;
+                    bus.ReactivePower += pq.reactivePower;
+                }
+                else
+                {
+                    buses.Add(new Bus
+                    {
+                        Tag = pq.tag,
+                        Type = "PQ",
+                        RealPower = pq.realPower,
+                        ReactivePower = pq.reactivePower,
+                        Voltage = volatge, // Initial guess
+                        Angle = angle // Initial guess
+                    });
+                }
+            }
+
+            // // Identify isolated buses (connected to only one branch and not Swing/PV/PQ)
+            // var allBusTags = yTable.SelectMany(b => new[] { b.fromBus, b.toBus }).Distinct().ToList();
+            // var busConnectionCount = allBusTags.ToDictionary(tag => tag, tag => 0);
+            // foreach (var branch in yTable)
+            // {
+            //     busConnectionCount[branch.fromBus]++;
+            //     busConnectionCount[branch.toBus]++;
+            // }
+
+            // Add the remaining buses as PQ bus with zero P zero Q
+            var allBusTags = yTable.SelectMany(b => new[] { b.fromBus, b.toBus }).Distinct().ToList();
+            foreach (var tag in allBusTags)
+            {
+                if (buses.Any(bus => bus.Tag == tag)) continue;
+                var initialValue = initialBusValue.FirstOrDefault(b=> b.tag == tag);
+                var volatge = initialValue.initialVoltage>0 ? initialValue.initialVoltage : 1.0;
+                var angle = Math.Abs(initialValue.initialAngle)>0 ? initialValue.initialAngle : 0.0;
+                buses.Add(new Bus
+                {
+                    Tag = tag,
+                    Type = "PQ",
+                    RealPower = 1e-6,
+                    ReactivePower = 1e-6,
+                    Voltage = volatge, // Initial guess
+                    Angle = angle// Initial guess
+                });
+            }
+
+            // Sort buses by Type (Swing, PV, then others) and then by Tag
+            buses = buses.OrderBy(b => b.Type == "Swing" ? 0 : b.Type == "PV" ? 1 : 2)
+                .ThenBy(b => b.Tag)
+                .ToList();
+        }
+
+        // Step 2: Build Ybus matrix (magnitude and phase)
+        private void BuildYBusMatrix()
+        {
+            Ymag = new double[n, n]; // pu
+            Yphase = new double[n, n]; // in rad
+
+            // Off-diagonal elements
+            foreach (var branch in branches)
+            {
+                var i = buses.FindIndex(b => b.Tag == branch.FromBus);
+                var j = buses.FindIndex(b => b.Tag == branch.ToBus);
+                Ymag[i, j] = Ymag[j, i] = Math.Sqrt(Math.Pow(branch.RealAdmittance, 2) + Math.Pow(branch.ImaginaryAdmittance, 2));
+                Yphase[i, j] = Yphase[j, i] = Math.PI + Math.Atan2(branch.ImaginaryAdmittance, branch.RealAdmittance);
+            }
+
+            // Diagonal elements (self-admittance)
+            for (var i = 0; i < n; i++)
+            {
+                double sumReal = 0;
+                double sumImag = 0;
+
+                // Series admittance
+                branches.Where(br => br.FromBus == buses[i].Tag || br.ToBus == buses[i].Tag)
+                    .ToList()
+                    .ForEach(br =>
+                    {
+                        sumReal += br.RealAdmittance;
+                        sumImag += br.ImaginaryAdmittance;
+                    });
+
+                // Add shunt susceptance (capacitiveAdmittance/2 for each end)
+                // branches.Where(br => br.FromBus == buses[i].Tag || br.ToBus == buses[i].Tag)
+                //     .ToList()
+                //     .ForEach(br =>
+                //     {
+                //         sumImag += br.CapacitiveAdmittance / 2.0; // Shunt susceptance contribution
+                //     });
+                
+                // Add shunt susceptance (capacitiveAdmittance) for Bus From end
+                branches.Where(br => br.FromBus == buses[i].Tag )
+                    .ToList()
+                    .ForEach(br =>
+                    {
+                        sumImag += br.CapacitiveAdmittanceFromBus; // Shunt susceptance contribution
+                    });
+                // Add shunt susceptance (capacitiveAdmittance)  for Bus To end
+                branches.Where(br => br.ToBus == buses[i].Tag)
+                    .ToList()
+                    .ForEach(br =>
+                    {
+                        sumImag += br.CapacitiveAdmittanceToBus; // Shunt susceptance contribution
+                    });
+                
+
+                Ymag[i, i] = Math.Sqrt(sumReal * sumReal + sumImag * sumImag);
+                Yphase[i, i] = Math.Atan2(sumImag, sumReal);
+            }
+        }
+
+        // Step 3: Run Newton-Raphson iteration
+public void Solve(string solveMethod)
+{
+    // Capture start time to calculate elapsed time
+    var startTime = DateTime.Now;
+
+    int iteration = 0;
+    bool typesChanged;
+
+    
+    // create pvTag and Type List to store
+    var pvTagTypeList = buses
+        .Where(bus => bus.Type == "PV")
+        .Select(bus => (Tag: bus.Tag, Type: bus.Type, OriginalType: bus.Type))
+        .ToList();
+
+    do
+    {
+        typesChanged = false;
+
+        // Calculate current npq based on bus types (dynamic)
+        int currentNpq = buses.Count(b => b.Type == "PQ" || b.Type == "Isolated");
+        int swingBusCount = buses.Count(b => b.Type == "Swing");
+        int numUnknowns = n - swingBusCount + currentNpq; // (n-1) angles + current npq voltages
+
+        var mismatches = new double[numUnknowns];
+        var corrections = new double[numUnknowns];
+
+        // Inner iteration loop
+        while (iteration < MaxIterations)
+        {
+            // Step 3.1: Calculate power mismatches
+            CalculateMismatches(mismatches);
+
+            // Check convergence
+            var maxMismatch = mismatches.Max(m => Math.Abs(m));
+            Console.WriteLine($"Iteration {iteration}: Max Mismatch {maxMismatch}, {maxMismatch < Tolerance}");
+            if (maxMismatch < Tolerance)
+            {
+                break;
+            }
+
+            // Step 3.2: Build Jacobian matrix (use current npq)
+            var jacobian = JacobianHelper.BuildJacobian(buses, Ymag, Yphase, n, currentNpq);
+
+            // Solve for corrections
+            corrections = SolveLinearSystemGaussianElimination(jacobian, mismatches);
+            // Or use SolveLinearSystemSparseMatrix if preferred
+
+            // Step 3.4: Update variables
+            UpdateVariables(corrections);
+
+            // Check Q limits for PV buses after update (violation check)
+            foreach (var bus in buses.Where(b => b.Type == "PV").ToList()) // ToList to avoid modification during enumeration
+            {
+                int busIndex = buses.FindIndex(b => b.Tag == bus.Tag);
+                // Calculate current Q for this PV bus
+                double Qcalc = 0;
+                for (var k = 0; k < n; k++)
+                {
+                    Qcalc += -bus.Voltage * buses[k].Voltage * Ymag[busIndex, k] *
+                             Math.Sin(Yphase[busIndex, k] + buses[k].Angle - bus.Angle);
+                }
+
+                if (Qcalc > bus.MaxReactivePower || Qcalc < bus.MinReactivePower)
+                {
+                    // Violated: Convert to PQ at limit
+                    var indexToUpdate = pvTagTypeList.FindIndex(b => b.Tag == bus.Tag);
+                    pvTagTypeList[indexToUpdate] = pvTagTypeList[indexToUpdate] with { Type = "PQ" };;
+                    
+                    bus.Type = "PQ";
+                    bus.ReactivePower = Qcalc > bus.MaxReactivePower ? bus.MaxReactivePower : bus.MinReactivePower;
+                    typesChanged = true;
+                    Message += $"\nIteration {iteration}: PV bus {bus.Tag} converted to PQ due to Q limit violation (Qcalc={Qcalc:F3}, limits=[{bus.MinReactivePower:F3}, {bus.MaxReactivePower:F3}]).";
+                    break; // Restart outer loop with new types
+                }
+            }
+
+            if (typesChanged)
+            {
+                break; // Exit inner loop to handle type change
+            }
+
+            // NEW: Check for recovery: Switch back to PV if Q would be within limits
+            // Only check buses that were originally PV (assuming limits are set only for them)
+
+            //foreach (var bus in buses.Where(b => b.Type == "PQ" && pvTagTypeList.Any(b1=> b.Tag == b1.Tag && b1.OriginalType == "PV")).ToList()) 
+            foreach (var bus in buses.Where(b => b.Type == "PQ" && b.MaxReactivePower != 0 && b.MinReactivePower != 0).ToList())
+            {
+                int busIndex = buses.FindIndex(b => b.Tag == bus.Tag);
+                // Calculate "would-be" Q as if this were a PV bus (at current voltage)
+                double QwouldBe = 0;
+                for (var k = 0; k < n; k++)
+                {
+                    QwouldBe += -bus.Voltage * buses[k].Voltage * Ymag[busIndex, k] *
+                                Math.Sin(Yphase[busIndex, k] + buses[k].Angle - bus.Angle);
+                }
+
+                if (QwouldBe >= bus.MinReactivePower && QwouldBe <= bus.MaxReactivePower)
+                {
+                    // Recovered: Switch back to PV, clear fixed Q
+                    bus.Type = "PV";
+                    bus.ReactivePower = 0; // Reset since it's now calculated
+                    typesChanged = true;
+                    Message += $"\nIteration {iteration}: PQ bus {bus.Tag} switched back to PV as Q recovered (QwouldBe={QwouldBe:F3}, limits=[{bus.MinReactivePower:F3}, {bus.MaxReactivePower:F3}]).";
+                    break; // Restart outer loop with new types
+                }
+            }
+
+            if (typesChanged)
+            {
+                break; // Exit inner loop to handle type change
+            }
+
+            iteration++;
+        }
+    } while (typesChanged && iteration < MaxIterations);
+
+    if (!typesChanged)
+    {
+        Iterations = iteration;
+        Message += $"\nConverged in {iteration} iterations.";
+        Debug.WriteLine(Message);
+        CalculatePower();
+    }
+    else
+    {
+        Message += $"\nDid not converge within maximum iterations {iteration} (limits enforced but convergence failed).";
+        Debug.WriteLine(Message);
+    }
+
+    // Capture end time and calculate elapsed time
+    var endTime = DateTime.Now;
+    ElapsedTime = endTime - startTime;
+}
+
+        // Step 3.1: Calculate power mismatches (Delta P and Delta Q)
+        private void CalculateMismatches(double[] mismatches)
+        {
+            var idx = 0;
+            // Delta P for all buses except swing bus
+            for (var i = 0; i < n; i++)
+            {
+                if (buses[i].Type == "Swing") continue;
+                double Pcalc = 0;
+                for (var k = 0; k < n; k++)
+                {
+                    //Console.WriteLine($"P: mismatches[{idx}] : buses[{i}].RealPower: {buses[i].RealPower:F3}, buses[{i}].Angle : {buses[i].Angle:F3}, Ymag[{i}, {k}]: {Ymag[i, k]:F3}, Yphase[{i}, {k}]: {Yphase[i, k]:F3}");
+                    Pcalc += buses[i].Voltage * buses[k].Voltage * Ymag[i, k] *
+                             Math.Cos(Yphase[i, k] + buses[k].Angle - buses[i].Angle);
+                }
+
+                //Console.WriteLine($"CalculateMismatches P: mismatches[{idx}] = {buses[i].RealPower:F3} - {Pcalc:F3}");
+                
+                // There can be multiple entries of PQ buses
+                var filteredPQ = PQBuses.Where(bs => bs.tag == buses[i].Tag).ToList();
+                double busRealPower = 0;
+                foreach (var pq in filteredPQ)
+                {
+                    // static part is proportionate to the voltage, whereas dynamic part remains constant irrespective of the bus voltage
+                    //busRealPower += pq.realPower * pq.dynamicRatio / 100 + buses[i].Voltage * pq.realPower * (100 - pq.dynamicRatio) / 100;
+                    // Constant kVA part remains fixed; constant Z part is proportionate to the square of the bus voltage
+                    double const_part = pq.realPower * (pq.dynamicRatio / 100.0);
+                    double z_part = pq.realPower * (1.0 - pq.dynamicRatio / 100.0) * (buses[i].Voltage * buses[i].Voltage);
+                    busRealPower += const_part + z_part;
+                }
+                
+                mismatches[idx++] = buses[i].RealPower - Pcalc;
+                //mismatches[idx++] = busRealPower - Pcalc;
+            }
+
+            // Delta Q for PQ buses and Isolated buses
+            for (var i = 0; i < n; i++)
+            {
+                if (buses[i].Type != "PQ" && buses[i].Type != "Isolated") continue;
+
+                double Qcalc = 0;
+                for (var k = 0; k < n; k++)
+                {
+                    Qcalc += -buses[i].Voltage * buses[k].Voltage * Ymag[i, k] *
+                             Math.Sin(Yphase[i, k] + buses[k].Angle - buses[i].Angle);
+                }
+
+                //Console.WriteLine($"Q: mismatches[{idx}] = {buses[i].ReactivePower:F3} - {Qcalc:F3}");
+                
+                // There can be multiple entries of PQ buses
+                var filteredPQ = PQBuses.Where(bs => bs.tag == buses[i].Tag).ToList();
+                double busReactivePower = 0;
+                foreach (var pq in filteredPQ)
+                {
+                    // static part is proportionate to the voltage, whereas dynamic part remains constant irrespective of the bus voltage
+                    //busReactivePower += pq.reactivePower * pq.dynamicRatio / 100 + buses[i].Voltage * pq.reactivePower * (100 - pq.dynamicRatio) / 100;
+                    // Constant kVA part remains fixed; constant Z part is proportionate to the square of the bus voltage
+                    double const_part = pq.reactivePower * (pq.dynamicRatio / 100.0);
+                    double z_part = pq.reactivePower * (1.0 - pq.dynamicRatio / 100.0) * (buses[i].Voltage * buses[i].Voltage);
+                    busReactivePower += const_part + z_part;
+                }
+                mismatches[idx++] = buses[i].ReactivePower - Qcalc;
+                //mismatches[idx++] = busReactivePower - Qcalc;
+            }
+        }
+
+        private void CalculatePower()
+        {
+            // Calculate injected P for swing buses
+            for (var i = 0; i < n; i++)
+            {
+                if (buses[i].Type != "Swing") continue;
+                double Pcalc = 0;
+                for (var k = 0; k < n; k++)
+                {
+                    Pcalc += buses[i].Voltage * buses[k].Voltage * Ymag[i, k] *
+                             Math.Cos(Yphase[i, k] + buses[k].Angle - buses[i].Angle);
+                }
+
+                //Console.WriteLine($"P: Bus[{i}] = {Pcalc:F3}");                                                           
+                buses[i].RealPower = Pcalc;
+            }
+
+            // Calculate Injected Q for Swing and PV buses
+            for (var i = 0; i < n; i++)
+            {
+                if (buses[i].Type == "PQ" || buses[i].Type == "Isolated") continue;
+
+                double Qcalc = 0;
+                for (var k = 0; k < n; k++)
+                {
+                    Qcalc += -buses[i].Voltage * buses[k].Voltage * Ymag[i, k] *
+                             Math.Sin(Yphase[i, k] + buses[k].Angle - buses[i].Angle);
+                }
+
+                //Console.WriteLine($"Q: Bus[{i}] = {Qcalc:F3}");                                                          
+                buses[i].ReactivePower = Qcalc;
+            }
+        }
+
+        // Step 3.3a: Solve linear system J * dx = -mismatches (Gaussian elimination)
+        private double[] SolveLinearSystemGaussianElimination(double[,] jacobian, double[] mismatches)
+        {
+            var n = mismatches.Length;
+            var result = new double[n];
+            Array.Copy(mismatches, result, n);
+
+            // Forward elimination
+            for (var i = 0; i < n; i++)
+            {
+                for (var k = i + 1; k < n; k++)
+                {
+                    var factor = jacobian[k, i] / jacobian[i, i];
+                    for (var j = i; j < n; j++)
+                        jacobian[k, j] -= factor * jacobian[i, j];
+                    result[k] -= factor * result[i];
+                }
+            }
+
+            // Back substitution
+            for (var i = n - 1; i >= 0; i--)
+            {
+                double sum = 0;
+                for (var j = i + 1; j < n; j++)
+                    sum += jacobian[i, j] * result[j];
+                result[i] = (result[i] - sum) / jacobian[i, i];
+            }
+
+            return result;
+        }
+
+        // Step 3.3b: Solve linear system J * dx = -mismatches using sparse matrix solver
+        private double[] SolveLinearSystemSparseMatrix(double[,] jacobian, double[] mismatches)
+        {
+            var n = mismatches.Length;
+
+            // Step 3.3.1: Convert dense Jacobian to sparse matrix
+            // Math.NET Numerics provides SparseMatrix for efficient storage
+            var sparseJacobian = SparseMatrix.Create(n, n, 0.0);
+            for (var i = 0; i < n; i++)
+            {
+                for (var j = 0; j < n; j++)
+                {
+                    if (Math.Abs(jacobian[i, j]) > 1e-10) // Store only non-zero elements
+                    {
+                        sparseJacobian[i, j] = jacobian[i, j];
+                    }
+                }
+            }
+
+            // Step 3.3.2: Convert mismatches to vector
+            var b = MathNet.Numerics.LinearAlgebra.Vector<double>.Build.Dense(mismatches);
+
+            try
+            {
+                var dx = sparseJacobian.Solve(b);
+
+                // Step 3.3.4: Check for valid solution
+                if (dx == null || dx.Any(double.IsNaN) || dx.Any(double.IsInfinity))
+                {
+                    throw new Exception("Direct sparse solver failed to produce a valid solution.");
+                }
+
+                // Step 3.3.5: Convert solution to array
+                return dx.ToArray();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error solving linear system: {ex.Message}");
+                throw;
+            }
+        }
+
+
+        // Step 3.4: Update voltage angles and magnitudes
+        private void UpdateVariables(double[] corrections)
+        {
+            var idx = 0;
+            // Update angles for non-swing buses
+            for (var i = 0; i < n; i++)
+            {
+                if (buses[i].Type == "Swing") continue;
+                buses[i].Angle += corrections[idx++];
+            }
+
+            // Update voltages for PQ and Isolated buses
+            for (var i = 0; i < n; i++)
+            {
+                if (buses[i].Type != "PQ" && buses[i].Type != "Isolated") continue;
+
+                buses[i].Voltage += corrections[idx++];
+            }
+        }
+
+    }
+    
+    
+   
+    // Step 0:
+    private (List<(string, double, double, double, string, string)>,List<(string Tag, string BusFrom, string BusTo, double Length, string Spec)> )
+        InitialisePQBuses
+    (
+        List<(string Tag, string BusFrom, string BusTo, double Length, string Spec)> cableBranches,
+        List<(string tag, string bus, double kW, double kV, double pf, double eff, double ab, string cable, double l)> motors,
+        List<(string tag, string bus, double kVA, double kV, double pf, double df, string cable, double l)> lumploads
+        )
+    {
+        var pqBuses = new List<(string, double, double, double, string, string)>  { };
+        foreach (var motor in motors)
+        {
+            var (tag, bus, kW, kV, pf, eff, ab, cableSpec, l) = motor;
+            double full_input_kW = kW / (eff / 100.0);
+            double op_P_kW = (ab / 100.0) * full_input_kW;
+            double op_P_MW = op_P_kW / 1000.0;
+            double theta = Math.Acos(pf);
+            double op_Q_MVAR = op_P_MW * Math.Tan(theta);
+            double dr = 100.0; // 100% constant kVA
+            
+            // if there is cable information, add dummy bus and cable branch accordingly
+            if (cableSpec != "" && l > 0)
+            {
+                // ETAP does not consider Capacitive admittance of motor cable, not sure why?
+                cableBranches.Add(($"Motor_{tag}", bus, $"Motor_{tag}_Bus", l, cableSpec));
+                bus = $"Motor_{tag}_Bus";
+            }
+            
+            pqBuses.Add((bus, -op_P_MW, -op_Q_MVAR, dr, tag, "Motor")); // Negative for loads
+        }
+
+        foreach (var lump in lumploads)
+        {
+            var (tag, bus, kVA, kV, pf, df, cable, l) = lump;
+            double total_P_MW = (kVA / 1000.0) * pf;
+            double theta = Math.Acos(pf);
+            double total_Q_MVAR = total_P_MW * Math.Tan(theta);
+            pqBuses.Add((bus, -total_P_MW, -total_Q_MVAR, df, tag, "Lump")); // df = constant kVA %
+        }
+
+        return (pqBuses,cableBranches);
+    }
+
+
+    // Step 1: exclude Grid/Swing buses, and branches which are directly connected between closed switches
+    private (
+            List<(string Tag, double Voltage)> filteredSwingBuses,
+            List<(string Tag, string BusFrom, string BusTo, double Length, string Spec)> filteredCableBranches,
+            List<(string Tag, string BusFrom, string BusTo, double V1, double V2, double MVA, double Imp, double XR)> filteredTransformers,
+            List<string> alerts
+            ) FilterPowerSystemComponents(
+                List<(string Tag, double Voltage)> swingBuses,
+                List<(string Tag, string BusFrom, string BusTo, double Length, string Spec)> cableBranches,
+                List<(string Tag, string BusFrom, string BusTo, double V1, double V2, double MVA, double Imp, double XR)> transformers,
+                List<(string Tag, string BusFrom, string BusTo, bool Closed, double A)> switches)                
+        {
+            // Create a set of swing bus tags for quick lookup
+            var swingBusTags = new HashSet<string>(swingBuses.Select(b => b.Tag));
+
+            // Track excluded components and collect alerts
+            var excludedSwingBuses = new HashSet<string>();
+            var excludedCableBranches = new HashSet<string>();
+            var excludedTransformers = new HashSet<string>();
+            var alerts = new List<string>();
+
+            // Collect closed switch connections (both directions)
+            var closedSwitchConnections = new HashSet<(string BusFrom, string BusTo)>();
+            foreach (var (tag, busFrom, busTo, closed, _) in switches)
+            {
+                if (closed)
+                {
+                    closedSwitchConnections.Add((busFrom, busTo));
+                    closedSwitchConnections.Add((busTo, busFrom)); // Consider both directions
+                }
+            }
+
+            // Check for swing buses to exclude (BusTo in closed switches)
+            foreach (var (tag, busFrom, busTo, closed, _) in switches)
+            {
+                if (closed && swingBusTags.Contains(busTo))
+                {
+                    if (excludedSwingBuses.Add(busTo))
+                    {
+                        alerts.Add($"Swing bus {busTo} excluded: Connected from {busFrom} by closed switch {tag}.");
+                    }
+                }
+            }
+
+            // Check for cable branches to exclude
+            foreach (var (tag, busFrom, busTo, _, _) in cableBranches)
+            {
+                if (closedSwitchConnections.Contains((busFrom, busTo)) || closedSwitchConnections.Contains((busTo, busFrom)))
+                {
+                    if (excludedCableBranches.Add(tag))
+                    {
+                        alerts.Add($"Cable branch {tag} excluded: Matches closed switch connection between {busFrom} and {busTo}.");
+                    }
+                }
+            }
+
+            // Check for transformers to exclude
+            foreach (var (tag, busFrom, busTo, _, _, _, _, _) in transformers)
+            {
+                if (closedSwitchConnections.Contains((busFrom, busTo)) || closedSwitchConnections.Contains((busTo, busFrom)))
+                {
+                    if (excludedTransformers.Add(tag))
+                    {
+                        alerts.Add($"Transformer {tag} excluded: Matches closed switch connection between {busFrom} and {busTo}.");
+                    }
+                }
+            }
+
+            // Filter components
+            var filteredSwingBuses = swingBuses
+                .Where(b => !excludedSwingBuses.Contains(b.Tag))
+                .ToList();
+            var filteredCableBranches = cableBranches
+                .Where(c => !excludedCableBranches.Contains(c.Tag))
+                .ToList();
+            var filteredTransformers = transformers
+                .Where(t => !excludedTransformers.Contains(t.Tag))
+                .ToList();
+
+            return (filteredSwingBuses, filteredCableBranches, filteredTransformers, alerts);
+        }
+
+        
+    // Step 2: replace all BusTo with the BusFrom for all non-swing buses connected by closed switches
+    private (
+            List<(string Tag, double Voltage, double RealPower, double maxQ, double minQ)> UpdatedPVBuses,
+            List<(string Tag, double RealPower, double ReactivePower, double DynamicRatio, string LoadTag, string LoadType)> UpdatedPQBuses,
+            List<(string Tag, string BusFrom, string BusTo, double Length, string Spec)> UpdatedCableBranches,
+            List<(string Tag, string BusFrom, string BusTo, double V1, double V2, double MVA, double Imp, double XR)> UpdatedTransformers,
+            List<(string ReplacedBus, string ReplacedByBus)> ReplacedBusTable
+            ) ReplaceBusToWithBusFrom(
+                List<(string Tag, string BusFrom, string BusTo, bool Closed, double A)> switches,
+                List<(string Tag, double Voltage, double RealPower, double maxQ, double minQ)> pvBuses,
+                List<(string Tag, double RealPower, double ReactivePower, double DynamicRatio, string LoadTag, string LoadType)> pqBuses,
+                List<(string Tag, string BusFrom, string BusTo, double Length, string Spec)> cableBranches,
+                List<(string Tag, string BusFrom, string BusTo, double V1, double V2, double MVA, double Imp, double XR)> transformers)
+    {
+        // Track bus replacements: BusTo -> BusFrom
+        var busReplacements = new Dictionary<string, string>();
+        var replacedBusTable = new List<(string ReplacedBus, string ReplacedByBus)>();
+
+        // Identify BusTo to BusFrom replacements for closed switches
+        foreach (var (tag, busFrom, busTo, closed, _) in switches)
+        {
+            if (closed && busFrom != busTo) // Avoid self-loops
+            {
+                if (!busReplacements.ContainsKey(busTo))
+                {
+                    busReplacements[busTo] = busFrom;
+                    replacedBusTable.Add((busTo, busFrom));
+                }
+            }
+        }
+
+        // Helper function to replace bus tags
+        string ReplaceBusTag(string busTag)
+        {
+            return busReplacements.ContainsKey(busTag) ? busReplacements[busTag] : busTag;
+        }
+
+        // Update PV buses
+        var updatedPVBuses = pvBuses
+            .Select(bus => (
+                Tag: ReplaceBusTag(bus.Tag),
+                bus.Voltage,
+                bus.RealPower,
+                bus.maxQ,
+                bus.minQ
+            ))
+            .ToList();
+
+        // Update PQ buses
+        var updatedPQBuses = pqBuses
+            .Select(bus => (
+                Tag: ReplaceBusTag(bus.Tag),
+                bus.RealPower,
+                bus.ReactivePower,
+                bus.DynamicRatio,
+                bus.LoadTag,
+                bus.LoadType
+                    
+            ))
+            .ToList();
+
+        // Update cable branches
+        var updatedCableBranches = cableBranches
+            .Select(cable => (
+                cable.Tag,
+                BusFrom: ReplaceBusTag(cable.BusFrom),
+                BusTo: ReplaceBusTag(cable.BusTo),
+                cable.Length,
+                cable.Spec
+            ))
+            .ToList();
+
+        // Update transformers
+        var updatedTransformers = transformers
+            .Select(transformer => (
+                transformer.Tag,
+                BusFrom: ReplaceBusTag(transformer.BusFrom),
+                BusTo: ReplaceBusTag(transformer.BusTo),
+                transformer.V1,
+                transformer.V2,
+                transformer.MVA,
+                transformer.Imp,
+                transformer.XR
+            ))
+            .ToList();
+
+        return (updatedPVBuses, updatedPQBuses, updatedCableBranches, updatedTransformers, replacedBusTable);
+    }
+
+        
+        // Step 3: Assign Base Voltage to all the buses starting from the Grid/Swing Buses
+        private (List<(string Tag, double BaseVoltage)> AssignedBuses, List<string> Alerts) AssignBaseVoltages(
+            List<(string Tag, double Voltage)> swingBuses,
+            List<(string Tag, string BusFrom, string BusTo, double Length, string Spec)> cableBranches,
+            List<(string Tag, string BusFrom, string BusTo, double V1, double V2, double MVA, double Imp, double XR)> transformers,
+            List<(string Tag, string BusFrom, string BusTo, bool Closed, double A)> switches)
+        {
+            // Extract all unique bus tags from swing buses, cables, and transformers
+            var allBuses = new Dictionary<string, double>();
+            foreach (var (tag, voltage) in swingBuses)
+            {
+                allBuses[tag] = voltage;
+            }
+
+            foreach (var (_, busFrom, busTo, _, _) in cableBranches)
+            {
+                if (!allBuses.ContainsKey(busFrom)) allBuses[busFrom] = 0.0;
+                if (!allBuses.ContainsKey(busTo)) allBuses[busTo] = 0.0;
+            }
+
+            foreach (var (_, busFrom, busTo, _, _, _, _, _) in transformers)
+            {
+                if (!allBuses.ContainsKey(busFrom)) allBuses[busFrom] = 0.0;
+                if (!allBuses.ContainsKey(busTo)) allBuses[busTo] = 0.0;
+            }
+
+            foreach (var (_, busFrom, busTo, _, _) in switches)
+            {
+                if (!allBuses.ContainsKey(busFrom)) allBuses[busFrom] = 0.0;
+                if (!allBuses.ContainsKey(busTo)) allBuses[busTo] = 0.0;
+            }
+
+            // Track visited buses and their assigned voltages
+            var visited = allBuses.Keys.ToDictionary(tag => tag, _ => false);
+            var assignedVoltages = allBuses.ToDictionary(kvp => kvp.Key, kvp => kvp.Value > 0 ? kvp.Value : (double?)null);
+
+            // Track alerts for voltage discrepancies
+            var alerts = new List<string>();
+
+            // Build adjacency list for graph traversal
+            var adjList = new Dictionary<string, List<(string Neighbor, bool IsTransformer, double V1, double V2)>>();
+            foreach (var tag in allBuses.Keys)
+            {
+                adjList[tag] = new List<(string, bool, double, double)>();
+            }
+            
+            foreach (var (_, busFrom, busTo, isClosed, _) in switches)
+            {
+                if (!isClosed) continue;
+                adjList[busFrom].Add((busTo, false, 1.0, 1.0)); // Switch: no voltage transformation
+                adjList[busTo].Add((busFrom, false, 1.0, 1.0));
+            }
+
+            foreach (var (_, busFrom, busTo, _, _) in cableBranches)
+            {
+                adjList[busFrom].Add((busTo, false, 1.0, 1.0)); // Cable: no voltage transformation
+                adjList[busTo].Add((busFrom, false, 1.0, 1.0));
+            }
+
+            foreach (var (_, busFrom, busTo, v1, v2, _, _, _) in transformers)
+            {
+                adjList[busFrom].Add((busTo, true, v1, v2));
+                adjList[busTo].Add((busFrom, true, v2, v1)); // Reverse transformer ratio
+            }
+
+            // BFS to assign voltages
+            var queue = new Queue<string>(swingBuses.Where(b => b.Voltage > 0).Select(b => b.Tag));
+            foreach (var startBus in queue)
+            {
+                visited[startBus] = true;
+            }
+
+            while (queue.Count > 0)
+            {
+                var currentBus = queue.Dequeue();
+                var currentVoltage = assignedVoltages[currentBus]!.Value;
+
+                foreach (var (neighborBus, isTransformer, v1, v2) in adjList[currentBus])
+                {
+                    if (!visited[neighborBus])
+                    {
+                        var newVoltage = isTransformer ? currentVoltage * v2 / v1 : currentVoltage;
+
+                        if (assignedVoltages[neighborBus] == null)
+                        {
+                            assignedVoltages[neighborBus] = newVoltage;
+                            visited[neighborBus] = true;
+                            queue.Enqueue(neighborBus);
+                        }
+                        else
+                        {
+                            var existingVoltage = assignedVoltages[neighborBus]!.Value;
+                            if (Math.Abs(newVoltage - existingVoltage) / existingVoltage > 0.1)
+                            {
+                                alerts.Add($"Voltage discrepancy > 10% at bus {neighborBus}: " +
+                                           $"Existing {existingVoltage:F2} kV, New {newVoltage:F2} kV");
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Prepare the final list of buses with assigned voltages
+            var assignedBuses = allBuses.Select(kvp => (kvp.Key, assignedVoltages[kvp.Key] ?? 0.0)).ToList();
+
+            return (assignedBuses, alerts);
+        }
+        
+        
+        // Step 4: Exclude any pV or pq bus, which are not connected to grid, i.e, having Base Voltage still zero
+        // change P na Q into the pu values
+        // change V of PV into the pu value
+        // change V of swing into pu value
+        private (
+            List<(string Tag, double Voltage)> UpdatedFilteredSwingBuses,
+            List<(string Tag, double Voltage, double RealPower, double MaxQ, double MinQ)> UpdatedFilteredPVBuses,
+            List<(string Tag, double RealPower, double ReactivePower, double DynamicRatio, string LoadTag, string LoadType)> UpdatedFilteredPQBuses,
+            double BaseMVA) FilterUnconnectedBuses(
+                List<(string Tag, double BaseVoltage)> busesWithBaseVoltage,
+                List<(string Tag, double Voltage)> swingBuses,
+                List<(string Tag, double Voltage, double RealPower, double maxQ, double minQ)> updatedPVBuses,
+                List<(string Tag, double RealPower, double ReactivePower, double DynamicRatio, string LoadTag, string LoadType)> updatedPQBuses,
+                List<(string Tag, string BusFrom, string BusTo, double V1, double V2, double MVA, double Imp, double XR)> transformers)
+        {
+            // Create a set of bus tags with non-zero base voltage
+            var connectedBusTags = new HashSet<string>(
+                busesWithBaseVoltage
+                    .Where(b => b.BaseVoltage != 0.0)
+                    .Select(b => b.Tag)
+            );
+    
+            // Create a dictionary for quick base voltage lookup
+            var baseVoltageLookup = busesWithBaseVoltage.ToDictionary(b => b.Tag, b => b.BaseVoltage);
+    
+            // Filter PV, PQ, and swing buses
+            var filteredPVBuses = updatedPVBuses
+                .Where(bus => connectedBusTags.Contains(bus.Tag))
+                .ToList();
+            var filteredPQBuses = updatedPQBuses
+                .Where(bus => connectedBusTags.Contains(bus.Tag))
+                .ToList();
+            var filteredSwingBuses = swingBuses
+                .Where(bus => connectedBusTags.Contains(bus.Tag))
+                .ToList();
+    
+            // Calculate baseMVA
+            double maxMVA = 0.0;
+    
+            // From PQ buses: sqrt(RealPower^2 + ReactivePower^2)
+            foreach (var (_, realPower, reactivePower, _,_,_) in updatedPQBuses)
+            {
+                double mva = Math.Sqrt(realPower * realPower + reactivePower * reactivePower);
+                maxMVA = Math.Max(maxMVA, mva);
+            }
+    
+            // From PV buses: RealPower
+            foreach (var (_, _, realPower,maxQ,minQ) in updatedPVBuses)
+            {
+                maxMVA = Math.Max(maxMVA, realPower);
+            }
+    
+            // From transformers: MVA
+            foreach (var (_, _, _, _, _, mva, _, _) in transformers)
+            {
+                maxMVA = Math.Max(maxMVA, mva);
+            }
+    
+            // Round up to the nearest multiple of 10
+            double baseMVA = Math.Ceiling(maxMVA / 10.0) * 10.0;
+    
+            // Convert to per-unit values
+            var updatedFilteredPVBuses = filteredPVBuses
+                .Select(bus => (
+                    bus.Tag,
+                    Voltage: baseVoltageLookup.ContainsKey(bus.Tag) && baseVoltageLookup[bus.Tag] != 0.0 
+                        ? bus.Voltage / baseVoltageLookup[bus.Tag] 
+                        : bus.Voltage,
+                    RealPower: bus.RealPower / baseMVA,
+                    MaxQ: bus.maxQ/baseMVA,
+                    MinQ: bus.minQ/baseMVA
+                ))
+                .ToList();
+    
+            var updatedFilteredPQBuses = filteredPQBuses
+                .Select(bus => (
+                    bus.Tag,
+                    RealPower: bus.RealPower / baseMVA,
+                    ReactivePower: bus.ReactivePower / baseMVA,
+                    bus.DynamicRatio,
+                    bus.LoadTag,
+                    bus.LoadType
+                ))
+                .ToList();
+    
+            var updatedFilteredSwingBuses = filteredSwingBuses
+                .Select(bus => (
+                    bus.Tag,
+                    Voltage: baseVoltageLookup.ContainsKey(bus.Tag) && baseVoltageLookup[bus.Tag] != 0.0 
+                        ? bus.Voltage / baseVoltageLookup[bus.Tag] 
+                        : bus.Voltage
+                ))
+                .ToList();
+    
+            return (updatedFilteredSwingBuses, updatedFilteredPVBuses, updatedFilteredPQBuses, baseMVA);
+        }
+        
+        
+        // Step 5: Generate Combined Admittance Table (Y-table) for all the branches
+        private (
+            List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)> YTable,
+            List<string> Alerts) GenerateYTable(
+            List<(string Tag, string BusFrom, string BusTo, double Length, string Spec)> cableList,
+            List<(string Tag, string BusFrom, string BusTo, double V1, double V2, double MVA, double Imp, double XR)> transformerList,
+            List<(double Voltage, double CoreCount, double Size, string Material, double Resistance, double Reactance, double Admittance, double baseT, double maxT, double minT)> cableData,
+            List<(string Tag, double BaseVoltage)> buses,
+            double baseMVA)
+        {
+            var yTable = new List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)>();
+            var alerts = new List<string>();
+            var tagCounts = new Dictionary<string, int>();
+
+            // Process cables
+            foreach (var (tag, busFrom, busTo, length, cableSpec) in cableList)
+            {
+                // Validate bus existence and voltages
+                var fromBus = buses.FirstOrDefault(b => b.Tag == busFrom);
+                var toBus = buses.FirstOrDefault(b => b.Tag == busTo);
+                if (fromBus.BaseVoltage == 0 || toBus.BaseVoltage == 0)
+                {
+                    alerts.Add($"Excluding cable {tag}: Bus {busFrom} or {busTo} has no assigned base voltage.");
+                    continue;
+                }
+                
+                var baseVoltage = fromBus.BaseVoltage; // Cable has same voltage on both sides
+                var (realAdmittance, imaginaryAdmittance, capacitiveAdmittancePU) = 
+                    ProcessCable(tag, cableSpec, length, baseVoltage, baseMVA, alerts, cableData);
+
+                yTable.Add((tag, busFrom, busTo, realAdmittance, imaginaryAdmittance, capacitiveAdmittancePU));
+            }
+
+            // Process transformers
+            foreach (var (tag, busFrom, busTo, v1, v2, ratingMVA, percentageImpedance, ratioXR) in transformerList)
+            {
+                // Validate bus existence and voltages
+                var fromBus = buses.FirstOrDefault(b => b.Tag == busFrom);
+                var toBus = buses.FirstOrDefault(b => b.Tag == busTo);
+                if (fromBus.BaseVoltage == 0 || toBus.BaseVoltage == 0)
+                {
+                    alerts.Add($"Excluding transformer {tag}: Bus {busFrom} or {busTo} has no assigned base voltage.");
+                    continue;
+                }
+
+                // Calculate per-unit impedance
+                var puImpedance = percentageImpedance / 100.0 * baseMVA / ratingMVA;
+                var puReactance = puImpedance / Math.Sqrt(1 + 1 / (ratioXR * ratioXR));
+                var puResistance = puReactance / ratioXR;
+
+                // Calculate admittance (Y = 1/Z)
+                var magnitudeSquared = puResistance * puResistance + puReactance * puReactance;
+                var realAdmittance = puResistance / magnitudeSquared;
+                var imaginaryAdmittance = -puReactance / magnitudeSquared;
+
+                // Handle duplicate tags
+                // var finalTag = tag;
+                // if (tagCounts.ContainsKey(tag))
+                // {
+                //     tagCounts[tag]++;
+                //     finalTag = $"{tag}_T_{tagCounts[tag]}";
+                // }
+                // else
+                // {
+                //     tagCounts[tag] = 0;
+                //     finalTag = $"{tag}_T";
+                // }
+
+                yTable.Add((tag, busFrom, busTo, realAdmittance, imaginaryAdmittance,0));
+            }
+
+            return (yTable, alerts);
+        }
+
+
+
+        private (double, double, double) ProcessCable(
+            string tag, 
+            string cableSpec, 
+            double length,
+            double baseVoltage,
+            double baseMVA,
+            List<string>alerts, 
+            List<(double Voltage, double CoreCount, double Size, string Material, double Resistance, double Reactance, double Admittance, double baseT, double maxT, double minT)> cableData)
+        {
+            double capacitiveAdmittancePU = 1e99;
+            double realAdmittance = 0.0;
+            double imaginaryAdmittance = 0.0;
+            // Validate cable specification format (e.g., "2Rx3Cx240 Cu" or "3Cx240")
+            var cableSpecRegex = new Regex(@"^(?:(\d+)Rx)?(\d+(?:\.\d)?)Cx(\d+(?:\.\d)?)\s*(Cu|Al)?$", RegexOptions.IgnoreCase);
+            var validSizes = new HashSet<double> { 0.5, 1, 1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400, 500, 600, 800, 1000 };
+            var validCores = new HashSet<double> { 1, 2, 3, 3.5, 4, 5 };
+            // Validate cable specification
+                var match = cableSpecRegex.Match(cableSpec);
+                if (!match.Success)
+                {
+                    alerts.Add($"Invalid cable specification for {tag}: {cableSpec}. Expected format: [NRx]CCxSize [Material] (e.g., 2Rx3Cx240 Cu or 3Cx240)");
+                    return (realAdmittance, imaginaryAdmittance, capacitiveAdmittancePU);
+                }
+
+                var runs = match.Groups[1].Success ? int.Parse(match.Groups[1].Value) : 1;
+                var coreCount = double.Parse(match.Groups[2].Value);
+                var size = double.Parse(match.Groups[3].Value);
+                var material = match.Groups[4].Success ? match.Groups[4].Value.ToUpper() : "CU";
+
+                // Validate core count and size
+                if (!validCores.Contains(coreCount))
+                {
+                    alerts.Add($"Invalid core count for cable {tag}: {coreCount}. Must be one of {string.Join(", ", validCores)}.");
+                    return (realAdmittance, imaginaryAdmittance, capacitiveAdmittancePU);
+                }
+
+                if (!validSizes.Contains(size))
+                {
+                    alerts.Add($"Invalid size for cable {tag}: {size}. Must be one of {string.Join(", ", validSizes)}.");
+                    return (realAdmittance, imaginaryAdmittance, capacitiveAdmittancePU);
+                }
+
+                // Lookup cable data
+                var cable = cableData.FirstOrDefault(c => c.CoreCount == (int)coreCount && c.Size == (int)size && c.Material.ToUpper() == material);
+                
+                // Calculate impedance (Ohms)
+                var maxT = cable.maxT;
+                var minT = cable.minT;
+                var resistance = 0.0;
+                var reactance = 0.0;
+                var capacitiveAdmittance = 0.0;
+                if (cable.Resistance == 0 && cable.Reactance == 0)
+                {
+                    alerts.Add($"No cable data found for {tag}: CoreCount={coreCount}, Size={size}, Material={material}. typical data considered.");
+                    resistance = 018.5f / size;
+                    reactance= -0.03f * (float)Math.Log(size) + 0.902f;
+                }
+                else
+                {
+                    resistance = cable.Resistance * (length / 1000.0) / runs; // Ohm/km * meters / 1000
+                    // temperature correction
+                    var t0 = cable.Material == "CU" ? 234.5 : 228.1;
+                    resistance = resistance * (t0+ maxT) / (t0 + cable.baseT);
+                    reactance = cable.Reactance * (length / 1000.0)/ runs;
+                    capacitiveAdmittance = cable.Admittance * 1e-6 * (length / 1000.0) * runs; // C in microFarad
+                }
+
+                // Calculate per-unit impedance
+                //var baseVoltage = fromBus.BaseVoltage; // Cable has same voltage on both sides
+                var baseZ = baseVoltage * baseVoltage / baseMVA;
+                var puResistance = resistance / baseZ;
+                var puReactance = reactance / baseZ;
+
+                // Calculate admittance (Y = 1/Z)
+                var magnitudeSquared = puResistance * puResistance + puReactance * puReactance;
+                realAdmittance = puResistance / magnitudeSquared;
+                imaginaryAdmittance = -puReactance / magnitudeSquared;
+
+                capacitiveAdmittancePU = capacitiveAdmittance * baseZ;
+                return (realAdmittance, imaginaryAdmittance, capacitiveAdmittancePU);
+        }
+        
+        
+        // Step 6: Excludes single-connection branches from yTableCombined
+        // remove only those open-ended cables which have relatively less shunt Capacitance w.r.t branch Imedenace.
+        // based on trial and error, uts found that Yc/Yz >0.0001, Yc shunt charging Admittance, Yz = sqrt(Yr^2+Yx^2)
+        private (
+            List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)> UpdatedYTable,
+            List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)> RemovedBranches
+            ) RemoveSingleConnectionBranches(
+        List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)> yTableCombined,
+        List<(string Tag, double Voltage)> swingBuses,
+        List<(string Tag, double Voltage, double RealPower, double MaxQ, double MinQ)> pvBuses,
+        List<(string Tag, double RealPower, double ReactivePower, double DynamicRatio, string LoadTag, string LoadType)> pqBuses)
+    {
+        // Create sets of PV, PQ, and swing bus tags for quick lookup
+        var pvBusTags = new HashSet<string>(pvBuses.Select(b => b.Tag));
+        var pqBusTags = new HashSet<string>(pqBuses.Select(b => b.Tag));
+        var swingBusTags = new HashSet<string>(swingBuses.Select(b => b.Tag));
+
+        // Get all unique buses from yTableCombined
+        var allBuses = yTableCombined
+            .Select(b => b.FromBus)
+            .Concat(yTableCombined.Select(b => b.ToBus))
+            .Distinct()
+            .ToList();
+
+        // Find buses with exactly one branch connection
+        var singleConnectionBuses = new HashSet<string>();
+        foreach (var bus in allBuses)
+        {
+            var connectedBranches = yTableCombined
+                .Where(b => b.FromBus == bus || b.ToBus == bus)
+                .ToList();
+            if (connectedBranches.Count == 1)
+            {
+                // Check if the bus is neither PV, PQ, nor swing
+                if (!pvBusTags.Contains(bus) && !pqBusTags.Contains(bus) && !swingBusTags.Contains(bus))
+                {
+                    //  Check Yc/Yz >0.0001, where Yc shunt charging Admittance, Yz = sqrt(Yr^2+Yx^2)
+                    var Yc = connectedBranches[0].CapacitiveAdmittance;
+                    var Yz = Math.Pow(Math.Pow(connectedBranches[0].RealAdmittance, 2) + Math.Pow(connectedBranches[0].ImaginaryAdmittance, 2), 0.5);
+                    if (Yc / Yz < 0.0001)
+                    {
+                        singleConnectionBuses.Add(bus);
+                    }
+                }
+            }
+        }
+
+        // Split yTableCombined into kept and removed branches
+        var updatedYTable = new List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)>();
+        var removedBranches = new List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)>();
+
+        foreach (var branch in yTableCombined)
+        {
+            if (singleConnectionBuses.Contains(branch.FromBus) || singleConnectionBuses.Contains(branch.ToBus))
+            {
+                removedBranches.Add(branch);
+            }
+            else
+            {
+                updatedYTable.Add(branch);
+            }
+        }
+
+        return (updatedYTable, removedBranches);
+    }
+        
+        
+        
+   // Step 7: Remove nodes (two series branches replaced by an equivalent branch)
+   private List<(string FromBus, string ToBus, List<(string From, string To)> OriginalBranches)> SimplifyBranches(
+        List<(string Tag, double Voltage)>swingBuses,
+        List<(string Tag, double Voltage, double RealPower, double MaxQ, double MinQ)> pvBuses,
+        List<(string Tag, double RealPower, double ReactivePower, double DynamicRatio, string LoadTag, string LoadType)> pqBuses,
+        List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)> yTable)
+    {
+        // Initialize temporary table with named tuple fields
+        var branchMappings = new List<(string FromBus, string ToBus, List<(string From, string To)> OriginalBranches)>();
+        foreach (var branch in yTable)
+        {
+            branchMappings.Add((
+                branch.FromBus,
+                branch.ToBus,
+                OriginalBranches: [(branch.FromBus, branch.ToBus)]
+            ));
+        }
+
+        bool changesMade;
+
+        do
+        {
+            changesMade = false;
+            var allBuses = branchMappings.Select(b => b.FromBus)
+                .Concat(branchMappings.Select(b => b.ToBus))
+                .Distinct()
+                .ToList();
+
+            foreach (var bus in allBuses)
+            {
+                // Skip if bus is a PQ or PV bus
+                if (swingBuses.Any(swing => swing.Tag == bus) || pqBuses.Any(pq => pq.Tag == bus) || pvBuses.Any(pv => pv.Tag == bus))
+                    continue;
+
+                // Find all branches connected to this bus
+                var connectedBranches = branchMappings
+                    .Where(b => b.FromBus == bus || b.ToBus == bus)
+                    .ToList();
+
+                // Check if exactly two branches are connected
+                if (connectedBranches.Count == 2)
+                {
+                    var branch1 = connectedBranches[0];
+                    var branch2 = connectedBranches[1];
+
+                    // // Get the other end buses
+                    var bus1 = branch1.FromBus == bus ? branch1.ToBus : branch1.FromBus;
+                    var bus2 = branch2.FromBus == bus ? branch2.ToBus : branch2.FromBus;
+                    
+                    // Combine original branches
+                    var combinedOriginalBranches = new List<(string, string)>();
+                    combinedOriginalBranches.AddRange(branch1.OriginalBranches);
+                    combinedOriginalBranches.AddRange(branch2.OriginalBranches);
+                    //
+                    // Update temporary table
+                    branchMappings.Remove(branch1);
+                    branchMappings.Remove(branch2);
+                    branchMappings.Add((bus1, bus2, combinedOriginalBranches));
+
+                    changesMade = true;
+                }
+            }
+        } while (changesMade);
+
+        return branchMappings;
+    }
+
+    
+
+    // Step 7a: For simplified branch, calculate the CapacitiveAdmittanceFromBus and CapacitiveAdmittanceToBus separately as these valuses wont be simply totals capacitive admittance /2
+    private List<(string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittanceFromBus, double CapacitiveAdmittanceToBus)> 
+        CalculateSimplifiedBranchAdmittances(
+            List<(string FromBus, string ToBus, List<(string From, string To)> OriginalBranches)> branchMappings,
+            List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)> yTable)
+    {
+        var yTableSimplified = new List<(string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittanceFromBus, double CapacitiveAdmittanceToBus)>();
+
+        foreach (var mapping in branchMappings)
+        {
+            var fromBus = mapping.FromBus;
+            var toBus = mapping.ToBus;
+            var originalBranches = mapping.OriginalBranches;
+
+            // Initialize accumulators
+            Complex zTotal = new Complex(0, 0); // Sum of impedances (Z)
+            Complex zySum = new Complex(0, 0); // Sum of Zi * Ysum_i2n
+            Complex zy = new Complex(0, 0); // Sum of Zi * Yi
+            double totalCapAdmittance = 0.0; // Sum of CapacitiveAdmittance for simplified branch
+
+            // Store shunt admittances for calculating Ysum_i2n
+            var shuntAdmittances = new List<Complex>();
+            foreach (var (origFrom, origTo) in originalBranches)
+            {
+                var branch = yTable.FirstOrDefault(b =>
+                    (b.FromBus == origFrom && b.ToBus == origTo) ||
+                    (b.FromBus == origTo && b.ToBus == origFrom));
+                if (branch.Tag == null)
+                    continue;
+
+                // Calculate impedance: Zi = 1 / (RealAdmittance + j ImaginaryAdmittance)
+                var yComplex = new Complex(branch.RealAdmittance, branch.ImaginaryAdmittance);
+                Complex zComplex = yComplex.Magnitude == 0 ? new Complex(0, 0) : 1 / yComplex;
+
+                // Accumulate total impedance
+                zTotal += zComplex;
+
+                // Accumulate total capacitive admittance (scalar)
+                totalCapAdmittance += branch.CapacitiveAdmittance;
+
+                // Store shunt admittance: Yi = j * CapacitiveAdmittance
+                shuntAdmittances.Add(new Complex(0, branch.CapacitiveAdmittance));
+            }
+
+            // Calculate ZYsum and ZY
+            for (int i = 0; i < originalBranches.Count; i++)
+            {
+                var (origFrom, origTo) = originalBranches[i];
+                var branch = yTable.FirstOrDefault(b =>
+                    (b.FromBus == origFrom && b.ToBus == origTo) ||
+                    (b.FromBus == origTo && b.ToBus == origFrom));
+                if (branch.Tag == null)
+                    continue;
+
+                // Calculate impedance: Zi = 1 / (RealAdmittance + j ImaginaryAdmittance)
+                var yComplex = new Complex(branch.RealAdmittance, branch.ImaginaryAdmittance);
+                Complex zComplex = yComplex.Magnitude == 0 ? new Complex(0, 0) : 1 / yComplex;
+
+                // Calculate Ysum_i2n: Sum of shunt admittances from i to n
+                Complex ySum_i2n = new Complex(0, 0);
+                for (int j = i; j < shuntAdmittances.Count; j++)
+                {
+                    ySum_i2n += shuntAdmittances[j];
+                }
+
+                // Accumulate ZYsum: Zi * Ysum_i2n
+                zySum += zComplex * ySum_i2n;
+
+                // Accumulate ZY: Zi * Yi
+                zy += zComplex * shuntAdmittances[i];
+            }
+
+            // Calculate series admittance of simplified branch: Y = 1/Z
+            Complex ySimplified = zTotal.Magnitude == 0 ? new Complex(0, 0) : 1 / zTotal;
+            double realAdmittance = ySimplified.Real;
+            double imaginaryAdmittance = ySimplified.Imaginary;
+
+            // Calculate CapacitiveAdmittanceToBus: (ZYsum - ZY/2) / Z
+            Complex capAdmittanceToBusComplex = zTotal.Magnitude == 0 ? new Complex(0, 0) : (zySum - zy / 2.0) / zTotal;
+            double capacitiveAdmittanceToBus = capAdmittanceToBusComplex.Imaginary; // Extract scalar susceptance
+
+            // Calculate CapacitiveAdmittanceFromBus: totalCapAdmittance - CapacitiveAdmittanceToBus
+            double capacitiveAdmittanceFromBus = totalCapAdmittance - capacitiveAdmittanceToBus;
+
+            // Add to simplified yTable
+            yTableSimplified.Add((
+                FromBus: fromBus,
+                ToBus: toBus,
+                RealAdmittance: realAdmittance,
+                ImaginaryAdmittance: imaginaryAdmittance,
+                CapacitiveAdmittanceFromBus: capacitiveAdmittanceFromBus,
+                CapacitiveAdmittanceToBus: capacitiveAdmittanceToBus
+            ));
+        }
+
+        return yTableSimplified;
+    }
+
+
+
+    /// <summary>
+    ///     Prints a 2D double array (matrix) to the console in a formatted way.
+    /// </summary>
+    /// <param name="matrix">The 2D double array to print.</param>
+    public static void ConsoleWriteMatrix(double[,] matrix, int precision = 3)
+    {
+        if (matrix == null)
+        {
+            Console.WriteLine("Matrix is null.");
+            return;
+        }
+
+        var rows = matrix.GetLength(0);
+        var cols = matrix.GetLength(1);
+
+        for (var i = 0; i < rows; i++)
+        {
+            Console.Write("[");
+            for (var j = 0; j < cols; j++)
+            {
+                Console.Write($"{matrix[i, j]:F3}");
+                if (j < cols - 1)
+                {
+                    Console.Write(", ");
+                }
+            }
+
+            Console.WriteLine("]");
+        }
+    }
+
+    /// <summary>
+    ///     Prints a 1D double array (vector) to the console in a formatted way.
+    /// </summary>
+    /// <param name="array">The 1D double array to print.</param>
+    public static void ConsoleWriteMatrix(double[] array, int precision = 3)
+    {
+        if (array == null)
+        {
+            Console.WriteLine("Array is null.");
+            return;
+        }
+
+        Console.Write("[");
+        for (var i = 0; i < array.Length; i++)
+        {
+            //Console.Write($"{array[i]:F3}");
+            Console.Write(array[i].ToString($"F{precision}") + " ");
+            if (i < array.Length - 1)
+            {
+                Console.Write(", ");
+            }
+        }
+
+        Console.WriteLine("]");
+    }
+
+
+
+public static class JacobianHelper
+{
+    // Build the Jacobian matrix
+    public static double[,] BuildJacobian(List<Bus> buses, double[,] Ymag, double[,] Yphase, int n, int npq)
+    {
+        var numUnknowns = n - 1 + npq; // (n-1) angles + npq voltages
+        var jacobian = new double[numUnknowns, numUnknowns];
+        var row = 0;
+
+        // Part 1: dP/d(delta) and dP/dV
+        for (var i = 0; i < n; i++)
+        {
+            if (buses[i].Type == "Swing") continue;
+            var col = 0;
+            // dP/d(delta)
+            for (var j = 0; j < n; j++)
+            {
+                if (buses[j].Type == "Swing") continue;
+                if (i == j)
+                    jacobian[row, col] = DP_Delta_Diagonal(buses, Ymag, Yphase, i);
+                else
+                    jacobian[row, col] = DP_Delta_OffDiagonal(buses, Ymag, Yphase, i, j);
+                col++;
+            }
+
+            // dP/dV (for PQ buses)
+            for (var j = 0; j < n; j++)
+            {
+                if (buses[j].Type != "PQ") continue;
+                if (i == j)
+                    jacobian[row, col] = DP_V_Diagonal(buses, Ymag, Yphase, i);
+                else
+                    jacobian[row, col] = DP_V_OffDiagonal(buses, Ymag, Yphase, i, j);
+                col++;
+            }
+            row++;
+        }
+
+        // Part 2: dQ/d(delta) and dQ/dV (for PQ buses)
+        for (var i = 0; i < n; i++)
+        {
+            if (buses[i].Type != "PQ") continue;
+            var col = 0;
+            // dQ/d(delta)
+            for (var j = 0; j < n; j++)
+            {
+                if (buses[j].Type == "Swing") continue;
+                if (i == j)
+                    jacobian[row, col] = DQ_Delta_Diagonal(buses, Ymag, Yphase, i);
+                else
+                    jacobian[row, col] = DQ_Delta_OffDiagonal(buses, Ymag, Yphase, i, j);
+                col++;
+            }
+
+            // dQ/dV
+            for (var j = 0; j < n; j++)
+            {
+                if (buses[j].Type != "PQ") continue;
+                if (i == j)
+                    jacobian[row, col] = DQ_V_Diagonal(buses, Ymag, Yphase, i);
+                else
+                    jacobian[row, col] = DQ_V_OffDiagonal(buses, Ymag, Yphase, i, j);
+                col++;
+            }
+            row++;
+        }
+
+        return jacobian;
+    }
+
+    // dP/d(delta_i): Diagonal term
+    private static double DP_Delta_Diagonal(List<Bus> buses, double[,] Ymag, double[,] Yphase, int i)
+    {
+        double sum = 0;
+        for (var k = 0; k < buses.Count; k++)
+        {
+            if (k != i)
+            {
+                sum += buses[i].Voltage * buses[k].Voltage * Ymag[i, k] *
+                       Math.Sin(Yphase[i, k] + buses[k].Angle - buses[i].Angle);
+            }
+        }
+        return sum;
+    }
+
+    // dP/d(delta_j): Off-diagonal term
+    private static double DP_Delta_OffDiagonal(List<Bus> buses, double[,] Ymag, double[,] Yphase, int i, int j)
+    {
+        return -buses[i].Voltage * buses[j].Voltage * Ymag[i, j] *
+               Math.Sin(Yphase[i, j] + buses[j].Angle - buses[i].Angle);
+    }
+
+    // dP/dV_i: Diagonal term
+    private static double DP_V_Diagonal(List<Bus> buses, double[,] Ymag, double[,] Yphase, int i)
+    {
+        double sum = 0;
+        for (var k = 0; k < buses.Count; k++)
+        {
+            if (k != i)
+            {
+                sum += buses[k].Voltage * Ymag[i, k] *
+                       Math.Cos(Yphase[i, k] + buses[k].Angle - buses[i].Angle);
+            }
+        }
+        sum += 2 * buses[i].Voltage * Ymag[i, i] * Math.Cos(Yphase[i, i]);
+        return sum;
+    }
+
+    // dP/dV_j: Off-diagonal term
+    private static double DP_V_OffDiagonal(List<Bus> buses, double[,] Ymag, double[,] Yphase, int i, int j)
+    {
+        return buses[i].Voltage * Ymag[i, j] *
+               Math.Cos(Yphase[i, j] + buses[j].Angle - buses[i].Angle);
+    }
+
+    // dQ/d(delta_i): Diagonal term
+    private static double DQ_Delta_Diagonal(List<Bus> buses, double[,] Ymag, double[,] Yphase, int i)
+    {
+        double sum = 0;
+        for (var k = 0; k < buses.Count; k++)
+        {
+            if (k != i)
+            {
+                sum += buses[i].Voltage * buses[k].Voltage * Ymag[i, k] *
+                       Math.Cos(Yphase[i, k] + buses[k].Angle - buses[i].Angle);
+            }
+        }
+        return sum;
+    }
+
+    // dQ/d(delta_j): Off-diagonal term
+    private static double DQ_Delta_OffDiagonal(List<Bus> buses, double[,] Ymag, double[,] Yphase, int i, int j)
+    {
+        return buses[i].Voltage * buses[j].Voltage * Ymag[i, j] *
+               Math.Cos(Yphase[i, j] + buses[j].Angle - buses[i].Angle);
+    }
+
+    // dQ/dV_i: Diagonal term
+    private static double DQ_V_Diagonal(List<Bus> buses, double[,] Ymag, double[,] Yphase, int i)
+    {
+        double sum = 0;
+        for (var k = 0; k < buses.Count; k++)
+        {
+            if (k != i)
+            {
+                sum += -buses[k].Voltage * Ymag[i, k] *
+                       Math.Sin(Yphase[i, k] + buses[k].Angle - buses[i].Angle);
+            }
+        }
+        sum += -2 * buses[i].Voltage * Ymag[i, i] * Math.Sin(Yphase[i, i]);
+        return sum;
+    }
+
+    // dQ/dV_j: Off-diagonal term
+    private static double DQ_V_OffDiagonal(List<Bus> buses, double[,] Ymag, double[,] Yphase, int i, int j)
+    {
+        return -buses[i].Voltage * Ymag[i, j] *
+               Math.Sin(Yphase[i, j] + buses[j].Angle - buses[i].Angle);
+    }
+}
+
+
+
+private List<ShortCircuit> CalculateShortCircuitCurrents(
+    List<(string Tag, string FromBus, string ToBus, double RealAdmittance, double ImaginaryAdmittance, double CapacitiveAdmittance)> yTableFull,
+    List<Bus> busesResult,
+    double baseMVA)
+{
+    // Get all unique buses and assign indices
+    var fullBuses = busesResult.Select(b => b.Tag).Distinct().ToList();
+    var busIndex = new Dictionary<string, int>();
+    for (int idx = 0; idx < fullBuses.Count; idx++)
+    {
+        busIndex[fullBuses[idx]] = idx;
+    }
+    int fullN = fullBuses.Count;
+
+    // Build full Y_bus as complex matrix
+    var Y_bus = Matrix<Complex>.Build.Dense(fullN, fullN);
+    foreach (var branch in yTableFull)
+    {
+        if (!busIndex.ContainsKey(branch.FromBus) || !busIndex.ContainsKey(branch.ToBus)) continue;
+
+        int i = busIndex[branch.FromBus];
+        int j = busIndex[branch.ToBus];
+
+        var y = new Complex(branch.RealAdmittance, branch.ImaginaryAdmittance);
+
+        Y_bus[i, j] -= y;
+        Y_bus[j, i] -= y;
+        Y_bus[i, i] += y;
+        Y_bus[j, j] += y;
+
+        var b_sh = new Complex(0, branch.CapacitiveAdmittance / 2.0);
+        Y_bus[i, i] += b_sh;
+        Y_bus[j, j] += b_sh;
+    }
+
+    // Invert Y_bus to get Z_bus
+    var Z_bus = Y_bus.Inverse();
+
+    // Calculate SC currents
+    var scList = new List<ShortCircuit>();
+    foreach (var bus in busesResult)
+    {
+        int k = busIndex[bus.Tag];
+        var Z_th = Z_bus[k, k];
+        if (Z_th.Magnitude < 1e-10)
+        {
+            scList.Add(new ShortCircuit { Tag = bus.Tag, Isc = double.PositiveInfinity });
+            continue;
+        }
+
+        var V_pre_pu = bus.Voltage;
+        var I_sc_pu = V_pre_pu / Z_th.Magnitude;
+
+        var V_base = bus.RatedVoltage;
+        var I_base = baseMVA * 1000 / (Math.Sqrt(3) * V_base);
+        var I_sc_kA = I_sc_pu * I_base;
+
+        scList.Add(new ShortCircuit { Tag = bus.Tag, Isc = I_sc_kA });
+    }
+
+    // Sort by tag
+    return scList.OrderBy(sc => sc.Tag).ToList();
+}
+
+}

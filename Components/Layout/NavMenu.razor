@@ -19,18 +19,6 @@
         </div>
 
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
-
-        <div class="nav-item px-3">
             <NavLink class="nav-link" href="auth">
                 <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Auth Required
             </NavLink>
@@ -68,10 +56,68 @@
         </AuthorizeView>
         
         <AuthorizeView Roles="SuperAdmin">
-            <NavLink class="nav-link" href="admin/users">
-                <span class="oi oi-people" aria-hidden="true"></span> User Management
-            </NavLink>
+            <!-- SUPER ADMIN GROUP -->
+            <CollapsibleNavGroup Title="Data"
+                                 Icon="bi bi-database-fill"
+                                 StartExpanded="true">
+                <NavLink class="nav-link" href="admin/users">
+                    <span class="oi oi-people" aria-hidden="true"></span> User Management
+                </NavLink>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="database-transfer">
+                        <span class="bi bi-arrow-repeat" aria-hidden="true"></span> Database Transfer
+                    </NavLink>
+                </div>
+            </CollapsibleNavGroup>
         </AuthorizeView>
+        
+        <AuthorizeView Roles="SuperAdmin, Admin, User" >
+            <!-- === APP PAGES === -->
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="segment">
+                    <span class="bi bi-plus-square-fill" aria-hidden="true"></span> Segment
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="loadList">
+                    <span class="bi bi-envelope-fill" aria-hidden="true"></span> Load List
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="sld">
+                    <span class="bi bi-diagram-3-fill" aria-hidden="true"></span> SLD
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="cableSchedule">
+                    <span class="bi bi-card-checklist" aria-hidden="true"></span> Cable Schedule
+                </NavLink>
+            </div>
+            <div class="nav-item px-3 py-1">
+                <NavLink class="nav-link py-2" href="systemStudy">
+                    <i class="bi bi-graph-up-arrow me-2"></i> System Study
+                </NavLink>
+            </div>
+        </AuthorizeView>
+        
+        <AuthorizeView Roles="Admin" >
+            <!-- DATA GROUP -->
+            <CollapsibleNavGroup Title="Data"
+                                 Icon="bi bi-database-fill"
+                                 StartExpanded="true">
+                <div class="nav-item px-3 py-1">
+                    <NavLink class="nav-link py-2" href="cableData">
+                        <i class="bi bi-lightning-charge-fill me-2"></i> Cable Data
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3 py-1">
+                    <NavLink class="nav-link py-2" href="motorData">
+                        <i class="bi bi-fan me-2"></i> Motor Data
+                    </NavLink>
+                </div>
+            </CollapsibleNavGroup>
+        </AuthorizeView>
+        
     </nav>
 </div>
 

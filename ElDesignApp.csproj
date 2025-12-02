@@ -14,12 +14,32 @@
     </ItemGroup>
 
     <ItemGroup>
+        <Folder Include="NpmJS\src\image\" />
+        <Folder Include="wwwroot\dist\" />
+    </ItemGroup>
+
+    <Target Name="RunNpmBuild" BeforeTargets="Build">
+        <Exec Command="npm install" WorkingDirectory="NpmJS" Condition="!Exists('NpmJS/node_modules')" />
+        <Exec Command="npm run build:dev" WorkingDirectory="NpmJS" Condition="'$(Configuration)' == 'Debug'" />
+        <Exec Command="npm run build:prod" WorkingDirectory="NpmJS" Condition="'$(Configuration)' == 'Release'" />
+    </Target>
+
+    <ItemGroup>
+        <PackageReference Include="Blazor.ContextMenu" Version="2.1.0" />
+        <PackageReference Include="Dapper" Version="2.1.66" />
+        <PackageReference Include="DeepCloner" Version="0.10.4" />
+        <PackageReference Include="EPPlus" Version="8.3.1" />
+        <PackageReference Include="MathNet.Numerics" Version="6.0.0-beta2" />
         <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="10.0.0" />
         <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.0" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.0" />
         <PackageReference Include="Resend" Version="0.2.1" />
+        <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+        <PackageReference Include="StackExchange.Redis" Version="2.10.1" />
+        <PackageReference Include="System.Linq" Version="4.3.0" />
+        <PackageReference Include="System.Linq.Expressions" Version="4.3.0" />
     </ItemGroup>
 
 </Project>

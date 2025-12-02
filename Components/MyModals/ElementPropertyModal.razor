@@ -1,0 +1,708 @@
+@using System.Diagnostics
+@using System.Globalization
+@using System.Reflection
+@using System.Text.Json
+@using ElDesignApp.Models
+
+@typeparam T;
+
+
+@inject NavigationManager MyNavigationManager
+@inject IJSRuntime JSRuntime
+
+
+@using ElDesignApp.Services
+@inject ElDesignApp.Services.IDataRetrievalService DataService
+@inject ElDesignApp.Services.IMyTableService MyTable
+@inject ElDesignApp.Services.IGlobalDataService GlobalData
+@inject ElDesignApp.Services.IMyFunctionService MyFunction
+
+
+<h3>LoadListModal</h3>
+<div class="modal fade show" id="myModal" style="display:block; background-color: rgba(10,10,10,.8);" aria-modal="true"
+     role="dialog" @onkeydown="@HandleModalKeyDown" tabindex="-1">
+    <div class="modal-dialog my-custom-modal-dialog" @ref="modalDialogElementRef">
+        <div class="modal-content">
+            <div class="modal-header" @onmousedown="@HandleHeaderMouseDown">
+                <h5 class="modal-title">@Title</h5>
+                <button type="button" class="close" @onclick="@ModalCancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                @if (Item is null)
+                {
+                    <p>Properties for @typeof(T).Name : Item not available</p>
+                }
+                else
+                {
+                    <p>Properties for @typeof(T).Name '@tag'</p>
+
+                    <table class="table">
+                        <thead>
+                        <tr>
+                            <th>Properties</th>
+                            <th>Value</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+
+                        @for (var i = 0; i < TableProperties.Count; i++)
+                        {
+                            var property = TableProperties[i];
+                            if (hideFieldList.Contains(property?.Name)) continue;
+
+                            var field = DBMaster.Find(list => list.FieldName == property?.Name);
+                            var shortFieldName = field is not null ? field.ShortFieldName : property?.Name;
+                            var fieldDisplay = field is not null ? field.DisplayFieldName : property?.Name;
+                            var nullable = Nullable.GetUnderlyingType(property?.PropertyType);
+                            var val = property.GetValue(Item);
+                            if (val == null) val = "";
+                            <tr class="my-0">
+                                <td><label for="name">@fieldDisplay: </label></td>
+                                <td>
+                                    @if (disabledFieldList.Contains(property.Name))
+                                    {
+                                        @property.GetValue(Item)
+                                    }
+
+                                    else if (property.PropertyType.Name == "String")
+                                    {
+                                        <input class=@inputClasses[i] type="text" value="@((string)val)"
+                                               @onselect="()=>PropertyUpdate(property)"
+                                               @onclick="()=>PropertyUpdate(property)"
+                                               @oninput="e=>ValueAndValidationUpdate(e, property, val)"
+                                               @onblur="@OnBlur"
+                                               @onkeypress:preventDefault>
+                                    }
+                                    else if (property.PropertyType.Name == "Single")
+                                    {
+                                        <input class="form-control" type="number" value="@((float)val)"
+                                               @onclick="()=>PropertyUpdate(property)"
+                                               @oninput="e=>ValueAndValidationUpdate(e, property, val)"
+                                               @onblur="@OnBlur"
+                                               @onkeypress:preventDefault>
+                                    }
+                                    else if (property.PropertyType.Name == "Double")
+                                    {
+                                        <input class="form-control" type="number" value="@((double)val)"
+                                               @onclick="()=>PropertyUpdate(property)"
+                                               @oninput="e=>ValueAndValidationUpdate(e, property, val)"
+                                               @onblur="@OnBlur"
+                                               @onkeypress:preventDefault>
+                                    }
+                                    else if (property.PropertyType.Name.Contains("Int"))
+                                    {
+                                        Debug.WriteLine($"Field: {property.PropertyType.Name}");
+                                        <input class="form-control" type="number" min="0" step="1" value="@((int)val)"
+                                               @onclick="()=>PropertyUpdate(property)"
+                                               @oninput="e=>ValueAndValidationUpdate(e, property, val)"
+                                               @onblur="@OnBlur"
+                                               @onkeypress:preventDefault>
+                                    }
+                                    else if (property.PropertyType.Name == "Boolean")
+                                    {
+                                        var nullAble = Nullable.GetUnderlyingType(property.PropertyType); // null means Not Nullable
+                                        <select @onclick="()=>PropertyUpdate(property)"
+                                                @oninput="e=>ValueAndValidationUpdate(e, property, val)"
+                                                @onblur="@OnBlur"
+                                                @onkeypress:preventDefault>
+                                            @if ((bool)val)
+                                            {
+                                                <option value="true" selected> Yes</option>
+                                            }
+                                            else
+                                            {
+                                                <option value="true"> Yes</option>
+                                            }
+                                            @if ((bool)val == false)
+                                            {
+                                                <option value="false" selected> No</option>
+                                            }
+                                            else
+                                            {
+                                                <option value="false"> No</option>
+                                            }
+                                            @if (nullAble != null)
+                                            {
+                                                // property can be nullable
+                                                if ((string)val == "")
+                                                {
+                                                    <option value="null" selected> Not Applicable</option>
+                                                }
+                                                else
+                                                {
+                                                    <option value="null">Not Applicable</option>
+                                                }
+                                            }
+                                        </select>
+                                    }
+                                    else
+                                    {
+                                        // other _Type - no editing yet
+                                        @property.GetValue(Item)
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+
+                <div class="row justify-content-md-left">
+                    @if (ErrorMessage != "")
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            @propartyDesc : @ErrorMessage
+                        </div>
+                    }
+                    else if (WarningMessage != "")
+                    {
+                        <div class="alert alert-warning" role="alert">
+                            @propartyDesc : @WarningMessage
+                        </div>
+                    }
+                    else if (InfoMessage != "")
+                    {
+                        <div class="alert alert-info" role="alert">
+                            @propartyDesc : @InfoMessage
+                        </div>
+                    }
+                    else if (SuccessMessage != "")
+                    {
+                        <div class="alert alert-success" role="alert">
+                            @propartyDesc : @SuccessMessage
+                        </div>
+                    }
+
+
+                </div>
+
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="@ModalCancel">Cancel</button>
+                <button @ref="myOKButton" type="button" class="btn btn-primary" @onclick="@ModalOk">OK</button>
+                @* @switch (DialogType) *@
+                @* { *@
+                @*     case ModalDialogType.Ok: *@
+                @*         <button @ref="myOKButton" _Type="button" class="btn btn-primary" @onclick="@ModalOk">OK</button> *@
+                @*         break; *@
+                @*     case ModalDialogType.OkCancel: *@
+                @*         <button _Type="button" class="btn" @onclick="@ModalCancel">Cancel</button> *@
+                @*         <button _Type="button" class="btn btn-primary" @onclick="@ModalOk">OK</button> *@
+                @*         break; *@
+                @*     case ModalDialogType.DeleteCancel: *@
+                @*         <button _Type="button" class="btn" @onclick="@ModalCancel">Cancel</button> *@
+                @*         <button _Type="button" class="btn btn-danger" @onclick="@ModalDelete">Delete</button> *@
+                @*         break; *@
+                @*     case ModalDialogType.SaveDeleteCancelOk: *@
+                @*         <button _Type="button" class="btn" @onclick="@ModalCancel">Cancel</button> *@
+                @*         <button _Type="button" class="btn btn-success" @onclick="@ModalSave">Save</button> *@
+                @*         <button _Type="button" class="btn btn-danger" @onclick="@ModalDelete">Delete</button> *@
+                @*         <button @ref="myOKButton" _Type="button" class="btn btn-info" @onclick="@ModalOk">OK</button> *@
+                @*         break; *@
+                @*     default: *@
+                @*         throw new ArgumentOutOfRangeException(); *@
+                @* } *@
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Text { get; set; }
+    [Parameter] public T? Item { get; set; }
+    [Parameter] public string[]? Fields { get; set; } // field list to display
+    [Parameter] public EventCallback<(string, string, string, string, string)> OnClose { get; set; }
+
+    //[Parameter] public ModalDialogType DialogType { get; set; }
+    private ElementReference modalDialogElementRef;
+
+    private Task ModalCancel()
+    {
+        if (Item is null)
+        {
+            return OnClose.InvokeAsync(("", "", "", "", "Cancel"));
+        }
+
+        return OnClose.InvokeAsync((ItemJSON, _Type, tag, (string)tagProperty.GetValue(Item)!, "Cancel"));
+    }
+
+    private Task ModalOk()
+    {
+        var jsonSerializerOption = new JsonSerializerOptions() { IncludeFields = true };
+        if (Item is null)
+        {
+            return OnClose.InvokeAsync(("", "", "", "", "Ok"));
+        }
+
+        return OnClose.InvokeAsync((JsonSerializer.Serialize(Item, jsonSerializerOption), _Type, tag, (string)tagProperty.GetValue(Item), "Ok"));
+    }
+
+    // private Task ModalSave()
+    // {
+    //     if (Item is null)
+    //     { return OnClose.InvokeAsync(("", "", "", "", "Save")); }
+    //     return OnClose.InvokeAsync((ItemJSON, _Type, tag, (string)tagProperty.GetValue(Item)!, "Save"));
+    // }
+    //
+    // private Task ModalDelete()
+    // {
+    //     if (Item is null) { return OnClose.InvokeAsync(("", "", "", "", "Delete")); }
+    //     return OnClose.InvokeAsync((ItemJSON, _Type, tag, (string)tagProperty.GetValue(Item)!, "Delete"));
+    // }
+
+    private string? _Type { get; set; } // object _Type "Transformer", "Bus", etc.
+    private string? ItemJSON { get; set; } // object serialised to return
+    private T? IterateItem;
+    private T? ExistingItem;
+    private List<PropertyInfo> TableProperties;
+    private PropertyInfo? tagProperty { get; set; } = default!;
+    private List<DBMaster> DBMaster = [];
+    private PropertyInfo? currentProperty;
+    private List<string> SQLFieldsNames = [];
+    private List<CellStatus> CellStatusRecord = [];
+
+    private readonly string[] disabledFieldList = ["BfT", "BtT", "CblDesc", "CblDescA", "VdRA", "VdSA", "VdRM", "VdSM", "UpdatedBy", "UpdatedOn"];
+    private readonly string[] hideFieldList = ["RecordId"];
+
+
+    private string propartyDesc = "";
+    private ElementReference myOKButton;
+
+    private string InfoMessage = "";
+    private string SuccessMessage = "";
+    private string WarningMessage = "";
+    private string ErrorMessage = "";
+
+    private string? tag = "";
+    private readonly string inputClass = "form-control";
+    private readonly List<string> inputClasses = [];
+
+    // used in this modal page
+    private class CellStatus
+    {
+        public int Seq { get; set; }
+        public Guid UID { get; set; }
+        public string? FieldName { get; set; }
+        public string? FieldType { get; set; } // string, boolean, int32, etc.
+        public bool ClickedStatus { get; set; }
+        public bool DblClickedStatus { get; set; }
+        public bool Edited { get; set; }
+    }
+
+    protected override void OnInitialized()
+    {
+        DBMaster = GlobalData.DBMasters;
+        DBMaster = GlobalData.DBMasters.Where(list => list.DBName == typeof(T).Name).ToList();
+
+        var jsonSerializerOption = new JsonSerializerOptions() { IncludeFields = true };
+        // if field names are given
+        if (Fields?.Length > 0)
+        {
+            TableProperties = typeof(T).GetProperties().ToList()
+                .Where(p => Fields.Any(f => f == p.Name)).ToList()
+                .OrderBy(p => Array.IndexOf(Fields, p.Name)).ToList();
+        }
+        else
+        {
+            var tempTableProperties = typeof(T).GetProperties().ToList()
+                .Where(p => DBMaster.Any(y => y.FieldName == p.Name && y.Display)).ToList();
+            TableProperties = tempTableProperties.OrderBy(p => DBMaster.Where(db => db.FieldName == p.Name).ToList()[0].FieldOrder).ToList();
+            if (TableProperties.Count == 0)
+            {
+                TableProperties = typeof(T).GetProperties().ToList();
+            }
+        }
+
+        TableProperties.ForEach(prop => inputClasses.Add(inputClass));
+
+        // read the DB filed name
+        // if the C# class property not among the SQL Server DB filed, then disable editing
+        SQLFieldsNames = MyTable.GetSQLFieldsNames(typeof(T).Name);
+
+        _Type = typeof(T).Name;
+        tagProperty = typeof(T).GetProperty("Tag");
+
+        tag = Item is not null ? (string)tagProperty?.GetValue(Item)! : "";
+
+        IterateItem = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(Item, jsonSerializerOption), jsonSerializerOption);
+        ExistingItem = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(Item, jsonSerializerOption), jsonSerializerOption);
+        ItemJSON = JsonSerializer.Serialize(Item, jsonSerializerOption);
+
+        base.OnInitialized();
+    }
+
+    protected override Task OnInitializedAsync()
+    {
+        //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
+        return Task.CompletedTask;
+        //return base.OnInitializedAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
+        base.OnParametersSet();
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        //System.Diagnostics.Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
+        return base.OnAfterRenderAsync(firstRender);
+    }
+
+
+    protected override bool ShouldRender()
+    {
+        //System.Diagnostics.Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
+        return base.ShouldRender();
+    }
+
+    public void Dispose()
+    {
+        //Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
+    }
+
+    private void PropertyUpdate(PropertyInfo? prop)
+    {
+        EditingPropertyInfo = prop;
+        var field = DBMaster.Find(list => list.FieldName == prop.Name);
+        propartyDesc = field is not null ? field.DisplayFieldName : prop.Name;
+        if (prop != null && TableProperties.Contains(prop))
+        {
+            inputClasses[TableProperties.IndexOf(prop)] = InputClass(Item, prop);
+        }
+
+        Debug.WriteLine($"Property Name: '{EditingPropertyInfo?.Name}' Description: '{propartyDesc}',  CSS: '{inputClasses[TableProperties.IndexOf(prop)]}'");
+    }
+
+    private void ValueAndValidationUpdate(ChangeEventArgs e, PropertyInfo? property, object val)
+    {
+        if (property == null) return;
+        switch (property.PropertyType.Name)
+        {
+            case "String":
+                property.SetValue(Item, e?.Value?.ToString());
+                break;
+            case "Single":
+                property.SetValue(Item, float.TryParse(e?.Value?.ToString(), out var fs) ? fs : (float)val);
+                break;
+            case "Double":
+                property.SetValue(Item, double.TryParse(e?.Value?.ToString(), out var fd) ? fd : (double)val);
+                break;
+            case "Int":
+                property.SetValue(Item, int.TryParse(e?.Value?.ToString(), out var fi) ? fi : (int)val);
+                break;
+            case "Boolean":
+                property.SetValue(Item, bool.TryParse(e?.Value?.ToString(), out var fb) ? fb : default);
+                break;
+        }
+
+        if (TableProperties.Contains(property))
+        {
+            inputClasses[TableProperties.IndexOf(property)] = InputClass(Item, property);
+        }
+    }
+
+
+    private async Task HandleModalKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            Debug.WriteLine($"Modal - KeyDown - pressed {args.Key}. Triggering OK.");
+            await ModalOk();
+            await JSRuntime.InvokeVoidAsync("focus", myOKButton); // Optional: try to focus the OK button for visual feedback
+        }
+        else if (args.Key == "Escape")
+        {
+            Debug.WriteLine($"Modal - KeyDown - pressed {args.Key}. Triggering Cancel.");
+            // Reset edited field if any
+            if (EditingPropertyInfo is not null)
+            {
+                EditingPropertyInfo.SetValue(Item, EditingPropertyInfo.GetValue(ExistingItem));
+                inputClasses[TableProperties.IndexOf(EditingPropertyInfo)] = InputClass(Item, EditingPropertyInfo);
+            }
+
+            await ModalCancel();
+        }
+    }
+
+
+    //
+    // private async Task KeyPressHandler(KeyboardEventArgs args)
+    // {
+    //     // on pressing enter run DoSubmit
+    //     if (args.Key == "Enter")
+    //     {
+    //         Debug.WriteLine($"Table - KeyPressHandler - pressed {args.Key}");
+    //         await myOKButton.FocusAsync();
+    //     }
+    //     else if (args.Key == "Escape")
+    //     {
+    //         //System.Diagnostics.Debug.WriteLine($"Table - KeyPressHandler - pressed {args.Key}");
+    //         if (EditingPropertyInfo is not null)
+    //         {
+    //             EditingPropertyInfo.SetValue(Item, EditingPropertyInfo.GetValue(ExistingItem));
+    //             inputClasses[TableProperties.IndexOf(EditingPropertyInfo)] = InputClass(Item, EditingPropertyInfo);
+    //         }
+    //     }
+    // }
+
+    protected async void OnBlur()
+    {
+        // this function work when clicked to another cell
+        if (EditingPropertyInfo is not null)
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name} " +
+                            $"Property '{propartyDesc} [ {EditingPropertyInfo.Name} ]' changed from '{EditingPropertyInfo.GetValue(ExistingItem)}' to '{EditingPropertyInfo.GetValue(Item)}'.");
+    }
+
+    private void OnSpanDoubleClick(PropertyInfo property)
+    {
+        StartEditing(property.Name, property.GetValue(Item));
+    }
+
+
+    private async Task DoSubmit()
+    {
+        if (currentProperty == null || Item == null || ExistingItem == null) return;
+
+        var currentValue = currentProperty.GetValue(Item);
+        var previousValue = currentProperty.GetValue(Item);
+        var jsonSerializerOption = new JsonSerializerOptions() { IncludeFields = true };
+
+        //System.Diagnostics.Debug.WriteLine($"Table - DoSubmit : updating '{previousValue}' to '{currentValue}'");
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name} " +
+                        $"Property '{currentProperty.Name}' : '{previousValue}' being changed to '{currentValue}'");
+        //
+        // validate the input data
+        IterateItem = ValidatedInput(IterateItem, currentProperty, new List<T?> { IterateItem }, new List<T?> { ExistingItem });
+
+        // If Validated, then only update List as per changed vlaue (IterateList)
+        if (ErrorMessage != "")
+        {
+            Item = IterateItem;
+        }
+
+        ItemJSON = JsonSerializer.Serialize(Item, jsonSerializerOption);
+        //StateHasChanged();
+        //
+    }
+
+    private string InputClass(T? itemChanged, PropertyInfo? propertyInfo)
+    {
+        var inputClassString = "form-control ";
+        if (propertyInfo == null || itemChanged == null) return inputClassString;
+        var validatedInput = MyFunction.ValidateGeneralInput(itemChanged, propertyInfo, new List<T?> { itemChanged }, new List<T?> { itemChanged });
+        InfoMessage = validatedInput.Item2[0];
+        SuccessMessage = validatedInput.Item2[1];
+        WarningMessage = validatedInput.Item2[2];
+        ErrorMessage = validatedInput.Item2[3];
+
+
+        inputClassString += ErrorMessage != "" ? "border-danger" : WarningMessage != "" ? "border-warning" : SuccessMessage != "" ? "border-success" : "border-info";
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} " +
+                        $"Property '{propertyInfo.Name}' : value being changed to '{propertyInfo.GetValue(itemChanged)}', InputClassCSS: '{inputClassString}'.");
+
+        return inputClassString;
+    }
+
+
+    private T? ValidatedInput(T? itemChanged, PropertyInfo? propertyInfo, List<T?> itemsExistingIteration, List<T?> itemsExisting)
+    {
+        if (propertyInfo == null || itemChanged == null) return itemChanged;
+
+        var validatedInput = MyFunction.ValidateGeneralInput(itemChanged, propertyInfo, itemsExistingIteration, itemsExisting);
+
+        itemChanged = validatedInput.Item1;
+
+        InfoMessage = validatedInput.Item2[0];
+        SuccessMessage = validatedInput.Item2[1];
+        WarningMessage = validatedInput.Item2[2];
+        ErrorMessage = validatedInput.Item2[3];
+        //StateHasChanged();
+        //
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}: {ErrorMessage} {SuccessMessage}");
+        return itemChanged;
+    }
+
+    private PropertyInfo? EditingPropertyInfo { get; set; }
+    private string? EditingProperty { get; set; }
+    private string? EditingValue { get; set; }
+    private Type? EditingValueType { get; set; }
+
+    private void StartEditing(string? propertyName, object? value)
+    {
+        EditingProperty = propertyName;
+        EditingValue = value?.ToString(); // Convert value to string
+        EditingValueType = value?.GetType(); // Store the _Type of the value
+        EditingPropertyInfo = typeof(T).GetProperty(EditingProperty);
+    }
+
+
+    private T? AssignValueToProperty(T? item, PropertyInfo? editingPropertyInfo, string? editingValue, Type? editingValueType)
+    {
+        // based on the EditingProperty EditingValue and EditingValueType
+        if (item == null || editingPropertyInfo == null || editingValueType == null) return item;
+        object? convertedValue = null;
+
+        try
+        {
+            // Handle type-specific conversion
+            if (editingPropertyInfo.PropertyType == typeof(int) &&
+                int.TryParse(editingValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out int iVal))
+            {
+                convertedValue = iVal;
+            }
+            else if (editingPropertyInfo.PropertyType == typeof(float) &&
+                     float.TryParse(editingValue, NumberStyles.Float, CultureInfo.InvariantCulture, out float fVal))
+            {
+                convertedValue = fVal;
+            }
+            else if (editingPropertyInfo.PropertyType == typeof(double) &&
+                     double.TryParse(editingValue, NumberStyles.Float, CultureInfo.InvariantCulture, out double dVal))
+            {
+                convertedValue = dVal;
+            }
+            else if (editingPropertyInfo.PropertyType == typeof(DateTime) &&
+                     DateTime.TryParse(editingValue, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dtVal))
+            {
+                convertedValue = dtVal;
+            }
+            else if (editingPropertyInfo.PropertyType == typeof(bool) &&
+                     bool.TryParse(editingValue, out bool bVal))
+            {
+                convertedValue = bVal;
+            }
+            else if (editingPropertyInfo.PropertyType == typeof(string))
+            {
+                convertedValue = editingValue;
+            }
+            else
+            {
+                // Fallback for other types, consider more robust conversion or specific handling
+                convertedValue = Convert.ChangeType(editingValue, editingPropertyInfo.PropertyType, CultureInfo.InvariantCulture);
+            }
+
+            editingPropertyInfo.SetValue(item, convertedValue);
+        }
+        catch (FormatException)
+        {
+            // Handle specific format errors if needed
+            Debug.WriteLine($"Format error converting '{editingValue}' to type '{editingPropertyInfo.PropertyType.Name}' " +
+                            $"for property '{editingPropertyInfo.Name}'");
+        }
+        catch (InvalidCastException)
+        {
+            // Handle invalid cast errors
+            Debug.WriteLine($"Invalid cast converting '{editingValue}' to type '{editingPropertyInfo.PropertyType.Name}' " +
+                            $"for property '{editingPropertyInfo.Name}'");
+        }
+        catch (Exception ex)
+        {
+            // Catch any other exceptions during conversion
+            Debug.WriteLine($"Error converting value: {ex.Message}");
+        }
+
+        return item;
+    }
+
+
+    private void StopEditing()
+    {
+        var jsonSerializerOption = new JsonSerializerOptions() { IncludeFields = true };
+        Item = AssignValueToProperty(Item, EditingPropertyInfo, EditingValue, EditingValueType);
+        if (Item != null)
+        {
+            ItemJSON = JsonSerializer.Serialize(Item, jsonSerializerOption);
+        }
+
+        EditingProperty = null;
+        EditingValue = null;
+        EditingValueType = null;
+        EditingPropertyInfo = null;
+    }
+
+
+    // --- Dragging Functionality ---
+    private DotNetObjectReference<ElementPropertyModal<T>>? _dotNetHelper;
+    private bool _isDragging = false;
+    private int _offsetX, _offsetY;
+
+    // Call this from the modal header's @onmousedown
+    private async Task HandleHeaderMouseDown(MouseEventArgs e)
+    {
+        System.Diagnostics.Debug.WriteLine($"DEBUG: HandleHeaderMouseDown triggered at {DateTime.Now}"); // Add this line
+
+        _isDragging = true;
+        // Calculate offset directly using the passed ElementReference
+        // Call the JS function to get the rect, passing the ElementReference
+        var modalDialogRect = await JSRuntime.InvokeAsync<BoundingClientRect>("getModalDialogRect", modalDialogElementRef);
+
+        if (modalDialogRect != null)
+        {
+            _offsetX = (int)e.ClientX - (int)modalDialogRect.left;
+            _offsetY = (int)e.ClientY - (int)modalDialogRect.top;
+        }
+
+        // Register mouse move and up events globally, passing the element reference to JS
+        _dotNetHelper = DotNetObjectReference.Create(this);
+        await JSRuntime.InvokeVoidAsync("startModalDrag", _dotNetHelper, modalDialogElementRef); // Pass modalDialogElementRef here
+    }
+
+    [JSInvokable]
+    public async Task HandleMouseMove(int clientX, int clientY)
+    {
+        if (_isDragging)
+        {
+            // Calculate new position
+            int newX = clientX - _offsetX;
+            int newY = clientY - _offsetY;
+
+            await JSRuntime.InvokeVoidAsync("setModalPosition", newX, newY);
+        }
+    }
+
+    // Dispose of the DotNetObjectReference when the component is removed
+    public void DisposeDragHelper()
+    {
+        if (_dotNetHelper != null)
+        {
+            _dotNetHelper.Dispose();
+            _dotNetHelper = null;
+        }
+    }
+
+    [JSInvokable]
+    public async Task HandleMouseUp()
+    {
+        _isDragging = false;
+        if (_dotNetHelper != null)
+        {
+            await JSRuntime.InvokeVoidAsync("stopModalDrag");
+            _dotNetHelper.Dispose();
+            _dotNetHelper = null;
+        }
+    }
+
+
+    // Helper class for JS Interop to get element dimensions
+    public class BoundingClientRect
+    {
+        public double x { get; set; }
+        public double y { get; set; }
+        public double width { get; set; }
+        public double height { get; set; }
+        public double top { get; set; }
+        public double right { get; set; }
+        public double bottom { get; set; }
+        public double left { get; set; }
+    }
+
+
+}
+
+
+
+}

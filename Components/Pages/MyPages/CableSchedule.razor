@@ -1,0 +1,990 @@
+﻿@page "/cableSchedule"
+@using System.Diagnostics
+@using System.Numerics
+@using System.Reflection
+@using System.Text.Json
+@using ElDesignApp.Models
+
+@rendermode InteractiveServer
+
+@inject NavigationManager MyNavigationManager
+@inject IJSRuntime JsRuntime
+
+@inject Services.IDataRetrievalService DataService
+@inject Services.IMyTableService MyTable 
+@inject Services.IGlobalDataService GlobalData
+@inject Services.ILayoutFunctionService LayoutFunction
+@inject Services.IMyFunctionService MyFunction
+
+@if (loadChild)
+{
+    <div class="align-content-center" style="background-color:beige">
+        <h4>Cable Schedule</h4>
+    </div>
+    <div class="container-fluid tabcontent">
+        <Table List="_tableItems"
+               ListOriginal="_dbItems"
+               T="Cable"
+               AutoCheck="AutoCheckOnTableChange"
+               Update="UpdateOnTableChange"
+               Discard="DiscardTableChange"
+               SelectedItem="SelectedInTable"
+               SuccessMessage="@tableSuccessMessage"
+               InfoMessage="@tableInfoMessage"
+               WarningMessage="@tableWarningMessage"
+               ErrorMessage="@tableErrorMessage">
+            <ItemTemplate Context="item">
+
+            </ItemTemplate>
+            <FieldTemplate Context="field">
+
+            </FieldTemplate>
+            <ItemFieldTemplate Context="itemField">
+                @if (itemField.Field.Name == "Origin" && string.IsNullOrEmpty(itemField.Item.Origin))
+                {
+                    @if (itemField.Item.OriginTagMatch is { Count: > 0 })
+                    {
+                        <div class="col-xs-3">
+                            <select class="form-control" style="background-color:burlywood"
+                                    onchange="@((ChangeEventArgs e) => UpdateLocation(e, itemField.Item, "Origin"))">
+                                <option value="">?</option>
+                                @foreach (var item in itemField.Item.OriginTagMatch)
+                                {
+                                    <option value="@item.UID">@item.Tag (@item.Location)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                }
+                else if (itemField.Field.Name == "Destination" && string.IsNullOrEmpty(itemField.Item.Destination))
+                {
+                    @if (itemField.Item.DestinationTagMatch != null && itemField.Item.DestinationTagMatch.Count > 0)
+                    {
+                        <div class="col-xs-3">
+                            <select class="form-control" style="background-color:burlywood"
+                                    onchange="@((ChangeEventArgs e) => UpdateLocation(e, itemField.Item, "Destination"))">
+                                <option value="">?</option>
+                                @foreach (var item in itemField.Item.DestinationTagMatch)
+                                {
+                                    <option value="@item.UID">@item.Tag (@item.Location)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                }
+            </ItemFieldTemplate>
+            <ExtraButtons>
+                <div class="btn-toolbar" role="toolbar" aria-label="Toolbar with button groups">
+                    <div class="btn-group mr-2" role="group" aria-label="First group">
+                        <button disabled data-toggle="button" class="btn btn-info  mr-1" style="float:right;">Route
+                        </button>
+                        <button @onclick="ResetEnds" data-toggle="button" class="btn btn-danger  mr-1"
+                                style="float:right;"
+                                title="Reset Origin and Destination of selected cable and update database">Reset Ends
+                        </button>
+                        <button @onclick="ResetAllEnds" data-toggle="button" class="btn btn-danger  mr-1"
+                                style="float:right;"
+                                title="Reset Origin and Destination of all cables and update database">Reset All Ends
+                        </button>
+                        <button @onclick="RouteThisCable" data-toggle="button" class="btn btn-info  mr-1"
+                                style="float:right;" title="Route selected cable">Selected
+                        </button>
+                        <button @onclick="@RouteAllCable" data-toggle="button" class="btn btn-info  mr-1"
+                                style="float:right;" title="Route all cables, which are not yet routed">All
+                        </button>
+                        <button @onclick="ClearRouteCable" data-toggle="button" class="btn btn-danger  mr-1"
+                                style="float:right;" title="Clear route from data base for the selected cable ">Clear
+                        </button>
+                        <button @onclick="ClearAllRouteCable" data-toggle="button" class="btn btn-danger  mr-1"
+                                style="float:right;" title="Clear cable routes from database for all cables">ClearAll
+                        </button>
+                        <button @onclick="@ClearNoRouteFoundLog" data-toggle="button" class="btn btn-info  mr-1"
+                                style="float:right;" title="Clear no-route-found entries in data base">Clear Log
+                        </button>
+                        <button @onclick="@ArrangeCable" data-toggle="button" class="btn btn-info  mr-1"
+                                style="float:right;" title="Arrange all cables">Arrange
+                        </button>
+                    </div>
+                </div>
+            </ExtraButtons>
+            <Result>
+                <h6>@resultMessage</h6>
+            </Result>
+        </Table>
+    </div>
+    <br/>
+    <br/>
+    <Plot @rendermode="InteractiveServer"
+          Title="Cable Schedule"
+          DivString="cableDiv"
+          DisplayItems="displayItems"
+          SceneInfo="GlobalData.sceneDataCable">
+    </Plot>
+    <br/>
+}
+else
+{
+    <img src="./images/loading-green_dots.gif" asp-append-version="true" width="300"/>
+}
+
+@code {
+    private bool loadChild;
+    private bool tab1 = true; // Ladder
+    private bool tab2 = false; // Tray
+    private bool tab3 = false; // Trench
+    private bool tab4 = false; // Sleeve
+    private bool IsDisabledBttnSaveSegmentResultToDB = true;
+
+    private static List<Cable>? _dbItems = []; // in sync with the SQL DB
+    private static List<Cable>? _tableItems = []; // finalised in table
+    private static List<Cable>? _changedItems = []; // changed in table but not verified yet
+    private static Cable? selectedCable;
+
+    private string tableMessage = "";
+    private string tableSuccessMessage = "";
+    private string tableInfoMessage = "";
+    private string tableWarningMessage = "";
+    private string tableErrorMessage = "";
+
+    private string resultMessage = "";
+
+    private List<string> displayItems = ["Plot", "IsolatedSegment", "Segment", "Tray", "Bend", "Tee", "Cross", "Node", "Sleeve", "Load", "Cable", "Board"];
+
+    private static readonly JsonSerializerOptions? JsonSerializerOption = new() { IncludeFields = true };
+
+    private static List<MyDebug>? _myDebug = [];
+
+
+    protected override void OnInitialized()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        GlobalData.selectedPage = "Cable Schedule";
+        GlobalData.sceneCurrent = "Cable";
+        GlobalData.sceneDataCable.SceneName = GlobalData.sceneCurrent;
+        StateHasChanged();
+        base.OnInitialized();
+    }
+
+    protected override Task OnInitializedAsync()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name}");
+        return Task.CompletedTask;
+
+        //base.OnInitializedAsync();
+    }
+
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {loadChild}");
+
+        if (firstRender)
+        {
+            (_dbItems, string logInfo, string logWarning, string logError) 
+                = await DataService.ReadFromCacheOrDb(new Cable()) ;
+
+            var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+            
+            _dbItems.ForEach(item => item.Update());
+            _dbItems = MyTable.AssignSequenceToList(_dbItems);
+
+            // read Boards, Loads and Equipments so that the Origin and Destination of the Cables can be calculated in ProcessCables function
+            //GlobalData.Boards = await ReadFromCacheOrDB(new Board());
+            (GlobalData.Boards, _, _, _) = await DataService.ReadFromCacheOrDb(new Board()) ;
+            GlobalData.Boards.ForEach(item => LayoutFunction.BoardUpdate(item));
+            GlobalData.Boards = MyTable.AssignSequenceToList(GlobalData.Boards);
+
+            (GlobalData.Loads, _, _, _) = await DataService.ReadFromCacheOrDb(new Load()) ;
+            GlobalData.Loads.ForEach(item => LayoutFunction.LoadUpdate(item));
+            GlobalData.Loads = MyTable.AssignSequenceToList(GlobalData.Loads);
+
+            if (GlobalData.Equipments != null && GlobalData.Equipments.Count == 0)
+            {
+                (GlobalData.Equipments, _, _, _) = await DataService.ReadFromCacheOrDb(new Equipment()) ;
+                
+                GlobalData.Equipments.ForEach(item => item.Update());
+                GlobalData.Equipments = MyTable.AssignSequenceToList(GlobalData.Equipments);
+            }
+
+            _dbItems = ProcessCables(_dbItems);
+            _tableItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(_dbItems, JsonSerializerOption), JsonSerializerOption);
+            _changedItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(_dbItems, JsonSerializerOption), JsonSerializerOption);
+            GlobalData.Cables = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(_dbItems, JsonSerializerOption), JsonSerializerOption);
+
+
+            // allow loading the child components
+            loadChild = true;
+            //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {loadChild}");
+            StateHasChanged();
+        }
+        //base.OnAfterRenderAsync(firstRender);
+    }
+
+
+    public async void DrawScene(string divString, string sceneJSON)
+    {
+        await JsRuntime.InvokeVoidAsync("drawScene", divString, sceneJSON);
+    }
+
+    public async void DrawCube(int n)
+    {
+        for (var i = 0; i < n; i++)
+        {
+            await JsRuntime.InvokeVoidAsync("drawCube");
+        }
+    }
+
+
+    private void SelectedInTable<T>((T, Guid) args)
+    {
+        var item = args.Item1;
+        selectedCable = JsonSerializer.Deserialize<Cable>(JsonSerializer.Serialize(item, JsonSerializerOption), JsonSerializerOption);
+        ResetMassages();
+        tableInfoMessage = $"Cable tag '{selectedCable.Tag}' is selected";
+        StateHasChanged();
+    }
+
+    private void AutoCheckOnTableChange<T>((T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
+    {
+        // Access the parameters from args
+        var item = args.Item1;
+        var uid = args.Item2;
+        var propertyInfo = args.Item3;
+        var originalItem = args.Item4;
+        List<T> itemsCurrent = args.Item5;
+        List<T> itemsOriginal = args.Item6;
+        tableSuccessMessage = args.Item7;
+        tableInfoMessage = args.Item8;
+        tableWarningMessage = args.Item9;
+        tableErrorMessage = args.Item10;
+
+        var tagProperty = typeof(T).GetProperties().ToList().Where(p => p.Name == "Tag").ToList()[0];
+        var tag = tagProperty.GetValue(item);
+        //
+        //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : {tag} : {propertyInfo.Name} : {propertyInfo.PropertyType}");
+
+        // this item is changed
+        // further validations other than duplicate tag, regex validations, etc. which are akready performed in Functions.ValidateGeneralInput()
+
+        var cable = JsonSerializer.Deserialize<Cable>(JsonSerializer.Serialize(item, JsonSerializerOption), JsonSerializerOption);
+        var originalCable = JsonSerializer.Deserialize<Cable>(JsonSerializer.Serialize(originalItem, JsonSerializerOption), JsonSerializerOption);
+
+        //
+    }
+
+    private async Task UpdateOnTableChange((Cable cable, List<Cable>? list, List<Cable> originalList, string success, string info, string warning, string error) parameters)
+    {
+        //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} Updating data to the database...");
+        // Access the parameters from the tuple
+        List<Cable>? updatedList = parameters.list;
+        List<Cable> originalList = parameters.originalList;
+        tableSuccessMessage = parameters.success;
+        tableInfoMessage = parameters.info;
+        tableWarningMessage = parameters.warning;
+        tableErrorMessage = parameters.error;
+
+        // Perform additional update logic here using the updatedList and the originalList before writing the final updated list to the Data Base
+
+
+        await MyTable.BulkCopyDataTableAsync(updatedList);
+        _tableItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(updatedList, JsonSerializerOption), JsonSerializerOption);
+        _changedItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(updatedList, JsonSerializerOption), JsonSerializerOption);
+        ResetMassages();
+        tableSuccessMessage = "Table is successfully updated to database.";
+
+        // update the UI
+        StateHasChanged();
+    }
+
+
+    private void DiscardTableChange()
+    {
+        //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}Discarding changes...");
+        _tableItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(_dbItems, JsonSerializerOption), JsonSerializerOption);
+        ResetMassages();
+        tableWarningMessage = "Changes in table discarded, reverted to the original data.";
+        StateHasChanged();
+    }
+
+    private void ResetMassages()
+    {
+        tableMessage = "";
+        tableSuccessMessage = "";
+        tableInfoMessage = "";
+        tableWarningMessage = "";
+        tableErrorMessage = "";
+        resultMessage = "";
+    }
+
+
+    private async Task UpdateLocation(ChangeEventArgs e, Cable cable, string end)
+    {
+        Debug.WriteLine($"Update {end} Location for tag '{cable.Tag}' in DB");
+
+        if (end == "Origin")
+        {
+            var match = cable.OriginTagMatch.Where(match => match.UID.ToString() == e.Value.ToString()).ToList()[0];
+            cable.Origin = match.LocationS;
+            cable.OriginV = match.Location;
+            cable.OriginVS = JsonSerializer.Serialize(cable.OriginV, JsonSerializerOption);
+            cable.OriginTagMatchSelect = match.Tag;
+        }
+        else if (end == "Destination")
+        {
+            var match = cable.DestinationTagMatch.Where(match => match.UID.ToString() == e.Value.ToString()).ToList()[0];
+            cable.Destination = match.LocationS;
+            cable.DestinationV = match.Location;
+            cable.DestinationVS = JsonSerializer.Serialize(cable.DestinationV, JsonSerializerOption);
+            cable.DestinationTagMatchSelect = match.Tag;
+        }
+
+        await MyTable.UpdateParameter(cable, cable.UID, new List<string> { end + "TagMatchSelect" });
+    }
+
+
+    private void ArrangeCable()
+    {
+        ResetMassages();
+        resultMessage = "ArrangeCable.";
+        StateHasChanged();
+    }
+
+
+    private void ResetAllEnds()
+    {
+        _dbItems.ForEach(async cable =>
+        {
+            selectedCable = cable;
+            ResetEnds();
+        });
+        selectedCable = null;
+        ResetMassages();
+        resultMessage = $"Origin and Destination end information of total {_dbItems.Count} cable are reset.";
+        StateHasChanged();
+    }
+
+    private void ResetEnds()
+    {
+        if (selectedCable != null)
+        {
+            var cable = _tableItems.Find(item => item.UID == selectedCable.UID);
+            cable = ClearRoute(cable);
+
+            //
+            // remove derived Origin and Destination information but not save to database yet
+            cable = ClearOrigin(cable);
+            cable = ClearDestination(cable);
+            // remove route information
+            cable = ClearRoute(cable);
+            //
+            //reassign the Origin Information
+            cable.OriginTagMatch = LayoutFunction.TagMatches(cable.OriginTag, GlobalData.Boards, GlobalData.Loads, GlobalData.Equipments);
+            if (cable.OriginTagMatch.Count == 0)
+            {
+                // location not found
+                //cable = await ClearOrigin(cable);
+            }
+            else
+            {
+                // tag matches found
+                if (cable.OriginTagMatch[0].Tag == cable.OriginTag)
+                {
+                    // perfect match found
+                    cable.OriginV = cable.OriginTagMatch[0].Location;
+                    cable.Origin = LayoutFunction.VectorToLocation(cable.OriginV, cable.CoordSystem);
+                    // assign OriginFeeder on the fly (not to save into the DB) for cable routing
+                    cable.OriginFeeder = LayoutFunction.AssignFeeder(cable, cable.OriginTag, cable.OriginFeeder, _tableItems, GlobalData.Boards);
+                    // for debugging purpose
+                    cable.OriginVS = JsonSerializer.Serialize(cable.OriginV, JsonSerializerOption);
+                }
+                // perfect match not found, only nearest matches found
+                // user have to manually select the location
+                // no further action
+                // once seleted, then the OriginTagMatchSeleted = the selected Tag
+            }
+
+            //
+            //reassign the Destination Information
+            cable.DestinationTagMatch = LayoutFunction.TagMatches(cable.DestinationTag, GlobalData.Boards, GlobalData.Loads, GlobalData.Equipments);
+            if (cable.DestinationTagMatch.Count == 0)
+            {
+                // location not found
+                //cable = await ClearDestination(cable);
+            }
+            else
+            {
+                // tag matches found
+                if (cable.DestinationTagMatch[0].Tag == cable.DestinationTag)
+                {
+                    // perfect match found
+                    cable.DestinationV = cable.DestinationTagMatch[0].Location;
+                    cable.Destination = LayoutFunction.VectorToLocation(cable.DestinationV, cable.CoordSystem);
+                    // assign OriginFeeder and DestinationFeeder on the fly (not to save into the DB) for cable routing
+                    cable.DestinationFeeder = LayoutFunction.AssignFeeder(cable, cable.DestinationTag, cable.DestinationFeeder, _tableItems, GlobalData.Boards);
+                    // for debugging purpose
+                    cable.DestinationVS = JsonSerializer.Serialize(cable.DestinationV, JsonSerializerOption);
+                }
+                // perfect match not found, only nearest matches found
+                // user have to manually select the location
+                // no further action
+                // once seleted, then the DestinationTagMatchSeleted = the selected Tag
+            }
+            //
+            // saving updated information to the Database
+            //await MyTable.UpdateParameter(cable, cable.UID, new List<string>() { "OriginTagMatchSelect" });
+            //await MyTable.UpdateParameter(cable, cable.UID, new List<string>() { "DestinationTagMatchSelect" });
+            //await MyTable.UpdateParameter(cable, cable.UID, new List<string>() { "RouteVectorAutoS", "RouteVectorManualS", "RouteVectorAutoArrangedS", "Route", "LengthCal", "JSONRoutePoints", "Remark" });
+            //await MyTable.UpdateItem(cable, cable.UID);
+
+            // do not update the DB, this shall be done by the "Update" Button only in the Table
+            //
+            ResetMassages();
+            resultMessage = $"Origin and Destination information of cable '{cable.Tag}' is reset.";
+        }
+        else
+        {
+            resultMessage = "No cable selected.";
+        }
+
+        Debug.WriteLine(resultMessage);
+        StateHasChanged();
+    }
+
+
+    private void ClearRouteCable()
+    {
+        if (selectedCable != null)
+        {
+            var cable = _tableItems.Find(item => item.UID == selectedCable.UID);
+            cable = ClearRoute(cable);
+            // do not update the DB, this shall be done by the "Update" Button only
+            //await MyTable.UpdateParameter(cable, cable.UID, new List<string>() { "RouteVectorAutoS", "RouteVectorManualS", "RouteVectorAutoArrangedS", "Route", "LengthCal", "JSONRoutePoints", "Remark" });
+            ResetMassages();
+            resultMessage = $"Route of cable '{cable.Tag}' is cleared.";
+        }
+        else
+        {
+            resultMessage = "No cable selected.";
+        }
+
+        Debug.WriteLine(resultMessage);
+        StateHasChanged();
+    }
+
+    private void ClearAllRouteCable()
+    {
+        if (_tableItems != null)
+        {
+            var cables = _tableItems.Where(c => c.RouteVectorAuto.Count > 0).ToList();
+            if (cables?.Count > 0)
+            {
+                Debug.WriteLine($"Clearing routes of all {cables.Count} cables.");
+                cables.ForEach(cable => { cable = ClearRoute(cable); });
+                // do not update the DB, this shall be done by the "Update" Button only
+                //await MyTable.UpdateParameterItems(cables[0], '('+String.Join(",",guidstrings)+')', new List<string>() { "RouteVectorAutoS", "RouteVectorManualS", "RouteVectorAutoArrangedS", "Route", "LengthCal", "JSONRoutePoints", "Remark" });
+                resultMessage = $"Routes of of all {cables.Count} earlier routed cables out of total {_tableItems.Count} cable are cleared.";
+            }
+            else
+            {
+                resultMessage = $"No routes to clear as none of the total {_tableItems.Count} cable are routed yet.";
+            }
+        }
+
+        Debug.WriteLine(resultMessage);
+        StateHasChanged();
+    }
+
+
+    private async Task<Cable?> RouteThisCable()
+    {
+        ResetMassages();
+        resultMessage = "RouteThisCable.";
+        StateHasChanged();
+
+        // route the selectedUID cable from Globaldata.Cables
+        // initializing
+        // based on cable route vector of already laid cables, prepare a node list and update cable nodearray
+        // the cable array includes laid cable as well as yet to be laid cables
+        // use this Node info for AStar
+        // initialing this cable
+
+        ResetMassages();
+
+        if (selectedCable == null)
+        {
+            resultMessage = "No cable selected.";
+            return null;
+        }
+
+        var cable = _tableItems.Find(item => item.UID == selectedCable.UID);
+
+        if (cable == null)
+        {
+            resultMessage = $"Selected cable with UID '{selectedCable.UID}' not found.. Something wrong....";
+            return null;
+        }
+
+        cable = ClearRoute(cable);
+
+        resultMessage = $"Route of cable '{cable.Tag}' is cleared. Routing started...";
+        Debug.WriteLine(resultMessage);
+
+        List<string> noRouteFoundCableTags = [];
+        if (_myDebug is { Count: > 0 })
+        {
+            if (!string.IsNullOrEmpty(_myDebug[0].NoRouteCablesS))
+            {
+                noRouteFoundCableTags = JsonSerializer.Deserialize<List<string>>(_myDebug[0].NoRouteCablesS, JsonSerializerOption);
+            }
+        }
+
+        if (cable.OriginV == new Vector3() || cable.DestinationV == new Vector3())
+        {
+            resultMessage = $"{cable.Tag} : Source / destination location not yet defined.";
+            Debug.WriteLine(resultMessage);
+            return null;
+        }
+
+        if (cable.RouteVectorAuto is { Count: > 0 })
+        {
+            resultMessage = $"{cable.Tag} : Cable routing already done. To reroute, remove the existing routing.";
+            Debug.WriteLine(resultMessage);
+            return null;
+        }
+
+        if (noRouteFoundCableTags != null && cable.Tag != null && noRouteFoundCableTags.Contains(cable.Tag))
+        {
+            resultMessage = $"{cable.Tag} : Cable routing tried before and no route found. To try again reset clear Debug data in DB.";
+            Debug.WriteLine(resultMessage);
+            return null;
+        }
+
+        // before routing starts, check that Segment, Node and Sleeve data are read and available
+        if (GlobalData.Nodes?.Count == 0)
+        {
+            await CheckSegmentNodeSleeve();
+        }
+
+        if (GlobalData.Nodes?.Count == 0)
+        {
+            resultMessage = "Generate segment accessories (nodes) before routing the cables.";
+            Debug.WriteLine(resultMessage);
+        }
+        else
+        {
+            Debug.WriteLine($"{cable.Tag} : Cable routing using A-Star........");
+            // assign nodes and cable information for the 1st time, then do for only additionally laid cables
+            var tuple1 = LayoutFunction.UpdateNodeCable(GlobalData.Cables, GlobalData.Cables, GlobalData.Segments, GlobalData.Sleeves, GlobalData.Nodes);
+            var nodes = JsonSerializer.Deserialize<List<Node>>(JsonSerializer.Serialize(tuple1.Item1, JsonSerializerOption), JsonSerializerOption);
+            var segments = JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(GlobalData.Segments, JsonSerializerOption), JsonSerializerOption);
+            var cables = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(tuple1.Item2, JsonSerializerOption), JsonSerializerOption);
+            //
+            if (nodes != null && segments != null && cables != null)
+            {
+                await Route(cable, nodes, segments, cables);
+            }
+            // assign nodes and cable information for these additionally laid m cables not required as there is no further iteration unlike RouteAllCable function
+        }
+
+        return cable;
+    }
+
+
+    private async Task CheckSegmentNodeSleeve()
+    {
+        // reading existing Segments, bends, cross, nodes, sleeves, etc. from database if not read already
+        if (GlobalData.SegmentResults.Count == 0)
+        {
+            (GlobalData.SegmentResults, _, _, _) = await DataService.ReadFromCacheOrDb(new SegmentResult());
+        }
+
+        if (GlobalData.SegmentResults.Count > 0)
+        {
+            var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
+            GlobalData.Nodes = JsonSerializer.Deserialize<List<Node>>(GlobalData.SegmentResults[0].List1JSON, jsonSerializerOption);
+            GlobalData.Segments = JsonSerializer.Deserialize<List<Segment>>(GlobalData.SegmentResults[0].List2JSON, jsonSerializerOption);
+            GlobalData.Sleeves = JsonSerializer.Deserialize<List<Sleeve>>(GlobalData.SegmentResults[0].List3JSON, jsonSerializerOption);
+
+            // as Node and Segment are consistent and there are already nodes in the middle of segment for jump nodes, fresh nodes are not created for cable routing
+            // only lay direction is assigned to the nodes as based on the same the cables are arranged in nodes (without logic, just as sequence)
+            GlobalData.Nodes?.ForEach(node =>
+            {
+                switch (node.Type)
+                {
+                    case "Segment":
+                    {
+                        // if the node is part of segment
+                        var seg = GlobalData.Segments?.Find(s => s.UID == node.SegmentUID);
+                        var nodeLayDirection = Vector3.Normalize(Vector3.Cross(seg.End2 - seg.End1, seg.Face));
+                        try
+                        {
+                            node.LayDirection = JsonSerializer.Deserialize<Vector3>(JsonSerializer.Serialize(nodeLayDirection, jsonSerializerOption), jsonSerializerOption);
+                        }
+                        catch (Exception e)
+                        {
+                            // 
+                        }
+
+                        break;
+                    }
+                    case "Sleeve":
+                    {
+                        // if the node is part of sleeves
+                        var sleeve = GlobalData.Sleeves?.Find(s => s.UID == node.SegmentUID);
+                        var sleeveEntryDirection = node.Tag == sleeve?.Node1 ? sleeve.Points[1] - sleeve.Points[0] : sleeve.Points[^2] - sleeve.Points[^1];
+                        // node lay direction is any vector perpendicular to sleeveEntryDirection
+                        var nodeLayDirection = Vector3.Normalize(Vector3.Cross(sleeveEntryDirection, new Vector3(1, 1, 1)));
+                        node.LayDirection = JsonSerializer.Deserialize<Vector3>(JsonSerializer.Serialize(nodeLayDirection, jsonSerializerOption), jsonSerializerOption);
+                        break;
+                    }
+                }
+            });
+        }
+    }
+
+
+    private async void RouteAllCable()
+    {
+        ResetMassages();
+        resultMessage = "RouteAllCable.";
+        StateHasChanged();
+    }
+
+
+    private static Cable ClearOrigin(Cable cable)
+    {
+        cable.Origin = null;
+        cable.OriginV = new Vector3();
+        cable.OriginTagMatch = new List<NearTag>();
+        cable.OriginTagMatchSelect = null;
+        //cable.OriginFeeder = null;
+        cable.OriginVS = JsonSerializer.Serialize(cable.OriginV, JsonSerializerOption);
+        return cable;
+    }
+
+    private static Cable ClearDestination(Cable cable)
+    {
+        cable.Destination = null;
+        cable.DestinationV = new Vector3();
+        cable.DestinationTagMatch = new List<NearTag>();
+        cable.DestinationTagMatchSelect = null;
+        cable.DestinationVS = JsonSerializer.Serialize(cable.DestinationV, JsonSerializerOption);
+        return cable;
+    }
+
+    private static Cable ClearRoute(Cable cable)
+    {
+        cable.RouteVectorAuto.Clear();
+        cable.RouteVectorAutoS = null;
+        cable.AutoRouteNodeTags.Clear();
+        cable.RouteVectorManual.Clear();
+        cable.RouteVectorManualS = null;
+        cable.RouteVectorAutoArranged.Clear();
+        cable.RouteVectorAutoArrangedS = null;
+        cable.LengthCal = 0;
+        cable.Route = null;
+        cable.JSONRoutePoints = null;
+        cable.Remark = null;
+        return cable;
+    }
+
+    private async Task ClearNoRouteFoundLog()
+    {
+        // clear Debug not found route list
+        var debug = await MyTable.GetList(new MyDebug(), GlobalData.SelectedProject.Tag);
+        var listNoRouteCable = debug[0].NoRouteCablesS == null ? new List<string>() : JsonSerializer.Deserialize<List<string>?>(debug[0].NoRouteCablesS, JsonSerializerOption);
+        Debug.WriteLine($"Clearing the 'route not found' lists for {listNoRouteCable.Count} cables.");
+        debug[0].NoRouteCablesS = null;
+        await MyTable.UpdateItem(debug[0], debug[0].UID);
+        Debug.WriteLine($"Clearing the 'remarks' for {listNoRouteCable.Count} cables.");
+        GlobalData.Cables.Where(c => listNoRouteCable.Contains(c.Tag)).ToList().ForEach(async cable =>
+        {
+            cable.Remark = null;
+            //await MyTable.UpdateItem(cable, cable.UID);
+            await MyTable.UpdateParameter(cable, cable.UID, new List<string> { "Remark" });
+        });
+
+        //
+        // read existing Debug Info
+        _myDebug = await MyTable.GetList(new MyDebug(), GlobalData.SelectedProject.Tag);
+    }
+
+    private List<Cable> ProcessCables(List<Cable> cables)
+    {
+        if (cables.Count > 0)
+        {
+            var start = DateTime.Now;
+            Debug.WriteLine($"Cable.. processing ...{cables.Count} cables");
+            //var prefix = new List<string> () { "", "M-", "VP-" };
+            //var suffix = new List<string> () { "", " s.1", " s.2", "s.1", "s.2" };
+            cables.ForEach(async cable =>
+            {
+                cable.Update();
+                // assign OriginV and DestinationV based on the saved Origin, Destination based on the selected CoordSystem
+                //
+                bool originWasNull = false, destinationWasNull = false;
+                if (string.IsNullOrEmpty(cable.CoordSystem))
+                {
+                    cable.CoordSystem = "GLOBAL";
+                }
+
+                // if coordinate system is changed, then the Origin and Destination shall also be changed accordingly
+                //
+                if (string.IsNullOrEmpty(cable.Origin))
+                {
+                    originWasNull = true;
+                    // if OriginFeeder is Null, assign feeder based on total connections (to evenly distribute)
+                    cable.OriginFeeder = LayoutFunction.AssignFeeder(cable, cable.OriginTag, cable.OriginFeeder, cables, GlobalData.Boards);
+
+                    // search the Origin coordinate from the coordinates of available tags from BoardList, LoadList and Equipment List
+                    //cable.OriginV = MyFunction.FindLocationOfTag(cable.OriginTag, cable.OriginFeeder, GlobalData.Boards, GlobalData.LoadMasters, GlobalData.Equipments);
+                    //cable.OriginV = MyFunction.FindLocationOfTagLevenshtein(cable.OriginTag, cable.OriginFeeder, GlobalData.Boards, GlobalData.LoadMasters, GlobalData.Equipments);
+
+                    cable.OriginTagMatch = LayoutFunction.TagMatches(cable.OriginTag, GlobalData.Boards, GlobalData.Loads, GlobalData.Equipments);
+                    if (cable.OriginTagMatch is { Count: 0 })
+                    {
+                        // location not found
+                        cable.Origin = null;
+                        cable.OriginV = new Vector3();
+                        cable.OriginVS = null;
+                    }
+                    else
+                    {
+                        // tag matches found
+                        if (cable.OriginTagMatch?[0].Tag == cable.OriginTag)
+                        {
+                            // perfect match found
+                            cable.OriginV = cable.OriginTagMatch[0].Location;
+                            cable.Origin = LayoutFunction.VectorToLocation(cable.OriginV, cable.CoordSystem);
+                            cable.OriginVS = JsonSerializer.Serialize(cable.OriginV, JsonSerializerOption); // for debugging purpose
+                        }
+                        else
+                        {
+                            // perfect match not found, only nearest matches found
+                            // user have to manually select the location
+                            // check if user has manually provided the match
+                            if (!string.IsNullOrEmpty(cable.OriginTagMatchSelect))
+                            {
+                                // update as per selected matching tag
+                                if (cable.OriginTagMatch != null)
+                                {
+                                    var match = cable.OriginTagMatch.Where(item => item.Tag == cable.OriginTagMatchSelect).ToList()[0];
+                                    cable.OriginV = match.Location;
+                                }
+
+                                cable.Origin = LayoutFunction.VectorToLocation(cable.OriginV, cable.CoordSystem);
+                                cable.OriginVS = JsonSerializer.Serialize(cable.OriginV, JsonSerializerOption); // for debugging purpose
+                            }
+                        }
+                    }
+                }
+
+                //
+                if (string.IsNullOrEmpty(cable.Destination))
+                {
+                    destinationWasNull = true;
+                    // if DestinationFeeder is Null, assign feeder based on total connections (to evenly distribute)
+                    cable.DestinationFeeder = LayoutFunction.AssignFeeder(cable, cable.DestinationTag, cable.DestinationFeeder, cables, GlobalData.Boards);
+
+                    // search the Destination coordinate from the coordinates of available tags from BoardList, LoadList and Equipment List
+                    //cable.DestinationV = MyFunction.FindLocationOfTag(cable.DestinationTag, cable.DestinationFeeder, GlobalData.Boards, GlobalData.Loads, GlobalData.Equipments);
+                    //cable.DestinationV = MyFunction.FindLocationOfTagLevenshtein(cable.DestinationTag, cable.DestinationFeeder, GlobalData.Boards, GlobalData.LoadMasters, GlobalData.Equipments);
+
+                    cable.DestinationTagMatch = LayoutFunction.TagMatches(cable.DestinationTag, GlobalData.Boards, GlobalData.Loads, GlobalData.Equipments);
+                    if (cable.DestinationTagMatch is { Count: 0 })
+                    {
+                        // location not found
+                        cable.Destination = null;
+                        cable.DestinationV = new Vector3();
+                        cable.DestinationVS = null;
+                    }
+                    else
+                    {
+                        // tag matches found
+                        if (cable.DestinationTagMatch?[0].Tag == cable.DestinationTag)
+                        {
+                            // perfect match found
+                            cable.DestinationV = cable.DestinationTagMatch[0].Location;
+                            cable.Destination = LayoutFunction.VectorToLocation(cable.DestinationV, cable.CoordSystem);
+                            cable.DestinationVS = JsonSerializer.Serialize(cable.DestinationV, JsonSerializerOption); // for debugging purpose
+                        }
+                        else
+                        {
+                            // perfect match not found, only nearest matches found
+                            // user have to manually select the location
+                            // check if user has manually provided the match
+                            if (!string.IsNullOrEmpty(cable.DestinationTagMatchSelect))
+                            {
+                                // update as per selected matching tag
+                                if (cable.DestinationTagMatch != null)
+                                {
+                                    var match = cable.DestinationTagMatch.Where(item => item.Tag == cable.DestinationTagMatchSelect).ToList()[0];
+                                    cable.DestinationV = match.Location;
+                                }
+
+                                cable.Destination = LayoutFunction.VectorToLocation(cable.DestinationV, cable.CoordSystem);
+                                cable.DestinationVS = JsonSerializer.Serialize(cable.DestinationV, JsonSerializerOption); // for debugging purpose
+                            }
+                        }
+                    }
+                }
+
+                //
+                if ((originWasNull && !string.IsNullOrEmpty(cable.Origin)) || (destinationWasNull && !string.IsNullOrEmpty(cable.Destination)))
+                {
+                    // update Origin and Destination data into the database to avoid repeat in next execution
+                    // below awai is not done in this function. this to be done by the Update function in the Table
+                    //await UpdateItem(cable, cable.UID);
+                }
+
+                //
+                //
+                //String.Compare(s1, s2, CultureInfo.CurrentCulture, CompareOptions.IgnoreCase | CompareOptions.IgnoreSymbols) == 0
+                //
+                // below codes are Orlen Project specific
+                if (!string.IsNullOrEmpty(cable.RouteCriteria) && cable.RouteCriteria.Contains("UPS"))
+                {
+                    cable.RouteCriteria = "UPS";
+                }
+                else if (new List<int>
+                             { 1, 3, 5, 7 }.Any(i => cable.OriginTag.Contains("s." + i)) && !cable.RouteCriteria.EndsWith("-A"))
+                {
+                    cable.RouteCriteria = cable.RouteCriteria + "-A";
+                }
+                else if (new List<int>
+                             { 2, 4, 6, 8 }.Any(i => cable.OriginTag.Contains("s." + i)) && !cable.RouteCriteria.EndsWith("-B"))
+                {
+                    cable.RouteCriteria = cable.RouteCriteria + "-B";
+                }
+            });
+            //
+            // updating the cable category for deciding the color code for each category
+            cables.ForEach(item =>
+            {
+                if (!GlobalData.CableCategoryList.Contains(item.RouteCriteria)) GlobalData.CableCategoryList.Add(item.RouteCriteria);
+            });
+            var time = DateTime.Now - start;
+            Debug.WriteLine($"Cable.. completed {cables.Count} cables in {time.Seconds}.{time.Milliseconds}s");
+            GlobalData.CablesReadInProgress = false;
+        }
+
+        return cables;
+    }
+
+
+    private async Task<Cable> Route(Cable cable, List<Node> nodes, List<Segment> segments, List<Cable> cables)
+    {
+        // this function copied from CableSchedulePage function RouteThisCable and modified
+        // this function routes the cable and if route found or the remarks coped into the DB
+
+        var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
+        try
+        {
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Routing for {cable.Tag}:");
+            // AStar function
+            var tuple = LayoutFunction.AStar(cable, cable.ODm, 0, cable.DestinationV, cable.OriginV,
+                cable.RouteCriteria, nodes, segments, cables, 4, GlobalData.Spacings);
+            // check the result
+            // count >2 to disregard the dummy nodes in the result
+            if (tuple.Item1.Count > 2)
+            {
+                // actual route found
+                cable.AutoRouteNodeTagsS = JsonSerializer.Serialize(tuple.Item1, jsonSerializerOption);
+                cable.AutoRouteNodeTags = JsonSerializer.Deserialize<List<string>>(cable.AutoRouteNodeTagsS, jsonSerializerOption);
+                cable.RouteVectorAutoS = JsonSerializer.Serialize(tuple.Item2, jsonSerializerOption);
+                cable.RouteVectorAuto = JsonSerializer.Deserialize<List<Vector3>>(cable.RouteVectorAutoS, jsonSerializerOption);
+                cable.RouteVectorAutoArranged?.Clear();
+                //
+                // update node data as per laid cable
+                if (cable.AutoRouteNodeTags.Count > 0)
+                {
+                    cable.AutoRouteNodeTags.ForEach(routeNode =>
+                    {
+                        if (routeNode.Contains("Dummy"))
+                        {
+                            // these vectors are not on any nodes, they are on dummy nodes
+                            cable.RouteVectorAutoArranged?.Add(cable.RouteVectorAuto[cable.AutoRouteNodeTags.IndexOf(routeNode)]);
+                            return;
+                        }
+
+                        var node = nodes.Where(n => n.Tag == routeNode).ToList()[0];
+                        // c1 is the last laid cable, c2 is this cable
+                        var c2 = cable;
+                        //var cableSequenceInThisNode = totalLaidCable[i].RouteNodetagAuto.IndexOf(node.Tag);
+                        Vector3 p2 = new(); // this cable position in this node
+                        var gap = 0f;
+                        if (node.LaidcableTags.Count == 0)
+                        {
+                            // no cable laid in this node before
+                            var stratEdge = node.Point - (float)(node.Width / 2 - node.MarginSide1) * node.LayDirection;
+                            p2 = stratEdge + c2.ODm / 2 * node.LayDirection + c2.ODm / 2 * node.Face;
+                        }
+                        else
+                        {
+                            // p1, p2 are arranged position of c1 and c2 cable respectively (stored in node ArrangedcablePosition)
+                            var lastCable = cables.Where(c => c.Tag == node.LaidcableTags[^1]).ToList()[0];
+                            var p1 = node.ArrangedcablePosition[^1]; // postion of last laid vable
+                            gap = LayoutFunction.SpacingBeteenCables(lastCable, cable, GlobalData.Spacings);
+                            var b = LayoutFunction.SpaceForCable(cable.Tag, node, cables, GlobalData.Spacings);
+                            p2 = p1 + (lastCable.ODm / 2 + gap + c2.ODm / 2) * node.LayDirection + (c2.ODm / 2 - lastCable.ODm / 2) * node.Face;
+                        }
+
+                        cable.RouteVectorAutoArranged?.Add(p2);
+                        // below node update for debug purpose
+                        node.ArrangedcablePosition.Add(p2);
+                        node.LaidcableTags.Add(cable.Tag);
+                        node.AvailableWidth = node.AvailableWidth - gap - cable.ODm;
+                    });
+                    cable.RouteVectorAutoArrangedS = JsonSerializer.Serialize(cable.RouteVectorAutoArranged, jsonSerializerOption);
+                    //
+                    // create cable route JSON and length
+                    var cableTuple = LayoutFunction.DrawCableJSONPointsArranged(cable, GlobalData.Segments);
+                    cable.JSONRoutePoints = cableTuple.Item2;
+                    cable.LengthCal = Math.Ceiling(cableTuple.Item3);
+                    cable.Route = cableTuple.Item4;
+                    //
+                    Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Route found. Saving route data for {cable.Tag}:");
+                    // saving the laid route data of the cable to DB
+                    await MyTable.UpdateItem(cable, cable.UID);
+                }
+            }
+            else
+            {
+                Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : No route found for {cable.Tag}. ");
+                cable.Remark = tuple.Item3;
+                // saving the remark info of the cable to DB
+                await MyTable.UpdateItem(cable, cable.UID);
+                // add no route found info into the DB to not to try this tag next time
+                List<string> TempNoRouteFoundCableTags = new();
+                if (_myDebug.Count > 0)
+                {
+                    if (!string.IsNullOrEmpty(_myDebug[0].NoRouteCablesS))
+                    {
+                        TempNoRouteFoundCableTags = JsonSerializer.Deserialize<List<string>>(_myDebug[0].NoRouteCablesS, jsonSerializerOption);
+                    }
+
+                    //if (MyDebug[0].NoRouteCablesS != "") { TempNoRouteFoundCableTags = JsonConvert.DeserializeObject<List<string>>(MyDebug[0].NoRouteCablesS); }
+                    TempNoRouteFoundCableTags.Add(cable.Tag);
+                    _myDebug[0].NoRouteCablesS = JsonSerializer.Serialize(TempNoRouteFoundCableTags, jsonSerializerOption);
+                    await MyTable.UpdateItem(_myDebug[0], _myDebug[0].UID);
+                    Debug.Write($"'{cable.Tag}' added to NoRouteFoundCableTags in Debug in DB");
+                }
+                else
+                {
+                    Debug.Write($"'{cable.Tag}' could not be udated into NoRouteFoundCableTags in Debug in DB");
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine($"Program Exception for {cable.Tag} : {e.Message} - {e.InnerException}");
+        }
+
+        return cable;
+    }
+
+
+}

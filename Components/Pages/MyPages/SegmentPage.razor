@@ -1,0 +1,799 @@
+﻿@page "/segment"
+@rendermode InteractiveServer
+
+@inject NavigationManager MyNavigationManager
+@inject IJSRuntime JsRuntime
+
+
+@inject Services.IDataRetrievalService DataService
+@inject Services.IMyTableService MyTable
+@inject Services.ICacheService CacheService
+@inject Services.IGlobalDataService GlobalData
+@inject Services.ILayoutFunctionService LayoutFunction
+@inject Services.IMyFunctionService MyFunction
+
+
+<div class="d-flex justify-content-between align-items-center" style="background-color:beige">
+    <h4>Segments: Cable Ladders, Trays, Trenches and Sleeves</h4>
+    <h4>Project: @GlobalData.SelectedProject?.Tag (@GlobalData.SelectedProject?.TagDescription)</h4>
+</div>
+<br>
+
+@if (_loadChild)
+{
+    <div class="container-fluid">
+        <div class="row">
+            <div class="container-fluid">
+                <div class="d-flex justify-content-between align-items-center">
+                    <!-- Tab Controls -->
+                    <div class="btn-group" role="tablist">
+                        @for (var i = 0; i < _tabName.Length; i++)
+                        {
+                            var currentIndex = i; // Local variable to capture the current value of i
+                            <button @onclick="() => TabUpdate(currentIndex)"
+                                    class="btn @(GlobalData.SegmentPageTab == currentIndex ? "btn-primary fw-bold" : "btn-outline-secondary fw-bold")">
+                                @_tabName[currentIndex]
+                            </button>
+                        }
+                    </div>
+                    <!-- Add a gap between the tab group and button group -->
+                    <div class="mx-3"></div>
+
+                    <!-- Button Group -->
+                    <div class="btn-group" role="group" aria-label="Forth group">
+                        <button @onclick="CalculateAccessories" class="btn btn-outline-primary"
+                                title="Calculate accessories (Bend, Tee, Cross) and make connections">Calculate
+                            Accessories
+                        </button>
+                        <button @onclick="DisplayAccessories" class="btn btn-outline-info"
+                                title="Display accessories in the 3D" disabled="@(!_displayNsaveAccessories)">Display
+                            Accessories
+                        </button>
+                        <button @onclick="SaveAccessories" class="btn btn-outline-success"
+                                title="Save accessories to DB" disabled="@(!_displayNsaveAccessories)">Save Accessories
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+
+
+
+            <br/>
+            @if (_tab[0])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@_tabName[0]</h4>
+                    <PlotEdit PlotComponent="@PlotRef">
+                    </PlotEdit>
+                </div>
+            }
+            @if (_tab[1])
+            {
+                <div class="container-fluid tabcontent">
+                    <h5>@_tabName[1]</h5>
+                    <Table List="GlobalData.Segments"
+                           ListOriginal="GlobalData.Segments"
+                           T="Segment"
+                           AutoCheck="@AutoCheckOnTableChange"
+                           Update="@UpdateOnTableChange"
+                           Discard="@DiscardTableChange"
+                           Refresh="@RefreshTableChange"
+                           SuccessMessage="@tableSuccessMessage"
+                           InfoMessage="@tableInfoMessage"
+                           WarningMessage="@tableWarningMessage"
+                           ErrorMessage="@tableErrorMessage">
+                        <Result>
+                            <h6>Result messages here</h6>
+                        </Result>
+                    </Table>
+                </div>
+            }
+            @if (_tab[2])
+            {
+                <div class="container-fluid tabcontent">
+                    <h5>@_tabName[2]</h5>
+                    <h5>..................</h5>
+                </div>
+            }
+            @if (_tab[3])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@_tabName[3]</h4>
+                    <Table List="GlobalData.Sleeves"
+                           ListOriginal="GlobalData.Sleeves"
+                           T="Sleeve"
+                           AutoCheck="@AutoCheckOnTableChange"
+                           Update="@UpdateOnTableChange"
+                           Discard="@DiscardTableChange"
+                           SuccessMessage="@tableSuccessMessage"
+                           InfoMessage="@tableInfoMessage"
+                           WarningMessage="@tableWarningMessage"
+                           ErrorMessage="@tableErrorMessage">
+                        <Result>
+                            <h6>Result messages here</h6>
+                        </Result>
+                    </Table>
+                </div>
+            }
+            @if (_tab[4])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@_tabName[4]</h4>
+                    <h5>..................</h5>
+                </div>
+            }
+            @if (_tab[5])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@_tabName[5]</h4>
+                    <Table List="GlobalData.Equipments"
+                           ListOriginal="GlobalData.Equipments"
+                           T="Equipment"
+                           AutoCheck="@AutoCheckOnTableChange"
+                           Update="@UpdateOnTableChange"
+                           Discard="@DiscardTableChange"
+                           SuccessMessage="@tableSuccessMessage"
+                           InfoMessage="@tableInfoMessage"
+                           WarningMessage="@tableWarningMessage"
+                           ErrorMessage="@tableErrorMessage">
+                        <Result>
+                            <h6>Result messages here</h6>
+                        </Result>
+                    </Table>
+                </div>
+            }
+            @if (_tab[6])
+            {
+                <div class="container-fluid tabcontent">
+                    <h4>@_tabName[6]</h4>
+                    <h5>..................</h5>
+                </div>
+            }
+        </div>
+        <br/>
+    </div>
+    <br/>
+    <br/>
+    <Plot
+        @ref="PlotRef"
+        @rendermode="InteractiveServer"
+          Title="Segments"
+          DivString="segmentDiv"
+          DisplayItems="_displayItems"
+          SceneInfo="GlobalData.sceneDataSegment">
+    </Plot>
+}
+else
+{
+    <h5>loading data </h5>
+    <img src="./images/loading-green_dots.gif" asp-append-version="true" width="256" alt=""/>
+}
+
+@if (_isProcessing)
+{
+    <h5>processing data </h5>
+    <img src="./images/working.gif" asp-append-version="true" width="300" alt=""/>
+}
+
+<br/>
+<div id="SegPage3DCanvas"></div>
+<div id="SegPage3DCanvasGui"></div>
+
+
+@code {
+    private Plot PlotRef { get; set; } // Reference to the Plot component
+    private bool _loadChild;
+    private readonly bool[] _tab = new bool[10];
+
+    private readonly string[] _tabName =
+    [
+        "Plot Plan",
+        "Raw Segments (Ladder/Tray)",
+        "Trench",
+        "Sleeve",
+        "Structural Steel",
+        "Equipment",
+        "Other"
+    ];
+
+    private string tagStyleActive = "background-color:#808080; color: white;";
+    private string tagStyleInactive = "background-color:#8080ff; color: black;";
+
+    private bool IsDisabledBttnSaveSegmentResultToDB = true;
+    private bool _isProcessing = false;
+
+    private static List<Segment>? Segments = new();
+
+    private bool _displayNsaveAccessories = true; // change to false later
+
+    private string tableMessage = "";
+    private string tableSuccessMessage = "";
+    private string tableInfoMessage = "";
+    private string tableWarningMessage = "";
+    private string tableErrorMessage = "";
+
+    private readonly List<string> _displayItems =
+    [
+        "Plot",
+        "RawSegment",
+        //"IsolatedSegment", 
+        //"Segment",
+        //"Tray", 
+        // "Bend", 
+        // "Tee", 
+        // "Cross", 
+        // "Node", 
+        //"Sleeve",
+        // "Load", 
+        // "Cable", 
+        // "Board",
+        //"Structure"
+    ];
+
+
+    private readonly SegmentResult segmentResult = new();
+
+    private static List<PlotPlan> PlotPlans = new();
+
+    private DotNetObjectReference<Draw>? objSegmentPage;
+
+    // Store the delegate to ensure proper unsubscribe
+    private Action _refreshUiAction;
+
+
+    protected override void OnInitialized()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Segment - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+
+
+        // default tab on loading
+        // 0: PlotPlan, 1: Ladder/Tray, 2: Trench, 3: Sleeve, 4: Other
+        _tab[GlobalData.SegmentPageTab] = true;
+        //
+        GlobalData.selectedPage = "Segments: Cable Ladders, Trays, Trenches and Sleeves";
+        GlobalData.sceneCurrent = "Segment";
+        GlobalData.sceneDataCable.SceneName = GlobalData.sceneCurrent;
+        StateHasChanged();
+        base.OnInitialized();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Segment - {MethodBase.GetCurrentMethod()?.Name}");
+    }
+
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
+        // do something for the first time renders
+        if (firstRender)
+        {
+            
+            // load existing plot plans for the selected project
+            (GlobalData.PlotPlans, string logInfo, string logWarning, string logError)
+                = await DataService.ReadFromCacheOrDb(new PlotPlan());
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} " +
+                            $"Info: {logInfo}, Warning: {logWarning}, Error: {logError}");
+            // read raw segments
+            //GlobalData.Segments = await ReadFromCacheOrDB(new Segment());
+            (GlobalData.Segments, logInfo, logWarning, logError)
+                = await DataService.ReadFromCacheOrDb(new Segment());
+
+            var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
+            _isProcessing = true;
+            StateHasChanged();
+            // update Raw segments
+            GlobalData.Segments.ForEach(segment => LayoutFunction.SegmentUpdate(segment));
+            // remove any segments having zero lengths (same End1 and End2)
+            GlobalData.Segments = GlobalData.Segments.Where(item => item.Length > 0.01f).ToList();
+            Debug.WriteLine($"Total raw Segment in the DB after removing insignificant lengths : {GlobalData.Segments.Count}");
+            // update face March 2024
+            GlobalData.Segments = LayoutFunction.AssignFaceForASegmentList(GlobalData.Segments);
+
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Face assigned for {GlobalData.Segments.Count}.");
+            GlobalData.Segments = MyTable.AssignSequenceToList(GlobalData.Segments);
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Sequence assigned for total {GlobalData.Segments.Count} raw Segments");
+            _isProcessing = false;
+            StateHasChanged();
+            // read sleeves
+            //GlobalData.Sleeves = await ReadFromCacheOrDB(new Sleeve());
+            (GlobalData.Sleeves, _, _, _) = await DataService.ReadFromCacheOrDb(new Sleeve());
+
+            // generate Points based on ENU PointS (point string in the DB)
+            GlobalData.Sleeves.ForEach(sleeve => LayoutFunction.SleevePointsUpdate(sleeve));
+            GlobalData.Sleeves = MyTable.AssignSequenceToList(GlobalData.Sleeves);
+            Debug.WriteLine($"Total sleeves in the DB : {GlobalData.Sleeves.Count}");
+
+            // read trenches
+            //GlobalData.Trences = await ReadFromCacheOrDB(new Trench());
+            //System.Diagnostics.Debug.WriteLine($"Total trenches in the DB : {GlobalData.Trences.Count}");
+
+            // read structural steel members
+            //GlobalData.Structures = await ReadFromCacheOrDB(new Structure());
+            //System.Diagnostics.Debug.WriteLine($"Total structural steel members in the DB : {GlobalData.Structures.Count}");
+
+            // read Equipment
+            //GlobalData.Equipments = await ReadFromCacheOrDB(new Equipment());
+
+            (GlobalData.Equipments, _, _, _) = await DataService.ReadFromCacheOrDb(new Equipment());
+
+            GlobalData.Equipments = MyTable.AssignSequenceToList(GlobalData.Equipments);
+            Debug.WriteLine($"Total equipment in the DB : {GlobalData.Equipments.Count}");
+
+            _loadChild = true;
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
+            StateHasChanged();
+        }
+    }
+
+
+    public void Dispose()
+    {
+        // Unsubscribe to prevent memory leaks
+        objSegmentPage?.Dispose();
+    }
+
+
+    private void AutoCheckOnTableChange<T>((T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
+    {
+        // Access the parameters from args
+        var item = args.Item1;
+        var uid = args.Item2;
+        var propertyInfo = args.Item3;
+        var itemOriginal = args.Item4;
+        List<T> itemsCurrent = args.Item5;
+        List<T> itemsOriginal = args.Item6;
+        tableSuccessMessage = args.Item7;
+        tableInfoMessage = args.Item8;
+        tableWarningMessage = args.Item9;
+        tableErrorMessage = args.Item10;
+
+        var tagProperty = typeof(T).GetProperties().ToList().Where(p => p.Name == "Tag").ToList()[0];
+        var tag = tagProperty.GetValue(item);
+        //
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : {tag} : {propertyInfo.Name} : {propertyInfo.PropertyType}");
+    }
+
+    private void UpdateOnTableChange()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+    }
+
+    private void DiscardTableChange()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+    }
+
+
+    private async void RefreshTableChange()
+    {
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        // try
+        // {
+        //     Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        //     await OnAfterRenderAsync(false);
+        // }
+        // catch (Exception e)
+        // {
+        //     Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : Error: {e.Message}");
+        // }
+    }
+
+
+    void TabUpdate(int i)
+    {
+        _tab[GlobalData.SegmentPageTab] = false;
+        GlobalData.SegmentPageTab = i;
+        _tab[i] = true;
+    }
+
+
+    /// <summary>
+    /// </summary>
+    /// <param name="divString"></param>
+    /// <param name="sceneJSON"></param>
+    public async void DrawScene(string divString, string sceneJSON)
+    {
+        await JsRuntime.InvokeVoidAsync("drawScene", divString, sceneJSON);
+    }
+
+    public async void DrawCube(int n)
+    {
+        for (var i = 0; i < n; i++)
+        {
+            await JsRuntime.InvokeVoidAsync("drawCube");
+        }
+    }
+
+
+    private async Task DisplayAccessories()
+    {
+        Debug.WriteLine("Displaying accessories...");
+    }
+
+    private async Task SaveAccessories()
+    {
+        Debug.WriteLine("Saving accessories to DB...");
+
+        //var existingSegmentResult = await MyTable.GetList(new SegmentResult(), GlobalData.SelectedProject);
+        //var existingSegmentResult = await ReadFromCacheOrDB(new SegmentResult());
+
+        (var existingSegmentResult, _, _, _) = await DataService.ReadFromCacheOrDb(new SegmentResult());
+        if (!String.IsNullOrEmpty(segmentResult.NodeListJSON) && existingSegmentResult.Count > 0)
+        {
+            await MyTable.UpdateItem(segmentResult, existingSegmentResult[0].UID);
+            System.Diagnostics.Debug.WriteLine("Record of straight segments, bends, tees, crosses and nodes updated.");
+        }
+        else
+        {
+            System.Diagnostics.Debug.WriteLine("Generate accessories first before saving straight segments, bends, tees, crosses and nodes to the DB.");
+        }
+    }
+
+
+    private async Task CalculateAccessories()
+    {
+        // calculate accessories as per the Global Data of Raw Segments
+        Debug.WriteLine("Calculating accessories...");
+        // initialising for DB
+        List<Segment> Segment4DB = new();
+        List<Bend> Bend4DB = new();
+        List<Tee> Tee4DB = new();
+        List<Cross> Cross4DB = new();
+        List<Sleeve>? Sleeve4DB = new();
+        List<Node> Node4DB = new();
+        List<string> IsolatedSegment4DBJSONList = new();
+        List<string> Segment4DBJSONList = new();
+        List<string> Bend4DBJSONList = new();
+        List<string> Tee4DBJSONList = new();
+        List<string> Cross4DBJSONList = new();
+        List<string> Sleeve4DBJSONList = new();
+        List<string> Node4DBJSONList = new();
+        //
+        // Calculate Accessories as per the Segment List updated by the User which is saved in the DB
+        //var SegmentDB = await MyTable.GetList(new Segment(), GlobalData.SelectedProject);
+        //SegmentDB.ForEach(item => item.Update());
+        var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+        var segmentDb = JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(GlobalData.Segments, jsonSerializerOptions), jsonSerializerOptions);
+        var watch = Stopwatch.StartNew();
+        if (segmentDb.Count == 0)
+        {
+            Debug.WriteLine(" no raw segments found in the DB.");
+        }
+        else
+        {
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff}: {segmentDb.Count} raw segments as in the DB.");
+            //
+
+            var segmentDbClonned = JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(segmentDb, jsonSerializerOptions), jsonSerializerOptions);
+            //
+            //var tupleGenerateAcc = await LayoutFunctions.GenerateAcc(JsonConvert.DeserializeObject<List<Segment>>(JsonConvert.SerializeObject(SegmentDB)));
+
+
+            var tupleGenerateAcc = await LayoutFunction.GenerateAcc(segmentDbClonned);
+            //
+            var tempConnectedSegment4DB = tupleGenerateAcc.Item1;
+            Bend4DB = tupleGenerateAcc.Item2;
+            Tee4DB = tupleGenerateAcc.Item3;
+            Cross4DB = tupleGenerateAcc.Item4;
+            Node4DB = tupleGenerateAcc.Item5;
+            var tempIsolatedSegment4DB = tupleGenerateAcc.Item6;
+            Segment4DB = JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(tupleGenerateAcc.Item1, jsonSerializerOptions), jsonSerializerOptions).Concat(
+                JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(tupleGenerateAcc.Item6, jsonSerializerOptions), jsonSerializerOptions)).ToList();
+            watch.Stop();
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {watch.ElapsedMilliseconds}ms : Accessories are generated : {Segment4DB.Count} ({tempConnectedSegment4DB.Count} connected & {tempIsolatedSegment4DB.Count} isolated) straight segments, {Node4DB.Count} nodes, {Bend4DB.Count} bends, {Tee4DB.Count} tees, {Cross4DB.Count} crosses.");
+            watch.Restart();
+
+            //
+            // // remove all segments which are of insignificant lengths (<0.1m) or cable way (width>0.9) check later if all cable way are removed
+            // // later change Width
+            // SegmentDB.RemoveAll(s => (s.End1 - s.End2).Length() < 0.1 || s.Width <= 0.15);
+            // System.Diagnostics.Debug.WriteLine($"...removed all segments which are of insignificant lengths (<0.1m) or cable way (width>0.9). New count: {SegmentDB.Count}.");
+            // //order segments as horizontal segments first
+            // //
+            // SegmentDB = SegmentDB.OrderBy(o => Math.Abs(o.End1.Z - o.End2.Z)).ToList();
+            // // Update Segment Face based on dx, dy and dz and in case dz>>0 then as per adjacent segment
+            // SegmentDB = MyFunction.FaceUpdate(SegmentDB);
+            // // face parallel  check later and remove this
+            // SegmentDB.RemoveAll(s => Vector3.Cross(s.End1 - s.End2, s.Face).Length() < 0.01);
+            // //
+            // // remove overlaps is not working : to fix later
+            // var overlapremoved = MyFunction.RemoveOverlapss(JsonConvert.DeserializeObject<List<Segment>>(JsonConvert.SerializeObject(SegmentDB)));
+            // //System.Diagnostics.Debug.WriteLine($"...removed all overlaps.  New count: {overlapremoved.Count}.");
+
+            // var breakAtJoints1 = MyFunction.BreakAtJoint(JsonConvert.DeserializeObject<List<Segment>>(JsonConvert.SerializeObject(overlapremoved)));
+            // var breakAtJoints = MyFunction.BreakAtJointDec(JsonConvert.DeserializeObject<List<Segment>>(JsonConvert.SerializeObject(SegmentDB)));
+            // System.Diagnostics.Debug.WriteLine($"...breaks segments at connections");
+            // //var breakAtJoints = MyFunction.BreakAtJoints(JsonConvert.DeserializeObject<List<Segment>>(JsonConvert.SerializeObject(RawSegments))); // bypassing removeoverlap
+            // var pRef = new Vector3(-999, -999, -99);
+            // //var OrderedSegment = overlapremoved.OrderBy(seg => Math.Min(Vector3.Distance(seg.End1, pRef), Vector3.Distance(seg.End2, pRef))).ToList();
+            // //
+            // // find segment connections list (list of connected segments and their corresponing ends)
+            // //generate Accessories as per the Connection list
+            // // arranging End1 near to the origin
+            // breakAtJoints.ForEach(seg =>
+            // {
+            //     if (Vector3.Distance(seg.End1, new Vector3(-999, -999, -99)) > Vector3.Distance(seg.End2, new Vector3(-999, -999, -99)))
+            //     {
+            //         (seg.End1, seg.End2) = (seg.End2, seg.End1);
+            //     };
+            // });
+            // //
+            // // removing any duplicate segments (by error in BreakAtJoints function)
+            // //var tempbreakAtJoints = breakAtJoints.GroupBy(x => new { x.End1, x.End2 }).Select(d => d.First()).ToList();
+            // //
+            // var tuple = await MyFunction.GenerateAccessory(JsonConvert.DeserializeObject<List<Segment>>(JsonConvert.SerializeObject(breakAtJoints)));
+            // //var tuple = MyFunction.GenerateAccessories(JsonConvert.DeserializeObject<List<Segment>>(JsonConvert.SerializeObject(breakAtJoints)));
+            // //var tuple = MyFunction.GenerateAccessory(JsonConvert.DeserializeObject<List<Segment>>(JsonConvert.SerializeObject(RawSegments)));
+            // //
+            // var tempSegment4DB = tuple.Item1;
+            // Bend4DB = tuple.Item2;
+            // Tee4DB = tuple.Item3;
+            // Cross4DB = tuple.Item4;
+            // var tempNode4DB = tuple.Item5;
+            //Debug.WriteLine($"...accessories are generated : {tempNode4DB.Count} nodes, {tempConnectedSegment4DB.Count} straight connected segments, {tempIsolatedSegment4DB.Count} straight isolated segments, {Bend4DB.Count} bends, {Tee4DB.Count} tees, {Cross4DB.Count} crosses.");
+            //
+            // adding node connection to the nearby segments of same cable criteria
+            // this function must take into consideration the isolated segments
+            //TO DO: later: currently NodeWithJumpSegments is skipped, but to be reinstated 
+            //var tuple1 = LayoutFunctions.NodeWithJumpSegments(tempNode4DB, tempConnectedSegment4DB, tempIsolatedSegment4DB);
+            //var tuple1NodeList = JsonSerializer.Deserialize<List<Node>>(JsonSerializer.Serialize(tuple1.Item1, jsonSerializerOptions), jsonSerializerOptions);
+            //
+            // create connection for the dead end nodes
+            // this function should be done while creating segments in SegmentPage once for all
+            // TO DO : later currently bypassing DeadEndNodesWithJump
+            // var tempNodeDeadEndNodesWithJump = LayoutFunctions.DeadEndNodesWithJump(tempNode4DB, 1f);
+
+            //var tempNodeDeadEndNodesWithJump = LayoutFunctions.DeadEndNodesWithJump(tuple1.Item1.DeepClone());
+
+            // created jump connections for cases where a node of a segment falls into another segment
+            //TO DO: later: NodesInAnotherSegmentWithJump is not calculated
+            //var tuple2 = LayoutFunctions.NodesInAnotherSegmentWithJump(tempNodeDeadEndNodesWithJump, tempConnectedSegment4DB.Concat(tempIsolatedSegment4DB).ToList());
+            //Node4DB = JsonSerializer.Deserialize<List<Node>>(JsonSerializer.Serialize(tuple2.Item1, jsonSerializerOptions), jsonSerializerOptions);
+            //Node4DB = tuple2.Item1.DeepClone();
+            //Segment4DB = JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(tuple2.Item2, jsonSerializerOptions), jsonSerializerOptions);
+            //Segment4DB = tuple2.Item2.DeepClone();
+            //var IsolatedSegment4DB = tuple1.Item3;
+            //Debug.WriteLine($"...jump-nodes created between nearby segments : {Node4DB.Count} nodes and {Segment4DB.Count} straight segments (connected and isolated together).");
+            //
+            // add sleeve connection
+            // reading Sleeves
+            Sleeve4DB = JsonSerializer.Deserialize<List<Sleeve>>(JsonSerializer.Serialize(GlobalData.Sleeves, jsonSerializerOptions), jsonSerializerOptions);
+
+
+            if (Sleeve4DB.Count > 0)
+            {
+                foreach (var slv in Sleeve4DB)
+                {
+                    // Update Sleeve Parameters
+                    LayoutFunction.SleeveUpdate(slv);
+                    //
+                    // create node at both ends of the sleeve
+                    var n1Tag = "N" + Node4DB.Count.ToString("D6");
+                    var n2Tag = "N" + (Node4DB.Count + 1).ToString("D6");
+                    var N1 = new Node(n1Tag, slv.Points[0], slv.Dia, new Vector3(), "Sleeve", slv.UID, 1, new List<string> { n2Tag });
+                    var N2 = new Node(n1Tag, slv.Points[^1], slv.Dia, new Vector3(), "Sleeve", slv.UID, 2, new List<string> { n1Tag });
+                    N1.AllowableTypes = N2.AllowableTypes = [];
+                    N1.AvailableWidth = N2.AvailableWidth = slv.Dia;
+                    Node4DB.Add(N1);
+                    Node4DB.Add(N2);
+                    //
+                    // adding connection of these sleeve nodes with the existing nearby segment nodes
+                    // filter all nearby nodes of segments that are closer to either end of this sleeve
+                    // distance limit 1m to change later
+                    var d = 1;
+                    var nearNodes = Node4DB.Where(n => new List<Node> { N1, N2 }.Any(N =>
+                        Math.Abs(n.Point.X - N.Point.X) < d &&
+                        Math.Abs(n.Point.Y - N.Point.Y) < d &&
+                        Math.Abs(n.Point.Z - N.Point.Z) < d &&
+                        n.Type != "Sleeve")).ToList();
+                    // assign connection
+                    if (nearNodes.Count > 0)
+                    {
+                        foreach (var N in nearNodes)
+                        {
+                            // nearest sleeve node NN (either N1 or N2)
+                            var NN = Vector3.Distance(N.Point, N1.Point) < Vector3.Distance(N.Point, N2.Point) ? N1 : N2;
+                            N.ConnectedNodesTag.Add(NN.Tag);
+                            NN.ConnectedNodesTag.Add(N.Tag);
+                        }
+                    }
+                    //
+                }
+            }
+
+            watch.Stop();
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {watch.ElapsedMilliseconds}ms  : Sleeve nodes are added : {Sleeve4DB.Count} sleeves, {Segment4DB.Count} straight segments, {Node4DB.Count} nodes, {Bend4DB.Count} bends, {Tee4DB.Count} tees, {Cross4DB.Count} crosses.");
+            watch.Restart();
+
+            //
+            //
+            // create drawing JSON strings for the straight length and accessories
+            var opacity = 0.5;
+            // // straight segments
+            // IsolatedSegment4DB.ForEach(seg =>
+            // {
+            //     try
+            //     {
+            //         var color = Project.isolatedSegmentColor;
+            //         var JSONstring = MyFunction.DrawLadderJSONPoints(seg.Width, seg.Height, seg.End1, seg.End2, seg.Face);
+            //         IsolatedSegment4DBJSONList.Add(JsonConvert.SerializeObject(new List<string> { seg.Tag, JSONstring, opacity.ToString(), JsonConvert.SerializeObject(color), JsonConvert.SerializeObject(seg) }));
+            //     }
+            //     catch (Exception e)
+            //     {
+            //         System.Diagnostics.Debug.WriteLine($"Error : {e.Message.ToString()}");
+            //     }
+            // });
+            // System.Diagnostics.Debug.WriteLine($"...{IsolatedSegment4DB.Count} isolated segment details created for saving into the DB");
+            //
+            // straight segments (connected and isolated)
+            var isolatedSegmentCount = 0;
+            Segment4DB.ForEach(seg =>
+            {
+                try
+                {
+                    var color = seg.AllowableTypes.Contains("LV") ? GlobalData.segmentColorLV : seg.AllowableTypes.Contains("HV") ? GlobalData.segmentColorHV : GlobalData.segmentColorNeutral;
+                    if (seg.Isolated)
+                    {
+                        color = GlobalData.isolatedSegmentColor;
+                        isolatedSegmentCount++;
+                    }
+
+                    var JSONstring = LayoutFunction.DrawLadderJSONPoints(seg.Width, seg.Height, seg.End1, seg.End2, seg.Face);
+                    Segment4DBJSONList.Add(JsonSerializer.Serialize(new List<string>
+                    {
+                        seg.Tag, JSONstring, opacity.ToString(), JsonSerializer.Serialize(color, jsonSerializerOptions), JsonSerializer.Serialize(seg, jsonSerializerOptions)
+                    }, jsonSerializerOptions));
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message} : {seg.Tag}");
+                }
+            });
+            watch.Stop();
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {watch.ElapsedMilliseconds}ms  : {Segment4DB.Count} segment details created including {isolatedSegmentCount} isolated segments for saving into the DB");
+            watch.Restart();
+            //
+            //bend segments
+            Bend4DB.ForEach(bend =>
+            {
+                try
+                {
+                    var JSONstring = LayoutFunction.DrawBendJSONPoints(bend.X, bend.P1, bend.P2, bend.W1, bend.W2, bend.F1, bend.F2, bend.H1, bend.H2, bend.Step);
+                    Bend4DBJSONList.Add(JsonSerializer.Serialize(new List<string>
+                    {
+                        bend.Tag, JSONstring, opacity.ToString(), JsonSerializer.Serialize(GlobalData.bendColor, jsonSerializerOptions), JsonSerializer.Serialize(bend, jsonSerializerOptions)
+                    }, jsonSerializerOptions));
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message}  {bend.Tag}");
+                }
+            });
+            watch.Stop();
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {watch.ElapsedMilliseconds}ms : {Bend4DB.Count} bend details created for saving into the DB");
+            watch.Restart();
+            //
+            //tee segments
+            Tee4DB.ForEach(tee =>
+            {
+                try
+                {
+                    var JSONstring = LayoutFunction.DrawTeeJSONPoints(tee.X, tee.P1, tee.P2, tee.P3, tee.W1, tee.W2, tee.W3, tee.F1, tee.F2, tee.F3, tee.H1, tee.H2, tee.H3, tee.Step);
+                    Tee4DBJSONList.Add(JsonSerializer.Serialize(new List<string>
+                    {
+                        tee.Tag, JSONstring, opacity.ToString(), JsonSerializer.Serialize(GlobalData.teeColor, jsonSerializerOptions), JsonSerializer.Serialize(tee, jsonSerializerOptions)
+                    }, jsonSerializerOptions));
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message} {tee.Tag}");
+                }
+            });
+
+            watch.Stop();
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {watch.ElapsedMilliseconds}ms  : {Tee4DB.Count} tee details created for saving into the DB");
+            watch.Restart();
+            //
+            //cross segments
+            Cross4DB.ForEach(cross =>
+            {
+                try
+                {
+                    var JSONstring = LayoutFunction.DrawCrossJSONPoints(cross.X, cross.P1, cross.P2, cross.P3, cross.P4, cross.W1, cross.W2, cross.W3, cross.W4, cross.F1, cross.F2, cross.F3, cross.F4, cross.H1, cross.H2, cross.H3, cross.H4, cross.Step);
+                    Cross4DBJSONList.Add(JsonSerializer.Serialize(new List<string>
+                    {
+                        cross.Tag, JSONstring, opacity.ToString(), JsonSerializer.Serialize(GlobalData.crossColor, jsonSerializerOptions), JsonSerializer.Serialize(cross, jsonSerializerOptions)
+                    }, jsonSerializerOptions));
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message} {cross.Tag}");
+                }
+            });
+
+            watch.Stop();
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {watch.ElapsedMilliseconds}ms : {Cross4DB.Count} cross details created for saving into the DB");
+            watch.Restart();
+            //
+            // nodes
+            Node4DB.ForEach(node =>
+            {
+                try
+                {
+                    Node4DBJSONList.Add(JsonSerializer.Serialize(new List<string>
+                    {
+                        node.Tag, JsonSerializer.Serialize(node.Point, jsonSerializerOptions), JsonSerializer.Serialize(GlobalData.nodeColor, jsonSerializerOptions), JsonSerializer.Serialize(node, jsonSerializerOptions)
+                    }, jsonSerializerOptions));
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message} {node.Tag}");
+                }
+            });
+            watch.Stop();
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {watch.ElapsedMilliseconds}ms  : {Node4DB.Count} node details created for saving into the DB");
+            watch.Restart();
+            //
+        }
+
+        // sleeves
+        if (Sleeve4DB.Count > 0)
+        {
+            foreach (var slv in Sleeve4DB)
+            {
+                try
+                {
+                    var JSONPoints = LayoutFunction.DrawSleeveJSONPoints(slv.Points, slv.BendRadius);
+                    Sleeve4DBJSONList.Add(JsonSerializer.Serialize(new List<string> { slv.Tag, (slv.Dia / 2).ToString(), JSONPoints, JsonSerializer.Serialize(slv, jsonSerializerOptions) }, jsonSerializerOptions));
+                }
+                catch (Exception e)
+                {
+                    Debug.WriteLine($"Error : {e.Message}");
+                }
+            }
+        }
+
+        watch.Stop();
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {watch.ElapsedMilliseconds}ms : {Sleeve4DB.Count} sleeve details created for saving into the DB");
+        watch.Restart();
+        //
+        //For saving Straight Segment, Bend, Tee, Cross, Sleeves, etc.to Database
+        segmentResult.ProjectId = GlobalData.SelectedProject.Tag;
+        segmentResult.OptionId = "base";
+        //
+        segmentResult.SleeveListJSON = JsonSerializer.Serialize(Sleeve4DBJSONList, jsonSerializerOptions);
+        segmentResult.IsolatedStraightSegmentListJSON = JsonSerializer.Serialize(IsolatedSegment4DBJSONList, jsonSerializerOptions);
+        segmentResult.StraightSegmentListJSON = JsonSerializer.Serialize(Segment4DBJSONList, jsonSerializerOptions);
+        segmentResult.BendListJSON = JsonSerializer.Serialize(Bend4DBJSONList, jsonSerializerOptions);
+        segmentResult.TeeListJSON = JsonSerializer.Serialize(Tee4DBJSONList, jsonSerializerOptions);
+        segmentResult.CrossListJSON = JsonSerializer.Serialize(Cross4DBJSONList, jsonSerializerOptions);
+        segmentResult.NodeListJSON = JsonSerializer.Serialize(Node4DBJSONList, jsonSerializerOptions);
+        //
+        segmentResult.List1JSON = JsonSerializer.Serialize(Node4DB, jsonSerializerOptions);
+        segmentResult.List2JSON = JsonSerializer.Serialize(Segment4DB, jsonSerializerOptions);
+        segmentResult.List3JSON = JsonSerializer.Serialize(Sleeve4DB, jsonSerializerOptions);
+        //
+        segmentResult.UpdatedBy = "KP";
+        segmentResult.UpdatedDateTime = DateTime.UtcNow;
+        IsDisabledBttnSaveSegmentResultToDB = false;
+        _displayNsaveAccessories = true;
+        watch.Stop();
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {watch.ElapsedMilliseconds}ms: Generate accessories ...info ready to be saved into the DB");
+    }
+
+
+    [JSInvokable]
+    public static void UpdateCastObject1(string jsonCastObjectUiDs, string jsonCastObjectTags, string objTag, float X, float Y, float Z, string hiddenObjTag, float Xh, float Yh, float Zh)
+    {
+        Debug.WriteLine($"Segment: JSONCastObjectUIDs: {jsonCastObjectUiDs}, JsonCastObjectTags: {jsonCastObjectTags}, " +
+                        $"objTag: {objTag}, X: {X}, Y: {Y}, Z{Z}, hiddenObjTag: {hiddenObjTag}, Xh{Xh}, Yh: {Yh}, Zh: {Zh} ");
+    }
+
+
+}
