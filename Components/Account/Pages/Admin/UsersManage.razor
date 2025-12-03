@@ -7,11 +7,13 @@
 @using Microsoft.EntityFrameworkCore
 @inject UserManager<ApplicationUser> UserManager
 @inject RoleManager<IdentityRole> RoleManager
+@inject IDataRetrievalService DataService
 @inject IJSRuntime JS
 @using ElDesignApp.Data
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
+@inject Services.IMyTableService MyTable 
 
 
 <PageTitle>User Management</PageTitle>
@@ -35,64 +37,129 @@ else
     <div class="table-responsive">
         <table class="table table-hover align-middle">
             <thead class="table-light">
-                <tr>
-                    <th>Email</th>
-                    <th>Username</th>
-                    <th class="text-center">Roles</th>
-                    <th>Actions</th>
-                </tr>
+            <tr>
+                <th>Email</th>
+                <th>Username</th>
+                <th class="text-center">Roles</th>
+                <th>Actions</th>
+            </tr>
             </thead>
             <tbody>
-                @foreach (var item in usersWithRoles)
-                {
-                    var user = item.User;
-                    var userRoles = item.Roles;
-                    var currentUserId = item.User.Id;
+            @foreach (var item in usersWithRoles)
+            {
+                var user = item.User;
+                var userRoles = item.Roles;
+                var currentUserId = item.User.Id;
 
-                    <tr>
-                        <td><strong>@user.Email</strong></td>
-                        <td>@user.UserName</td>
-                        <td class="text-center py-3">
-                            <div class="d-flex flex-wrap gap-2 justify-content-center">
-                                @foreach (var role in _allRoles!)
+                <tr>
+                    <td><strong>@user.Email</strong></td>
+                    <td>@user.UserName</td>
+                    <td class="text-center py-3">
+                        <div class="d-flex flex-wrap gap-2 justify-content-center">
+                            @foreach (var role in _allRoles!)
+                            {
+                                var currentRoleName = role.Name!;
+                                var vm = item; // viewmodel for toggling state
+                                <button type="button"
+                                        class="@(userRoles.Contains(currentRoleName) ? "btn btn-success" : "btn btn-outline-secondary") btn-sm"
+                                        style="min-width: 110px;"
+                                        @onclick="async () => await ToggleRoleAsync(currentUserId, currentRoleName)"
+                                        disabled="@(vm.IsToggling && vm.TogglingRoleName == currentRoleName)">
+                                    @if (vm.IsToggling && vm.TogglingRoleName == currentRoleName)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                    }
+                                    <strong>@currentRoleName</strong>
+                                    @if (!userRoles.Contains(currentRoleName))
+                                    {
+                                        <small class="ms-1">(off)</small>
+                                    }
+                                </button>
+                            }
+                        </div>
+                    </td>
+                    
+                    <td class="text-center py-3">
+                        <div class="d-flex flex-wrap gap-2 justify-content-center">
+                            @{
+                                var allProjectNames = _projects.Select(p => p.Tag).Distinct().ToList();
+                                var assignedProjectNames = _projects.Where(p => @user.UserName != null && p.ProjUsers.Contains(@user.UserName)).ToList().Select(p => p.Tag).Distinct().ToList();
+                                var allNotAssignedProjectNames = allProjectNames.Except(assignedProjectNames).ToList();
+                            }
+                            @foreach (var currentProjectName in assignedProjectNames!)
+                            {
+                                <button type="button"
+                                        class="btn btn-success btn-sm"
+                                        style="min-width: 110px;"
+                                        @onclick="async () => await RemoveProjectAsyn(currentUserId, currentProjectName)">
+                                    projectName
+                                </button>
+                            }
+                            <button type="button"
+                                    class="btn btn-success btn-sm"
+                                    style="min-width: 110px;"
+                                    @onclick="()=> showSelectProjectDropDown = true">
+                                Add Project
+                            </button>
+                            <div class="row g-3 align-items-center">
+                                @if (_projects != null && _projects.Any() && showSelectProjectDropDown)
                                 {
-                                    var currentRoleName = role.Name!;
-                                    var vm = item; // viewmodel for toggling state
-                                    <button type="button"
-                                            class="@(userRoles.Contains(currentRoleName) ? "btn btn-success" : "btn btn-outline-secondary") btn-sm"
-                                            style="min-width: 110px;"
-                                            @onclick="async () => await ToggleRoleAsync(currentUserId, currentRoleName)"
-                                            disabled="@(vm.IsToggling && vm.TogglingRoleName == currentRoleName)">
-                                        @if (vm.IsToggling && vm.TogglingRoleName == currentRoleName)
-                                        {
-                                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                                        }
-                                        <strong>@currentRoleName</strong>
-                                        @if (!userRoles.Contains(currentRoleName))
-                                        {
-                                            <small class="ms-1">(off)</small>
-                                        }
-                                    </button>
+                                    var selectedProjectTag = "";
+                                    <div class="col-auto">
+                                        <label for="projectDropdown" class="form-label me-2">Select Project</label>
+                                    </div>
+                                    <div class="col-auto">
+                                        <select id="projectDropdown"
+                                                class="form-select"
+                                                @bind="selectedProjectTag"
+                                                @onselect="async () => await AddProjectAsyn(currentUserId, selectedProjectTag)">
+                                            @foreach (var notAssignedProjectName in allNotAssignedProjectNames)
+                                            {
+                                                var projectDescription = _projects.Find(p => p.Tag == notAssignedProjectName).TagDescription;
+                                                <option value="@selectedProjectTag">@notAssignedProjectName | @projectDescription</option>
+                                            }
+                                        </select>
+                                    </div>
                                 }
                             </div>
-                        </td>
-                        <td>
-                            <a href="/Identity/Account/Register" class="btn btn-primary btn-sm">
-                                <i class="bi bi-person-plus"></i> Add User
-                            </a>
-                        </td>
-                    </tr>
-                }
+                        </div>
+                    </td>
+
+                    <td>
+                        <a href="/Identity/Account/Register" class="btn btn-primary btn-sm">
+                            <i class="bi bi-person-plus"></i> Add User
+                        </a>
+                    </td>
+                </tr>
+            }
             </tbody>
         </table>
+    </div>
+    
+    @if (_showModal)
+    {
+        <ElementPropertyModal T="Project" 
+                              Title="Add New Project" 
+                              Item="@_newProject" 
+                              Fields="_fields"
+                              OnClose="@HandleModalClose" />
+    }
+    <div class="col-auto">
+        <button class="btn btn-primary" @onclick="ShowAddProjectModal">Add</button>
     </div>
 }
 
 @code {
     private List<IdentityRole>? _allRoles;
-
+    private List<Project> _projects = [];
+    private List<string> _projectNames = [];
     private List<UserRoleViewModel> usersWithRoles = new();
     private string? ErrorMessage;
+    private bool showSelectProjectDropDown = false;
+    
+    bool _showModal = false;
+    Project _newProject = new Project();
+    readonly string[] _fields = ["Tag", "TagDescription", "ProjAlt", "ProjClient", "ProjPartners", "ProjLocation", "ProjUsers", "XEW"];
     
     protected override async Task OnInitializedAsync()
     {
@@ -118,6 +185,12 @@ else
         {
             ErrorMessage = "Error loading users and roles: " + ex.Message;
         }
+        
+        (_projects, string logInfo, string logWarning, string logError) = await DataService.ReadFromCacheOrDb(new Project());
+        
+        
+        
+        
     }
 
     
@@ -173,12 +246,70 @@ else
         }
     }
     
+    private async Task AddProjectAsyn(string userId, string selectedProjectName)
+    {
+     // add the user to the selected project's user's list
+     var selectedProject = _projects.Find(p => p.Tag == selectedProjectName);
+     var selectedProjectUserList = selectedProject?.ProjUsers is null? []: JsonSerializer.Deserialize<List<string>>(selectedProject.ProjUsers)!;
+     selectedProjectUserList?.Add(userId);
+     selectedProject.ProjUsers = JsonSerializer.Serialize(selectedProjectUserList);
+     await MyTable.UpdateParameter(selectedProject,selectedProject.UID,["ProjUsers"]);
+    }
+    
+    
+    private async Task RemoveProjectAsyn(string userId, string selectedProjectName)
+    {
+        // remove the user from the selected project's user's list
+        var selectedProject = _projects.Find(p => p.Tag == selectedProjectName);
+        var selectedProjectUserList = selectedProject?.ProjUsers is null? []: JsonSerializer.Deserialize<List<string>>(selectedProject.ProjUsers)!;
+        selectedProjectUserList?.Add(userId);
+        selectedProject.ProjUsers = JsonSerializer.Serialize(selectedProjectUserList);
+        await MyTable.UpdateParameter(selectedProject,selectedProject.UID,["ProjUsers"]);
+    }
+    
+    private void ShowAddProjectModal()
+    {
+        var tag = $"Project {new Random().Next(10000, 99999)}";
+        _newProject = new Project
+        {
+            UID = Guid.NewGuid(),
+            Tag = tag,
+            TagDescription = tag,
+            ProjAlt = "base",
+            ProjClient = "",
+            ProjPartners = "[\"self\"]",
+            ProjLocation = "",
+            ProjUsers = "[\"test\"]",
+            Order = 0,
+            Display = true,
+            XEW = true // X-Axis for East-West is true
+        };
+        _showModal = true;
+        StateHasChanged();
+    }
+
+    private async Task HandleModalClose((string json, string type, string tag, string tagValue, string action) result)
+    {
+        if (result.action == "Ok" && !string.IsNullOrEmpty(result.json))
+        {
+            var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
+            var savedProject = System.Text.Json.JsonSerializer.Deserialize<Project>(result.json, jsonSerializerOption);
+            if (savedProject != null)
+            {
+                await MyTable.InsertItem(savedProject);
+            }
+        }
+        _showModal = false;
+        StateHasChanged();
+    }
+    
     
     // Helper class to track per-user state
     public class UserRoleViewModel
     {
         public required ApplicationUser User { get; set; }
-        public List<string> Roles { get; set; } = new();
+        public List<string> Roles { get; set; } = [];
+        public List<string> ProjectNames{ get; set; } = [];
         public bool IsToggling { get; set; }
         public string? TogglingRoleName { get; set; }  // This is the key!
     }

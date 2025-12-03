@@ -9,8 +9,9 @@
 
 @inject NavigationManager MyNavigationManager
 @using ElDesignApp.Services
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @inject Services.IDataRetrievalService DataService
-@inject Services.IMyTableService MyTable 
 @inject Services.IGlobalDataService GlobalData
 @inject Services.IMyFunctionService MyFunction
 @inject Services.ILayoutFunctionService LayoutFunction
@@ -41,9 +42,6 @@
                     }
                 </select>
             </div>
-            <div class="col-auto">
-                <button class="btn btn-primary" @onclick="ShowAddProjectModal">Add</button>
-            </div>
         }
     </div>
     <br />
@@ -51,26 +49,23 @@
     Selected Project: @GlobalData.SelectedProject?.Tag (@GlobalData.SelectedProject?.TagDescription)
 </div>
 
-@if (_showModal)
-{
-    <ElementPropertyModal T="Project" 
-                   Title="Add New Project" 
-                   Item="@_newProject" 
-                   Fields="_fields"
-                   OnClose="@HandleModalClose" />
-}
+
 
 @code {
-    List<Project?>? _projects = [];
+    List<Project> _projects = [];
+    string? _userName = "";
     string _selectedProjectTag = "JI-2048";
-    bool _showModal = false;
-    Project _newProject = new Project();
-    readonly string[] _fields = ["Tag", "TagDescription", "ProjAlt", "ProjClient", "ProjPartners", "ProjLocation", "ProjUsers", "XEW"];
+
     
     protected override async Task OnInitializedAsync()
     {
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
         (_projects, string logInfo, string logWarning, string logError) = await DataService.ReadFromCacheOrDb(new Project());
+        // filter projects assigned to this user
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _userName = user.Identity?.Name;
+        _projects = _projects.Where(p => _userName != null && p.ProjUsers.Contains(_userName)).ToList();
         
         if (_projects.Count > 0)
         {
@@ -100,46 +95,9 @@
         StateHasChanged();
     }
     
-    private void ShowAddProjectModal()
-    {
-        var tag = $"Project {new Random().Next(10000, 99999)}";
-        _newProject = new Project
-        {
-            UID = Guid.NewGuid(),
-            Tag = tag,
-            TagDescription = tag,
-            ProjAlt = "base",
-            ProjClient = "",
-            ProjPartners = "[\"self\"]",
-            ProjLocation = "",
-            ProjUsers = "[\"test\"]",
-            Order = 0,
-            Display = true,
-            XEW = true // X-Axis for East-West is true
-        };
-        _showModal = true;
-        StateHasChanged();
-    }
+
     
-    
-    private async Task HandleModalClose((string json, string type, string tag, string tagValue, string action) result)
-    {
-        if (result.action == "Ok" && !string.IsNullOrEmpty(result.json))
-        {
-            var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
-            var savedProject = System.Text.Json.JsonSerializer.Deserialize<Project>(result.json, jsonSerializerOption);
-            if (savedProject != null)
-            {
-                // Assume DataService has a method to save the project
-                await MyTable.InsertItem(savedProject);
-                _selectedProjectTag = savedProject.Tag;
-                _projects!.Add(savedProject);
-                GlobalData.SelectedProject!.Tag = savedProject.Tag;
-            }
-        }
-        _showModal = false;
-        StateHasChanged();
-    }
+
 
    
     private async Task Refresh()

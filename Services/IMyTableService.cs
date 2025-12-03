@@ -87,7 +87,7 @@ public interface IMyTableService
         Task DeleteItem1(string dboName, string field, string fieldValue);
 
         /// <summary></summary>
-        List<string> GetSQLFieldsNames(string tableName);
+        List<string> GetSqlFieldsNames(string tableName);
 
         Task<List<string>> GetTablesAsync(string connectionString);
 
@@ -249,7 +249,7 @@ public class MyTableService : IMyTableService
 
 
     /// <summary></summary>
-    public List<string> GetSQLFieldsNames(string tableName)
+    public List<string> GetSqlFieldsNames(string tableName)
     {
         string connectionString = _configuration.GetConnectionString("DefaultConnection"); // Or whatever your connection string name is
 
@@ -376,7 +376,7 @@ public async Task Update<T>(List<T> list, List<T> originalList, string updatedBy
         throw new ArgumentException("Type T must have UID, UpdatedBy, and UpdatedOn properties.");
     }
 
-    var fields = GetSQLFieldsNames(typeof(T).Name);
+    var fields = GetSqlFieldsNames(typeof(T).Name);
     var add = new List<T>();
     var delete = new List<T>();
 
@@ -468,7 +468,7 @@ public async Task Update<T>(List<T> list, List<T> originalList, string updatedBy
 
         // need to compare only those properties which are present in the DB
         // rest of the properties are derived and therefore need not be compared
-        var fields = GetSQLFieldsNames(typeof(T).Name);
+        var fields = GetSqlFieldsNames(typeof(T).Name);
         List<T> add = [];
         List<T> delete = [];
 
@@ -555,7 +555,7 @@ public async Task Update<T>(List<T> list, List<T> originalList, string updatedBy
     /// <summary></summary>
     public async Task UpdateItem<T>(T item, Guid uid)
     {
-        var SQLFields = GetSQLFieldsNames(typeof(T).Name);
+        var SQLFields = GetSqlFieldsNames(typeof(T).Name);
         var sql = "UPDATE dbo." + typeof(T).Name + " SET ";
         SQLFields.ForEach(field => { sql = sql + field + " = @" + field + (field == SQLFields.Last() ? "" : ", "); });
         sql = sql + " WHERE  UID = '" + uid + "'";
@@ -586,7 +586,7 @@ public async Task Update<T>(List<T> list, List<T> originalList, string updatedBy
     public async Task InsertItem<T>(T item)
     {
         //inserting new item
-        var SQLFields = GetSQLFieldsNames(typeof(T).Name);
+        var SQLFields = GetSqlFieldsNames(typeof(T).Name);
         var sql = "INSERT INTO dbo." + typeof(T).Name + " (" + string.Join(", ", SQLFields) + ") values (@" +
                   string.Join(", @", SQLFields) + "); ";
         await SaveData(sql, item);
@@ -1192,7 +1192,7 @@ public async Task Update<T>(List<T> list, List<T> originalList, string updatedBy
     {
         var table = new DataTable(typeof(T).Name);
         var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
-        List<string> filedNames = GetSQLFieldsNames(typeof(T).Name);
+        List<string> filedNames = GetSqlFieldsNames(typeof(T).Name);
         foreach (var prop in properties)
             if (filedNames.Contains(prop.Name))
             {

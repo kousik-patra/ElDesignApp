@@ -320,7 +320,7 @@
 
         // read the DB filed name
         // if the C# class property not among the SQL Server DB filed, then disable editing
-        SQLFieldsNames = MyTable.GetSQLFieldsNames(typeof(T).Name);
+        SQLFieldsNames = MyTable.GetSqlFieldsNames(typeof(T).Name);
 
         _Type = typeof(T).Name;
         tagProperty = typeof(T).GetProperty("Tag");

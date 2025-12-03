@@ -116,8 +116,6 @@ using (var scope = app.Services.CreateScope())
     {
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
-        //var signInManager = services.GetRequiredService<SignInManager<ApplicationUser>>();
-        //await SeedData.InitializeAsync(userManager, roleManager, signInManager);
         await SeedData.InitializeAsync(userManager, roleManager);
         Console.WriteLine("Admin user seeding completed.");
     }

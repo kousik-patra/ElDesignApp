@@ -868,7 +868,7 @@
     }
 
     // Initialize SQL field names
-    _sqlFieldsNames = MyTable.GetSQLFieldsNames(typeof(T).Name) ?? [];
+    _sqlFieldsNames = MyTable.GetSqlFieldsNames(typeof(T).Name) ?? [];
 
     // Initialize property indexing (0 = not indexed, 1 = ascending, 2 = descending)
     _propertyIndexed.Clear();
