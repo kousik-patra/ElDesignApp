@@ -452,3 +452,18 @@ NpmJS/
 node_modules/
 .idea/
 dataprotection-keys/
+
+# Dotnet Setting
+*.DotSettings*
+
+
+# Rider user settings
+*.DotSettings.user
+*.sln.DotSettings.user
+
+# Data protection keys (never commit!)
+dataprotection-keys/
+
+# Root package-lock (duplicate)
+package-lock.json
+!/NpmJS/package-lock.json   # keep the one in NpmJS
