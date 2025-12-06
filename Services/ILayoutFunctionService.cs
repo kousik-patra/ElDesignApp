@@ -1090,7 +1090,7 @@ public class LayoutFunctionService : ILayoutFunctionService
 
 
     /// <summary></summary>
-    public List<float> FindCableSize(Load load, string mat, List<float> _avl1C, List<float> _avlMC, List<CableData>? _cableData)
+    private List<float> FindCableSize(Load load, string mat, List<float> _avl1C, List<float> _avlMC, List<CableData>? _cableData)
     {
         var I = load.I;
         var L = load.L;
@@ -1108,13 +1108,13 @@ public class LayoutFunctionService : ILayoutFunctionService
         var avl1C = _avl1C;
         var avlMC = _avlMC;
 
-        var multipleCoreResult = FindCableSize1COrMC((int)C, alVdR, alVdS, DF, mat, avlMC, I, L, V, phase, 4);
+        var multipleCoreResult = FindCableSize1CorMC((int)C, alVdR, alVdS, DF, mat, avlMC, I, L, V, phase, 4, _cableData);
         // check for single core only when there is no multicore results or the sizes >=95
         if (multipleCoreResult.Count > 0 && multipleCoreResult[1] < 95)
         {
             return [multipleCoreResult[0], C, multipleCoreResult[1]];
         }
-        var singleCoreResult = FindCableSize1COrMC(1, alVdR, alVdS, DF, mat, avl1C, I, L, V, phase,10);
+        var singleCoreResult = FindCableSize1CorMC(1, alVdR, alVdS, DF, mat, avl1C, I, L, V, phase,10, _cableData);
         //
         // comparing 1C result and multicore result based on the material consumption
         var materialConsumptionSingleCore = (singleCoreResult[0] * phase + C - phase) * singleCoreResult[1];
@@ -1134,8 +1134,8 @@ public class LayoutFunctionService : ILayoutFunctionService
         return [thisR, thisC, thisSp];
 
         //
-        List<float> FindCableSize1COrMC(int core, double allowableVdR, double allowableVdS, double cableDeratingFactor,
-            string mat, List<float> avl, double I, double L, double V, int phase, int maxCableRun)
+        List<float> FindCableSize1CorMC(int core, double allowableVdR, double allowableVdS, double cableDeratingFactor,
+            string mat, List<float> avl, double I, double L, double V, int phase, int maxCableRun, List<CableData>? cableData)
         {
             double RunningVoltageDropAuto;
             double StartingVoltageDropAuto;
@@ -1144,29 +1144,41 @@ public class LayoutFunctionService : ILayoutFunctionService
             do
             {
                 cableRunThis++;
-                cables = _cableData.Where(cable =>
+                cables = cableData.Where(cable =>
                     cable.ConductorMaterial == mat && cable.PhaseNo == core && avl.Contains(cable.PhaseSize) &&
                     cable.AmpicityAir * (cableDeratingFactor/100) > I / cableRunThis).ToList();
             } while (cables.Count() == 0 && cableRunThis<maxCableRun);
 
-            var cableSizeThis = _cableData.Where(Cable =>
-                    Cable.ConductorMaterial == mat && Cable.AmpicityAir * (cableDeratingFactor/100) > I / cableRunThis)
-                .ToList()[0].PhaseSize;
+            float cableSizeThis = 0;
+            try
+            {
+                cableSizeThis = cableData.Where(Cable =>
+                        Cable.ConductorMaterial == mat &&
+                        Cable.AmpicityAir * (cableDeratingFactor / 100) > I / cableRunThis)
+                    .ToList()[0].PhaseSize;
+            }
+            catch (Exception e)
+            {
+                // ignored
+                cableSizeThis = 0;
+
+            }
+
             do
             {
                 var tolerance = 0.001f;
-                var tempCable = _cableData
+                var tempCable = cableData
                     .Where(cable =>
                         cable.ConductorMaterial == mat && Math.Abs(cable.PhaseSize - cableSizeThis) < tolerance)
                     .ToList();
                 
-                var R = _cableData
+                var R = cableData
                     .Where(cable => cable.ConductorMaterial == mat && Math.Abs(cable.PhaseSize - cableSizeThis) < tolerance).ToList()[0].RDC;
-                var X = _cableData
+                var X = cableData
                     .Where(cable => cable.ConductorMaterial == mat && Math.Abs(cable.PhaseSize - cableSizeThis) < tolerance).ToList()[0].XAC;
                 if (R * X < 0.00001)
                 {
-                    (R, X) = AproximateRX(_cableData, mat, cableSizeThis);
+                    (R, X) = AproximateRX(cableData, mat, cableSizeThis);
                 }
 
                 

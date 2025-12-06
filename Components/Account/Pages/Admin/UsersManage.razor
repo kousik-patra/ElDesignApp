@@ -41,6 +41,7 @@ else
                 <th>Email</th>
                 <th>Username</th>
                 <th class="text-center">Roles</th>
+                <th class="text-center">Projects</th>
                 <th>Actions</th>
             </tr>
             </thead>
@@ -81,54 +82,82 @@ else
                     
                     <td class="text-center py-3">
                         <div class="d-flex flex-wrap gap-2 justify-content-center">
+
                             @{
-                                var allProjectNames = _projects.Select(p => p.Tag).Distinct().ToList();
-                                var assignedProjectNames = _projects.Where(p => @user.UserName != null && p.ProjUsers.Contains(@user.UserName)).ToList().Select(p => p.Tag).Distinct().ToList();
-                                var allNotAssignedProjectNames = allProjectNames.Except(assignedProjectNames).ToList();
+                                var allProjectTags = _projects.Select(p => p.Tag).Distinct().ToList();
+                                var assignedProjectTags = _projects
+                                    .Where(p => p.ProjUsers != null && 
+                                                JsonSerializer.Deserialize<List<string>>(p.ProjUsers)
+                                                    .Contains(user.UserName!))
+                                    .Select(p => p.Tag)
+                                    .Distinct()
+                                    .ToList();
+
+                                var notAssignedProjectTags = allProjectTags.Except(assignedProjectTags).ToList();
                             }
-                            @foreach (var currentProjectName in assignedProjectNames!)
+
+                            <!-- Assigned Projects (Info Outline → Red on Hover) -->
+                            @foreach (var tag in assignedProjectTags)
+                            {
+                                var project = _projects.Find(p => p.Tag == tag);
+                                var hoverKey = GetHoverKey(currentUserId, tag);
+    
+                                <button type="button"
+                                        class="btn btn-outline-info btn-sm position-relative"
+                                        style="min-width: 110px;"
+                                        @onmouseover="() => SetHover(currentUserId, tag, true)"
+                                        @onmouseout="() => SetHover(currentUserId, tag, false)"
+                                        @onclick="async () => await RemoveProjectAsyn(currentUserId, tag)">
+        
+                                    <span class="@(IsHovered(currentUserId, tag) ? "text-danger fw-bold" : "")">
+                                        @tag
+                                    </span>
+        
+                                    @if (IsHovered(currentUserId, tag))
+                                    {
+                                        <small class="ms-1 text-danger fw-bold">×</small>
+                                    }
+                                </button>
+                            }
+
+                            <!-- Add Project Button (Green) -->
+                            @if (notAssignedProjectTags.Count > 0)
                             {
                                 <button type="button"
                                         class="btn btn-success btn-sm"
                                         style="min-width: 110px;"
-                                        @onclick="async () => await RemoveProjectAsyn(currentUserId, currentProjectName)">
-                                    projectName
+                                        @onclick="() => showProjectDropdown[currentUserId] = !showProjectDropdown.GetValueOrDefault(currentUserId)">
+                                    Add Project
                                 </button>
-                            }
-                            <button type="button"
-                                    class="btn btn-success btn-sm"
-                                    style="min-width: 110px;"
-                                    @onclick="()=> showSelectProjectDropDown = true">
-                                Add Project
-                            </button>
-                            <div class="row g-3 align-items-center">
-                                @if (_projects != null && _projects.Any() && showSelectProjectDropDown)
+
+                                @if (showProjectDropdown.GetValueOrDefault(currentUserId))
                                 {
-                                    var selectedProjectTag = "";
-                                    <div class="col-auto">
-                                        <label for="projectDropdown" class="form-label me-2">Select Project</label>
-                                    </div>
-                                    <div class="col-auto">
-                                        <select id="projectDropdown"
-                                                class="form-select"
-                                                @bind="selectedProjectTag"
-                                                @onselect="async () => await AddProjectAsyn(currentUserId, selectedProjectTag)">
-                                            @foreach (var notAssignedProjectName in allNotAssignedProjectNames)
+                                    <div class="mt-2">
+                                        <select class="form-select form-select-sm"
+                                                @onchange="async e => await AddProjectSelected(e, currentUserId)">
+                                            <option value="" disabled selected>Select project...</option>
+                                            @foreach (var tag in notAssignedProjectTags)
                                             {
-                                                var projectDescription = _projects.Find(p => p.Tag == notAssignedProjectName).TagDescription;
-                                                <option value="@selectedProjectTag">@notAssignedProjectName | @projectDescription</option>
+                                                var p = _projects.Find(x => x.Tag == tag);
+                                                <option value="@tag">@tag | @(p?.TagDescription ?? "")</option>
                                             }
                                         </select>
+                                        <button class="btn btn-secondary btn-sm mt-1"
+                                                @onclick="() => showProjectDropdown[currentUserId] = false">
+                                            Cancel
+                                        </button>
                                     </div>
                                 }
-                            </div>
+                            }
                         </div>
                     </td>
-
-                    <td>
-                        <a href="/Identity/Account/Register" class="btn btn-primary btn-sm">
-                            <i class="bi bi-person-plus"></i> Add User
-                        </a>
+                    
+                    @* Remove User *@
+                    <td class="text-center">
+                        <button type="button" class="btn btn-danger btn-sm" 
+                                @onclick="() => ConfirmDeleteUser(user)">
+                            Remove User
+                        </button>
                     </td>
                 </tr>
             }
@@ -136,6 +165,23 @@ else
         </table>
     </div>
     
+    <!-- ADD USER button (below the table) -->
+    <div class="mt-4 text-center">
+        <button class="btn btn-primary btn-lg" @onclick="ShowAddUserModal">
+            Add New User
+        </button>
+    </div>
+    <!-- Add-User Modal -->
+    @if (showAddUserModal)
+    {
+        <ElementPropertyModal T="ApplicationUser"
+                              Title="Create New User"
+                              Item="_newUser"
+                              Fields="_userFields"
+                              OnClose="HandleAddUserClose" />
+    }
+    
+    <!-- Add-Project Modal -->
     @if (_showModal)
     {
         <ElementPropertyModal T="Project" 
@@ -155,7 +201,14 @@ else
     private List<string> _projectNames = [];
     private List<UserRoleViewModel> usersWithRoles = new();
     private string? ErrorMessage;
-    private bool showSelectProjectDropDown = false;
+    
+    private readonly Dictionary<string, bool> showProjectDropdown = new(); // userId → dropdown visible?
+    private readonly HashSet<string> hoveredProjects = new(); // "userId|projectTag"
+    
+    
+    private bool showAddUserModal = false;
+    private ApplicationUser _newUser = new();
+    private readonly string[] _userFields = ["UserName", "Email"]; // only these are editable
     
     bool _showModal = false;
     Project _newProject = new Project();
@@ -246,25 +299,140 @@ else
         }
     }
     
-    private async Task AddProjectAsyn(string userId, string selectedProjectName)
+    
+ 
+    private string GetHoverKey(string userId, string projectTag) => $"{userId}|{projectTag}";
+
+    private void SetHover(string userId, string projectTag, bool isHovering)
     {
-     // add the user to the selected project's user's list
-     var selectedProject = _projects.Find(p => p.Tag == selectedProjectName);
-     var selectedProjectUserList = selectedProject?.ProjUsers is null? []: JsonSerializer.Deserialize<List<string>>(selectedProject.ProjUsers)!;
-     selectedProjectUserList?.Add(userId);
-     selectedProject.ProjUsers = JsonSerializer.Serialize(selectedProjectUserList);
-     await MyTable.UpdateParameter(selectedProject,selectedProject.UID,["ProjUsers"]);
+        var key = GetHoverKey(userId, projectTag);
+        if (isHovering) hoveredProjects.Add(key);
+        else hoveredProjects.Remove(key);
+    }
+
+    private bool IsHovered(string userId, string projectTag) 
+        => hoveredProjects.Contains(GetHoverKey(userId, projectTag));
+
+
+    private void ShowAddUserModal()
+    {
+        _newUser = new ApplicationUser { UserName = "", Email = "" };
+        showAddUserModal = true;
+        StateHasChanged();
     }
     
+    private async Task HandleAddUserClose((string json, string type, string tag, string tagValue, string action) result)
+    {
+        showAddUserModal = false;
+        if (result.action != "Ok" || string.IsNullOrWhiteSpace(result.json)) return;
+
+        var options = new JsonSerializerOptions { IncludeFields = true };
+        var user = JsonSerializer.Deserialize<ApplicationUser>(result.json, options);
+        if (user?.UserName == null || user.Email == null) return;
+
+        var createResult = await UserManager.CreateAsync(user, "MyPwd@123");
+        if (createResult.Succeeded)
+        {
+            await LoadUsersAndRoles(); // refresh list
+        }
+        else
+        {
+            ErrorMessage = string.Join("; ", createResult.Errors.Select(e => e.Description));
+        }
+        StateHasChanged();
+    }
+    
+    private async Task ConfirmDeleteUser(ApplicationUser user)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete user {user.UserName}?");
+        if (confirmed)
+        {
+            await UserManager.DeleteAsync(user);
+            await LoadUsersAndRoles();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadUsersAndRoles()
+    {
+        var users = await UserManager.Users.OrderBy(u => u.Email).ToListAsync();
+        usersWithRoles.Clear();
+        foreach (var u in users)
+        {
+            var roles = (await UserManager.GetRolesAsync(u)).ToList();
+            usersWithRoles.Add(new UserRoleViewModel
+            {
+                User = u,
+                Roles = roles,
+                IsToggling = false
+            });
+        }
+        _projects = (await DataService.ReadFromCacheOrDb(new Project())).Item1;
+    }
+    
+    private async Task AddProjectSelected(ChangeEventArgs e, string userId)
+    {
+        var selectedTag = e.Value?.ToString();
+
+        if (string.IsNullOrEmpty(selectedTag))
+            return;
+
+        await AddProjectAsyn(userId, selectedTag);
+
+        // Close dropdown for this specific user only
+        showProjectDropdown[userId] = false;
+        StateHasChanged();
+    }
+    private async Task AddProjectAsyn(string userId, string projectTag)
+    {
+        if (string.IsNullOrEmpty(projectTag)) return;
+
+        // Find the project
+        var project = _projects.FirstOrDefault(p => p.Tag == projectTag);
+        if (project == null) return;
+
+        // Find the actual ApplicationUser object
+        var user = usersWithRoles.FirstOrDefault(u => u.User.Id == userId)?.User;
+        if (user == null || string.IsNullOrEmpty(user.UserName)) return;
+
+        // Deserialize current ProjUsers list (it's stored as JSON string)
+        var userList = string.IsNullOrEmpty(project.ProjUsers)
+            ? new List<string>()
+            : JsonSerializer.Deserialize<List<string>>(project.ProjUsers)!;
+
+        // Add username if not already there
+        if (!userList.Contains(user.UserName))
+        {
+            userList.Add(user.UserName);
+            project.ProjUsers = JsonSerializer.Serialize(userList);
+
+            // Save to DB
+            await MyTable.UpdateParameter(project, project.UID, ["ProjUsers"]);
+
+            // Optional: refresh projects from DB/cache so UI stays in sync
+            // (_projects, _, _, _) = await DataService.ReadFromCacheOrDb(new Project());
+        }
+
+        StateHasChanged();
+    }
     
     private async Task RemoveProjectAsyn(string userId, string selectedProjectName)
     {
-        // remove the user from the selected project's user's list
         var selectedProject = _projects.Find(p => p.Tag == selectedProjectName);
-        var selectedProjectUserList = selectedProject?.ProjUsers is null? []: JsonSerializer.Deserialize<List<string>>(selectedProject.ProjUsers)!;
-        selectedProjectUserList?.Add(userId);
-        selectedProject.ProjUsers = JsonSerializer.Serialize(selectedProjectUserList);
-        await MyTable.UpdateParameter(selectedProject,selectedProject.UID,["ProjUsers"]);
+        if (selectedProject == null) return;
+
+        var userList = string.IsNullOrEmpty(selectedProject.ProjUsers)
+            ? new List<string>()
+            : JsonSerializer.Deserialize<List<string>>(selectedProject.ProjUsers)!;
+
+        var user = usersWithRoles.First(u => u.User.Id == userId).User;
+
+        userList.RemoveAll(u => u == user.UserName); // Remove properly
+
+        selectedProject.ProjUsers = JsonSerializer.Serialize(userList);
+        await MyTable.UpdateParameter(selectedProject, selectedProject.UID, ["ProjUsers"]);
+
+        StateHasChanged();
     }
     
     private void ShowAddProjectModal()

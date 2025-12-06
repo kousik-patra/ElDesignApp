@@ -215,6 +215,8 @@
     [Parameter] public T? Item { get; set; }
     [Parameter] public string[]? Fields { get; set; } // field list to display
     [Parameter] public EventCallback<(string, string, string, string, string)> OnClose { get; set; }
+    
+    private object? GetPropertyValue(PropertyInfo prop) => prop.GetValue(Item);
 
     //[Parameter] public ModalDialogType DialogType { get; set; }
     private ElementReference modalDialogElementRef;

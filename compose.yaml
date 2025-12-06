@@ -1,7 +1,48 @@
 ﻿services:
+  eldesignapp-redis:
+    image: redis:7-alpine
+    container_name: eldesignapp-redis
+    command: --save 60 1 --loglevel warning --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   eldesignapp:
     image: eldesignapp
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: eldesignapp-app
+    ports:
+      - "6001:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:80
+      - ConnectionStrings__DefaultConnection=Server=${SQL_SERVER},9669;Database=${SQL_DB};User Id=${SQL_USER};Password=${SQL_PASSWORD};TrustServerCertificate=True;MultipleActiveResultSets=true;Encrypt=False
+      - Redis__ConnectionString=eldesignapp-redis:6379,password=${REDIS_PASSWORD}
+    volumes:
+      - ~/.aspnet/https:/https:ro
+      - aspnet-data-protection:/app/dataprotection-keys
+    depends_on:
+      eldesignapp-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
 
+volumes:
+  redis-data:
+    name: eldesignapp-redis-data
+  aspnet-data-protection:

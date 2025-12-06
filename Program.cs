@@ -71,9 +71,6 @@ builder.Services.AddDistributedMemoryCache();
     builder.Services.AddSingleton<IGlobalDataService, GlobalDataService>();
 
 
-
-
-
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

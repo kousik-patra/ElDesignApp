@@ -18,7 +18,14 @@
         <Folder Include="wwwroot\dist\" />
     </ItemGroup>
 
-    <Target Name="RunNpmBuild" BeforeTargets="Build">
+<!--    <Target Name="RunNpmBuild" BeforeTargets="Build">-->
+<!--        <Exec Command="npm install" WorkingDirectory="NpmJS" Condition="!Exists('NpmJS/node_modules')" />-->
+<!--        <Exec Command="npm run build:dev" WorkingDirectory="NpmJS" Condition="'$(Configuration)' == 'Debug'" />-->
+<!--        <Exec Command="npm run build:prod" WorkingDirectory="NpmJS" Condition="'$(Configuration)' == 'Release'" />-->
+<!--    </Target>-->
+
+    <Target Name="RunNpmBuild" BeforeTargets="Build" Condition="'$(CI)' != 'true' And Exists('NpmJS/package.json')">
+        <Message Text="Running NPM install and build..." Importance="high" />
         <Exec Command="npm install" WorkingDirectory="NpmJS" Condition="!Exists('NpmJS/node_modules')" />
         <Exec Command="npm run build:dev" WorkingDirectory="NpmJS" Condition="'$(Configuration)' == 'Debug'" />
         <Exec Command="npm run build:prod" WorkingDirectory="NpmJS" Condition="'$(Configuration)' == 'Release'" />

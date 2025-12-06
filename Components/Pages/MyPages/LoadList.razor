@@ -11,12 +11,15 @@
 
 @using ElDesignApp.Data
 @using ElDesignApp.Models
+@using Microsoft.Extensions.Logging;
+
 @inject Services.IDataRetrievalService DataService
 @inject Services.IMyTableService MyTable
 @inject Services.ICacheService CacheService
 @inject Services.IGlobalDataService GlobalData
 @inject Services.ILayoutFunctionService LayoutFunction
 @inject Services.IMyFunctionService MyFunction
+
 
 
 @inject NavigationManager MyNavigationManager
@@ -74,6 +77,8 @@
 </div>
 
 @code {
+    
+    private ILogger<DataRetrievalService>? _logger;
 
     private List<Load>? _list = [];
     private List<Load>? _listDb = [];
@@ -96,6 +101,7 @@
     private string _tableWarningMessage = "";
     private string _tableErrorMessage = "";
     private string _resultMessage = "";
+    private string? _logInfo, _logWarning, _logError;
 
     private readonly List<string> _displayItems =
     [
@@ -132,16 +138,19 @@
     protected override async Task OnInitializedAsync()
     {
         //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name}");
-
+        (GlobalData.CableData, _logInfo, _logWarning, _logError)
+            = await DataService.ReadFromCacheOrDb(new Models.CableData());
+        LogResult(_logInfo, _logWarning, _logError);
         try
         {
             _isLoading = true;
             StateHasChanged(); // Initial loading state
 
-            (GlobalData.Loads, string logInfo, string logWarning, string logError)
+            (GlobalData.Loads, _logInfo, _logWarning, _logError)
                 = await DataService.ReadFromCacheOrDb(new Load());
+            _logger.LogInformation(_logInfo);
 
-            var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            var displayText = MyFunction.LogMessage(_logInfo, _logWarning, _logError);
             Debug.WriteLine(displayText);
             await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
 
@@ -324,18 +333,26 @@
     private async Task Load(bool firstRender, bool isRefresh = false)
     {
         (GlobalData.Loads, string logInfo, string logWarning, string logError) = isRefresh ? await DataService.RefreshCacheAndReadFromDb(new Load()) : await DataService.ReadFromCacheOrDb(new Load());
-
+    
         GlobalData.Loads.ForEach(load => LayoutFunction.LoadUpdate(load));
         GlobalData.Loads = MyTable.AssignSequenceToList(GlobalData.Loads);
-
+    
         UpdateDbLocalVariable(GlobalData.Loads);
-
+    
         await Task.Delay(1000);
         _loadChild = true;
-
+    
         System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
                                            $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - " +
                                            $"First Render:{firstRender} Refresh: {isRefresh} Load Child? {_loadChild}");
+    }
+
+    private void LogResult(string? info, string? warning, string? error )
+    {
+        if (_logger == null) return;
+        if (info != null) _logger.LogInformation(info);
+        if (warning != null) _logger.LogWarning(warning);
+        if (error != null) _logger.LogError(error);
     }
 
 }
