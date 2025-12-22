@@ -1,4 +1,6 @@
 using System;
+using System.Data;
+using ElDesignApp.Authorization;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -7,16 +9,29 @@ using ElDesignApp.Components.Account;
 using ElDesignApp.Data;
 using ElDesignApp.Middleware;
 using ElDesignApp.Services;
+using ElDesignApp.Services.Cache;
+using ElDesignApp.Services.DataBase;
+using ElDesignApp.Services.Global;
+using ElDesignApp.Services.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Resend;
+using ElDesignApp.Constants;
+using OfficeOpenXml;
+using ICacheService = ElDesignApp.Services.Cache.ICacheService;
+using IGlobalDataService = ElDesignApp.Services.Global.IGlobalDataService;
 
 
 var builder = WebApplication.CreateBuilder(args);
+
+
+ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -62,13 +77,45 @@ builder.Services.AddDistributedMemoryCache();
 
 // Add custom services
     builder.Services.Configure<ConnectionStrings>(builder.Configuration.GetSection("ConnectionStrings"));
+    builder.Services.AddScoped<IMiscService, MiscService>();
+    builder.Services.AddScoped<IDbConnectionFactory, SqlConnectionFactory>();
     builder.Services.AddScoped<IMyTableService, MyTableService>();
+    builder.Services.AddScoped<ITableService, TableService>();
     builder.Services.AddScoped<IDataRetrievalService, DataRetrievalService>();
     builder.Services.AddScoped<IMyFunctionService, MyFunctionService>();
     builder.Services.AddScoped<ILayoutFunctionService, LayoutFunctionService>();
     builder.Services.AddScoped<ICacheService, CacheService>();
+    builder.Services.AddScoped<ICacheAdapter, CacheAdapter>();
     builder.Services.AddScoped<ISystemStudyFunctionService, SystemStudyFunctionService>();
     builder.Services.AddSingleton<IGlobalDataService, GlobalDataService>();
+    builder.Services.AddScoped<IRoleAuthorizationService, RoleAuthorizationService>();
+    builder.Services.AddScoped<IAuthorizationHandler, HardRoleHandler>();
+
+    builder.Services.AddScoped<IDbConnection>(sp => 
+        new SqlConnection(sp.GetRequiredService<IConfiguration>()
+            .GetConnectionString("DefaultConnection")));
+
+
+    builder.Services.AddAuthorizationCore(options =>
+    {
+        options.AddPolicy("RequireSuperAdmin", policy =>
+            policy.RequireRole(HardRoles.SuperAdmin));
+    
+        options.AddPolicy("RequireAdmin", policy =>
+            policy.RequireRole(HardRoles.Admin, HardRoles.SuperAdmin));
+    
+        options.AddPolicy("RequireUser", policy =>
+            policy.RequireRole(HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
+    
+        options.AddPolicy("RequireReport", policy =>
+            policy.RequireRole(HardRoles.Report, HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
+    
+        options.AddPolicy("RequireGuest", policy =>
+            policy.RequireRole(HardRoles.Guest, HardRoles.Report, HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
+    });
+
+    builder.Services.AddScoped<IAuthorizationHandler, HardRoleHandler>();
+
 
 
 var app = builder.Build();
@@ -87,9 +134,12 @@ else
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+
 if (app.Environment.IsDevelopment())
 {
-    app.UseMiddleware<DevAutoLoginMiddleware>();
+    // comment is auto logoin as seed (admin) is not required
+    //app.UseMiddleware<DevAutoLoginMiddleware>();
 }
 
 

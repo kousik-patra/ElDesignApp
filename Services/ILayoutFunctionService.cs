@@ -22,6 +22,8 @@ using MathNet.Numerics.LinearRegression;
 using Microsoft.AspNetCore.Components.Forms;
 using OfficeOpenXml;
 using ElDesignApp.Services;
+using ElDesignApp.Services.Cache;
+using ElDesignApp.Services.Global;
 using Force.DeepCloner;
 using Microsoft.Extensions.Logging;
 
@@ -1353,16 +1355,11 @@ public class LayoutFunctionService : ILayoutFunctionService
             var sc = "";
             // create two buses (nodes) for this transformer or any other type of the branch
             // From side
-            if (Bfs.Count != 1)
-                bv1 = new Bus("", bfT, vr, sc);
-            else
-                bv1 = Bfs[0];
+            //bv1 = new Bus("", bfT, vr, sc);
+            bv1 = Bfs.Count != 1 ? new Bus { Tag = bfT, VR = vr, SC = sc } : Bfs[0];
             //
             // To side
-            if (Bts.Count != 1)
-                bv2 = new Bus("", btT, vr, sc);
-            else
-                bv2 = Bts[0];
+            bv2 = Bts.Count != 1 ? new Bus { Tag = btT, VR = vr, SC = sc } : Bts[0];
             //
             bv1.Cn.Add(bv2.Tag ?? "");
             bv2.Cn.Add(bv1.Tag ?? "");

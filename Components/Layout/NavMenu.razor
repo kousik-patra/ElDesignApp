@@ -1,34 +1,46 @@
-﻿@implements IDisposable
+﻿@using System.Security.Claims
+@using Microsoft.AspNetCore.Identity
+@implements IDisposable
+@rendermode InteractiveServer
 
 @inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserManager<ApplicationUser> UserManager
 
-<div class="top-row ps-3 navbar navbar-dark">
+<div class="top-row ps-3 navbar navbar-brand">
     <div class="container-fluid">
-        <a class="navbar-brand" href="">ElDesignApp</a>
+        <a class="navbar-brand d-flex align-items-center" href="" @onclick="ToggleSidebar" @onclick:preventDefault>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="me-2" viewBox="0 0 16 16">
+                <path d="M5.52.359A.5.5 0 0 1 6 0h4a.5.5 0 0 1 .474.658L8.694 6H12.5a.5.5 0 0 1 .395.807l-7 9a.5.5 0 0 1-.873-.454L6.823 9.5H3.5a.5.5 0 0 1-.48-.641l2.5-8.5z"/>
+            </svg>
+            @if (!IconOnly) { <span>ElDesignApp</span> }
+        </a>
     </div>
 </div>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler"/>
-
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+<div class="nav-scrollable @(IconOnly ? "sidebar-collapsed" : "sidebar-expanded")">
     <nav class="nav flex-column">
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> 
+                @if (!IconOnly) { <span>Home</span> }
             </NavLink>
         </div>
 
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="auth">
-                <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Auth Required
+                <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> 
+                @if (!IconOnly) { <span>Auth Required</span> }
             </NavLink>
         </div>
-
+        
         <AuthorizeView>
             <Authorized>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Manage">
-                        <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span> @context.User.Identity?.Name
+                        <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span> 
+                        @if (!IconOnly) { <span>@context.User.Identity?.Name</span> }
+                        
                     </NavLink>
                 </div>
                 <div class="nav-item px-3">
@@ -36,7 +48,9 @@
                         <AntiforgeryToken/>
                         <input type="hidden" name="ReturnUrl" value="@currentUrl"/>
                         <button type="submit" class="nav-link">
-                            <span class="bi bi-arrow-bar-left-nav-menu" aria-hidden="true"></span> Logout
+                            <span class="bi bi-arrow-bar-left-nav-menu" aria-hidden="true"></span> 
+                            @if (!IconOnly) { <span>Logout</span> }
+                            
                         </button>
                     </form>
                 </div>
@@ -44,86 +58,150 @@
             <NotAuthorized>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Register">
-                        <span class="bi bi-person-nav-menu" aria-hidden="true"></span> Register
+                        <span class="bi bi-person-nav-menu" aria-hidden="true"></span>
+                        @if (!IconOnly) { <span>Register</span> }
+                        
                     </NavLink>
                 </div>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="Account/Login">
-                        <span class="bi bi-person-badge-nav-menu" aria-hidden="true"></span> Login
+                        <span class="bi bi-person-badge-nav-menu" aria-hidden="true"></span>
+                        @if (!IconOnly) { <span>Login</span> }
+                        
                     </NavLink>
                 </div>
             </NotAuthorized>
         </AuthorizeView>
         
-        <AuthorizeView Roles="SuperAdmin">
-            <!-- SUPER ADMIN GROUP -->
-            <CollapsibleNavGroup Title="Data"
-                                 Icon="bi bi-database-fill"
-                                 StartExpanded="true">
-                <NavLink class="nav-link" href="admin/users">
-                    <span class="oi oi-people" aria-hidden="true"></span> User Management
-                </NavLink>
+        @* SUPER ADMIN SECTION - Uses Policy instead of Role *@
+        <AuthorizeView Policy="RequireSuperAdmin">
+            <Authorized>
+                <CollapsibleNavGroup Title="Super Admin"
+                                     Icon="bi bi-shield-fill-check"
+                                     StartExpanded="false"
+                                     IconOnly="@IconOnly">
+                    <NavLink class="nav-link" href="admin/users">
+                        <span class="bi bi-people-fill" aria-hidden="true"></span>
+                        @if (!IconOnly) { <span>User Management</span> }
+                        
+                    </NavLink>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="database-transfer">
+                            <span class="bi bi-arrow-repeat" aria-hidden="true"></span> 
+                            @if (!IconOnly) { <span>Database Transfer</span> }
+                            
+                        </NavLink>
+                    </div>
+                </CollapsibleNavGroup>
+            </Authorized>
+        </AuthorizeView>
+        
+        
+        @* ADMIN SECTION - Uses Policy *@
+        <AuthorizeView Policy="RequireAdmin">
+            <Authorized>
+                <CollapsibleNavGroup Title="Administration"
+                                     Icon="bi bi-gear-fill"
+                                     StartExpanded="false"
+                                     IconOnly="@IconOnly">
+                    <div class="nav-item px-3 py-1">
+                        <NavLink class="nav-link py-2" href="cableData">
+                            <i class="bi bi-lightning-charge-fill me-2"></i>
+                            @if (!IconOnly) { <span>Cable Data</span> }
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3 py-1">
+                        <NavLink class="nav-link py-2" href="motorData">
+                            <i class="bi bi-fan me-2"></i>
+                            @if (!IconOnly) { <span>Motor Data</span> }
+                        </NavLink>
+                    </div>
+                </CollapsibleNavGroup>
+            </Authorized>
+        </AuthorizeView>
+        
+        @* USER SECTION - Uses Policy (includes Admin and SuperAdmin) *@
+        <AuthorizeView Policy="RequireUser">
+            <Authorized>
+                <CollapsibleNavGroup Title="Applications"
+                                     Icon="bi bi-app-indicator"
+                                     StartExpanded="true"
+                                     IconOnly="@IconOnly">
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="segment">
+                            <span class="bi bi-plus-square-fill" aria-hidden="true"></span>
+                            @if (!IconOnly) { <span>Segment</span> }
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="loadList">
+                            <span class="bi bi-envelope-fill" aria-hidden="true"></span>
+                            @if (!IconOnly) { <span>Load List</span> }
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="sld">
+                            <span class="bi bi-diagram-3-fill" aria-hidden="true"></span>
+                            @if (!IconOnly) { <span>SLD</span> }
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="cableSchedule">
+                            <span class="bi bi-card-checklist" aria-hidden="true"></span>
+                            @if (!IconOnly) { <span>Cable Schedule</span> }
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3 py-1">
+                        <NavLink class="nav-link py-2" href="systemStudy">
+                            <i class="bi bi-graph-up-arrow me-2"></i>
+                            @if (!IconOnly) { <span>System Study</span> }
+                        </NavLink>
+                    </div>
+                </CollapsibleNavGroup>
+            </Authorized>
+        </AuthorizeView>
+        
+        @* GUEST USER SECTION - Uses Policy (includes all roles) *@
+        <AuthorizeView Policy="RequireReport">
+            <Authorized>
                 <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="database-transfer">
-                        <span class="bi bi-arrow-repeat" aria-hidden="true"></span> Database Transfer
+                    <NavLink class="nav-link" href="reports">
+                        <span class="bi bi-file-earmark-text" aria-hidden="true"></span>
+                        @if (!IconOnly) { <span>Reports</span> }
                     </NavLink>
                 </div>
-            </CollapsibleNavGroup>
+            </Authorized>
         </AuthorizeView>
         
-        <AuthorizeView Roles="SuperAdmin, Admin, User" >
-            <!-- === APP PAGES === -->
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="segment">
-                    <span class="bi bi-plus-square-fill" aria-hidden="true"></span> Segment
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="loadList">
-                    <span class="bi bi-envelope-fill" aria-hidden="true"></span> Load List
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="sld">
-                    <span class="bi bi-diagram-3-fill" aria-hidden="true"></span> SLD
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="cableSchedule">
-                    <span class="bi bi-card-checklist" aria-hidden="true"></span> Cable Schedule
-                </NavLink>
-            </div>
-            <div class="nav-item px-3 py-1">
-                <NavLink class="nav-link py-2" href="systemStudy">
-                    <i class="bi bi-graph-up-arrow me-2"></i> System Study
-                </NavLink>
-            </div>
-        </AuthorizeView>
         
-        <AuthorizeView Roles="Admin" >
-            <!-- DATA GROUP -->
-            <CollapsibleNavGroup Title="Data"
-                                 Icon="bi bi-database-fill"
-                                 StartExpanded="true">
-                <div class="nav-item px-3 py-1">
-                    <NavLink class="nav-link py-2" href="cableData">
-                        <i class="bi bi-lightning-charge-fill me-2"></i> Cable Data
-                    </NavLink>
+        @* Uncomment for debugging *@
+        @* <AuthorizeView>
+            <Authorized>
+                <div class="alert alert-info">
+                    <strong>Debug Info:</strong><br/>
+                    User: @context.User.Identity?.Name<br/>
+                    Claims Roles: @string.Join(", ", context.User.Claims.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value))<br/>
                 </div>
-                <div class="nav-item px-3 py-1">
-                    <NavLink class="nav-link py-2" href="motorData">
-                        <i class="bi bi-fan me-2"></i> Motor Data
-                    </NavLink>
-                </div>
-            </CollapsibleNavGroup>
-        </AuthorizeView>
-        
+            </Authorized>
+        </AuthorizeView> *@
     </nav>
+</div>
+<div class="nav-item px-3 toggle-sidebar">
+    <button class="nav-link btn btn-link" @onclick="ToggleSidebar" @onclick:stopPropagation>
+        <span class="bi @(IconOnly ? "bi-arrow-right" : "bi-arrow-left")" aria-hidden="true"></span>
+        @if (!IconOnly) { <span>Collapse</span> }
+    </button>
 </div>
 
 @code {
     private string? currentUrl;
+    private bool IconOnly { get; set; }
 
+    private void ToggleSidebar()
+    {
+        IconOnly = !IconOnly;
+    }
+    
     protected override void OnInitialized()
     {
         currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
@@ -140,5 +218,4 @@
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
     }
-
 }

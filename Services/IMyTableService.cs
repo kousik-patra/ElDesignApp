@@ -1,13 +1,8 @@
 using System;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.IO;
 using System.Linq;
-using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-
-namespace ElDesignApp.Services;
-
-
+using System.Linq.Expressions;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations;
@@ -19,102 +14,69 @@ using System.Numerics;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+
 using ElDesignApp.Models;
+using ElDesignApp.Services.Cache;
+using ElDesignApp.Services.Global;
 using Dapper;
 using MathNet.Numerics.LinearAlgebra;
 using MathNet.Numerics.LinearRegression;
 using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
 using OfficeOpenXml;
+
+namespace ElDesignApp.Services;
+
+
+
 
 public interface IMyTableService
 {
-       /// <summary></summary>
         Task<List<T>?> GetList<T>(T item, string selectedProject= "");
-        /// <summary></summary>
+
         Task<List<T>?> LoadData<T, U>(string sql, U parameters);
-
-        /// <summary></summary>
+        Task<int> SaveDataAsync<T>(string sql, T parameters, int? commandTimeout = null);
+        Task BulkCopyDataTableAsync<T>(List<T>? list, string selectedProject = "TestProject");
+        Task<int> InsertItemAsync<T>(T item) where T : class;
+        Task<bool> AnyAsync<T>(Expression<Func<T, bool>> predicate) where T : class;
+        Task UpdateAsync<T>(List<T> list, List<T> originalList, string updatedBy = "KP") where T : class;
         Task SaveData<T>(string sql, T parameters);
-
-        /// <summary>
-        ///     Bulk Copy by deleting the existing record and refreshing as per List T
-        /// </summary>
-        /// <param name="list"></param>
-        /// <typeparam name="T"></typeparam>
-        /// <returns></returns>
-        Task BulkCopyDataTableAsync<T>(List<T>? list, String selectedProject = "TestProject");
-
-        /// <summary></summary>
         Task DeleteData<T>(string sql);
-
-        /// <summary></summary>
         Task Update<T>(List<T> list, List<T> originalList, String updatedBy = "KP");
-
-        /// <summary></summary>
         Task UpdateItem<T>(T item, Guid uid);
-
-        /// <summary></summary>
+        Task<int> UpdateParameterAsync<T>(T item, params string[]? fields);
         Task UpdateParameter<T>(T item, Guid uid, List<string> fields);
-
-        /// <summary></summary>
         Task UpdateParameterItems<T>(T item, string uidstrings, List<string> fields);
-
-        /// <summary></summary>
         List<T> AssignSequenceToList<T>(List<T> items);
-
-        /// <summary>
-        ///     import list of item type T from excel file e with headers matching the properties of type T
-        /// </summary>
-        /// <param name="e"></param>
-        /// <param name="item"></param>
-        /// <typeparam name="T"></typeparam>
-        /// <returns></returns>
-        Task<(List<T> Items, string Summary)> ImportFromExcel<T>(InputFileChangeEventArgs e, T item);
-
-        /// <summary></summary>
+        Task<(List<T> Items, string Summary)> ImportFromExcel<T>(InputFileChangeEventArgs e, T item, string sheetName = null);
+        Task<(List<T> Items, string Summary)> ImportFromExcel<T>(IBrowserFile? file, T item, string? sheetName = null);
         Task InsertItem<T>(T item);
-
-        /// <summary></summary>
         Task DeleteItem<T>(T item, Guid uid);
-
-        /// <summary></summary>
         byte[] GenerateExcelWorkbookByte<T>(List<T>? list);
-
-        /// <summary></summary>
         Task ExportExcelList<T>(List<T> items);
-
-        /// <summary></summary>
         Task DeleteItem1(string dboName, string field, string fieldValue);
-
-        /// <summary></summary>
         List<string> GetSqlFieldsNames(string tableName);
-
         Task<List<string>> GetTablesAsync(string connectionString);
-
         Task CopyTablesAsync(string sourceConnectionString, string destinationConnectionString,
             List<string> tablesToCopy);
-
         Task<DataTable> GetTableSchemaAsync(SqlConnection connection, string tableName);
-
         Task CreateTableAsync(SqlConnection connection, string tableName, DataTable schemaTable);
-
         Task DropTableIfExistsAsync(SqlConnection connection, string tableName);
-
         Task CopyDataAsync(SqlConnection sourceConnection, SqlConnection destinationConnection,
             string tableName);
-
 
 }
 
 public class SqlConnectionConfiguration
 {
-    /// <summary></summary>
     public SqlConnectionConfiguration(string connectionString)
     {
         ConnectionString = connectionString;
     }
 
-    /// <summary></summary>
     public string ConnectionString { get; }
 }
 
@@ -123,16 +85,19 @@ public class MyTableService : IMyTableService
     {
         
         private readonly IConfiguration _configuration;
+        private readonly IDbConnection _connection;
         private readonly ICacheService _cache;
         private readonly IGlobalDataService _globalData;
         private readonly ILogger<DataRetrievalService> _logger;
+        
         
         // Constructor for dependency injection
         public MyTableService(
             IGlobalDataService globalData,
             IConfiguration configuration,
             ICacheService cache,
-            ILogger<DataRetrievalService> logger
+            ILogger<DataRetrievalService> logger,
+            IDbConnection  connection
             )
         {
             _cache = cache;
@@ -140,10 +105,142 @@ public class MyTableService : IMyTableService
             _configuration = configuration;
             GetConnectionString();
             _logger = logger;
+
+            var connectionString = configuration.GetConnectionString("DefaultConnection")
+                                   ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
+
+            _connection = new SqlConnection(connectionString);
+            
+        }
+        
+        // Reusable Execute with return value
+        private async Task<int> ExecuteAsync<T>(string sql, T parameters, int? commandTimeout = null)
+        {
+            try
+            {
+                return await _connection.ExecuteAsync(sql, parameters, commandTimeout: commandTimeout ?? 30);
+            }
+            catch (SqlException ex) when (ex.Number is 2627 or 2601)
+            {
+                _logger.LogWarning(ex, "Duplicate key: {Sql}", sql);
+                throw new InvalidOperationException("A record with this key already exists.", ex);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SQL Error: {Sql}", sql);
+                throw;
+            }
         }
 
+        private async Task<T?> QueryFirstOrDefaultAsync<T>(string sql, object? parameters = null)
+        {
+            return await _connection.QueryFirstOrDefaultAsync<T>(sql, parameters);
+        }
+        
+ /// <summary>
+/// Simpler version that takes property name and value directly
+/// </summary>
+public async Task<bool> AnyAsync<T>(string propertyName, object value) where T : class
+{
+    var tableName = typeof(T).Name;
+    var sql = $"SELECT TOP 1 1 FROM dbo.[{tableName}] WHERE [{propertyName}] = @Value";
 
+    try
+    {
+        var result = await _connection.QueryFirstOrDefaultAsync<int?>(sql, new { Value = value });
+        return result == 1;
+    }
+    catch (Exception ex)
+    {
+        System.Diagnostics.Debug.WriteLine($"AnyAsync SQL Error: {ex.Message}");
+        throw new InvalidOperationException($"Database query failed for {tableName}.{propertyName}: {ex.Message}", ex);
+    }
+}
+
+/// <summary>
+/// Expression-based version for backward compatibility
+/// </summary>
+public async Task<bool> AnyAsync<T>(Expression<Func<T, bool>> predicate) where T : class
+{
+    // Extract property name and value from the expression
+    var (propertyName, value) = ExtractPropertyAndValue(predicate);
+    
+    // Use the simpler overload
+    return await AnyAsync<T>(propertyName, value);
+}
+
+private (string PropertyName, object? Value) ExtractPropertyAndValue<T>(Expression<Func<T, bool>> predicate)
+{
+    if (predicate.Body is not BinaryExpression { NodeType: ExpressionType.Equal } binExpr)
+    {
+        throw new NotSupportedException("Only simple equality checks like p => p.Tag == value are supported.");
+    }
+
+    // Determine which side is the property and which is the value
+    MemberExpression? memberExpr = null;
+    Expression? valueExpr = null;
+
+    if (binExpr.Left is MemberExpression leftMember && leftMember.Expression is ParameterExpression)
+    {
+        memberExpr = leftMember;
+        valueExpr = binExpr.Right;
+    }
+    else if (binExpr.Right is MemberExpression rightMember && rightMember.Expression is ParameterExpression)
+    {
+        memberExpr = rightMember;
+        valueExpr = binExpr.Left;
+    }
+    else
+    {
+        throw new NotSupportedException("Expression must compare a property to a value.");
+    }
+
+    var propertyName = memberExpr.Member.Name;
+
+    // Extract the value
+    object? value;
+    try
+    {
+        var lambda = Expression.Lambda<Func<object>>(Expression.Convert(valueExpr, typeof(object)));
+        value = lambda.Compile()();
+    }
+    catch (Exception ex)
+    {
+        throw new InvalidOperationException($"Failed to extract comparison value: {ex.Message}", ex);
+    }
+
+    return (propertyName, value);
+}
  
+        public async Task<int> InsertItemAsync<T>(T item) where T : class
+        {
+            var type = typeof(T);
+            var tableName = type.Name;
+
+            // CRITICAL CHANGE: Use the DB-driven function to get actual column names
+            List<string> dbColumnNames = await GetSqlFieldsNamesAsync(tableName);
+
+            // 1. Filter C# properties to include only those that match a database column name
+            var propertiesToInsert = type.GetProperties()
+                .Where(p => dbColumnNames.Contains(p.Name))
+                .ToList();
+
+            if (!propertiesToInsert.Any())
+                throw new InvalidOperationException($"No matching database columns found for properties in type {tableName}");
+
+            // 2. Build the SQL statement using the database column names and corresponding parameter names
+            var columns = propertiesToInsert.Select(p => $"[{p.Name}]");
+            var parameters = propertiesToInsert.Select(p => $"@{p.Name}");
+
+            var sql = $"INSERT INTO dbo.[{tableName}] ({string.Join(", ", columns)}) " +
+                      $"VALUES ({string.Join(", ", parameters)})";
+
+            // 3. Pass the full 'item' to ExecuteAsync. Dapper will automatically find 
+            //    matching parameters (@ColumnName) from the 'item' object. 
+            //    It will ignore extra properties on 'item' that were not included in the SQL.
+            return await ExecuteAsync(sql, item);
+        }
+       
         
         private string GetConnectionString()
         {
@@ -156,6 +253,164 @@ public class MyTableService : IMyTableService
 
             return connectionString;
         }
+        
+        
+        /// <summary>
+        /// Generates and executes a SQL UPDATE statement for specific changed fields on a single item.
+        /// </summary>
+        /// <typeparam name="T">The type of the item being updated.</typeparam>
+        /// <param name="item">The object containing the new values.</param>
+        /// <param name="uid">The unique identifier used in the WHERE clause.</param>
+        /// <param name="changedFields">A list of property names that have changed.</param>
+        private async Task<int> UpdateParameterAsync<T>(T item, Guid uid, List<string> changedFields) where T : class
+        {
+            // Define the expected field names as constants/strings
+            const string updatedOnFieldName = "UpdatedOn";
+            const string updatedByFieldName = "UpdatedBy";
+    
+            var type = typeof(T);
+            var tableName = type.Name;
+    
+            // Get the updatedBy value from the item
+            // Note: We assume the UpdateAsync method has already set the UpdatedBy property on 'item' 
+            // before calling this helper, or we use the value provided in the UpdateAsync signature.
+            var updatedByValue = type.GetProperty(updatedByFieldName)?.GetValue(item) as string;
+
+            // 1. Identify all fields to set in the UPDATE statement
+            var updateClauses = changedFields
+                .Select(field => $"[{field}] = @{field}");
+
+            // 2. Add UpdatedOn and UpdatedBy fields using their string names
+            var updatedOnClause = $"[{updatedOnFieldName}] = @{updatedOnFieldName}";
+            var updatedByClause = $"[{updatedByFieldName}] = @{updatedByFieldName}";
+    
+            var setClauses = new List<string> { updatedOnClause, updatedByClause };
+            setClauses.AddRange(updateClauses);
+
+            // 3. Construct the full SQL UPDATE statement
+            var sql = $"UPDATE dbo.[{tableName}] SET {string.Join(", ", setClauses)} WHERE [UID] = @UID";
+
+            // 4. Create a dynamic parameter object
+            // Dapper will automatically map properties from 'item' if their names match the @parameters.
+            // We use DynamicParameters here to add the non-mapped audit fields and the UID.
+            var parameters = new DynamicParameters(item);
+    
+            // Explicitly add the necessary audit fields and the UID for the WHERE clause.
+            parameters.Add("@UID", uid);
+            parameters.Add($"@{updatedOnFieldName}", DateTime.Now);
+            parameters.Add($"@{updatedByFieldName}", updatedByValue); 
+
+            return await ExecuteAsync(sql, parameters);
+        }
+        
+        public async Task UpdateAsync<T>(List<T> list, List<T> originalList, string updatedBy = "KP") where T : class
+{
+    // Validate properties
+    var uidProperty = typeof(T).GetProperty("UID");
+    var updatedByProperty = typeof(T).GetProperty("UpdatedBy");
+    var updatedOnProperty = typeof(T).GetProperty("UpdatedOn");
+    var save2DbProperty = typeof(T).GetProperty("Save2DB");
+
+    if (uidProperty == null || updatedByProperty == null || updatedOnProperty == null)
+    {
+        throw new ArgumentException("Type T must have UID, UpdatedBy, and UpdatedOn properties.");
+    }
+
+    // Assuming you have a function GetSqlFieldsNames that returns property names that map to DB fields
+    var fields = GetSqlFieldsNames(typeof(T).Name); 
+    
+    var add = new List<T>();
+    var delete = new List<T>();
+
+    // Log start
+    Debug.WriteLine($"{DateTime.Now:HH:mm:ss.ffffff} - Update: Starting comparison for {list.Count} items.");
+
+    // Handle empty originalList case
+    if (!originalList.Any())
+    {
+        add.AddRange(list); // All items are new
+    }
+    else
+    {
+        // Identify items to delete (in originalList but not in list)
+        delete.AddRange(originalList.Where(orig => 
+            !list.Any(item => uidProperty.GetValue(item)?.ToString() == uidProperty.GetValue(orig)?.ToString())));
+
+        // Compare and identify items to add or update
+        var tasksCompare = list.Select(async item =>
+        {
+            var uid = uidProperty.GetValue(item)?.ToString();
+            var originalItem = originalList.FirstOrDefault(p => uidProperty.GetValue(p)?.ToString() == uid);
+
+            if (originalItem == null)
+            {
+                // New item
+                if (save2DbProperty == null || (save2DbProperty.GetValue(item) as bool? ?? true))
+                {
+                    add.Add(item);
+                }
+            }
+            else
+            {
+                // Check for changes in DB fields
+                var changedFields = fields
+                    .Where(field => typeof(T).GetProperty(field) != null)
+                    .Where(field =>
+                    {
+                        var property = typeof(T).GetProperty(field);
+                        var newValue = property!.GetValue(item);
+                        var oldValue = property!.GetValue(originalItem);
+                        return !Equals(newValue, oldValue); // Safer comparison
+                    })
+                    .ToList();
+
+                if (changedFields.Any())
+                {
+                    // CRITICAL CHANGE: Use the new UpdateParameterAsync
+                    await UpdateParameterAsync(item, uidProperty.GetValue(item) as Guid? ?? Guid.Empty, changedFields);
+                }
+            }
+        });
+
+        await Task.WhenAll(tasksCompare);
+    }
+
+    Debug.WriteLine($"{DateTime.Now:HH:mm:ss.ffffff} - Update: Comparison and updates completed.");
+
+    // Delete items
+    var tasksDelete = delete.Select(async item =>
+    {
+        var uid = uidProperty.GetValue(item) as Guid? ?? Guid.Empty;
+        // CRITICAL CHANGE: Use DeleteItemAsync (assuming you'll create one)
+        await DeleteItemAsync(item, uid); 
+    });
+    await Task.WhenAll(tasksDelete);
+    Debug.WriteLine($"{DateTime.Now:HH:mm:ss.ffffff} - Update: Deleted {delete.Count} items.");
+
+    // Add new items
+    var tasksAdd = add.Select(async item =>
+    {
+        updatedOnProperty.SetValue(item, DateTime.Now);
+        updatedByProperty.SetValue(item, updatedBy);
+        // CRITICAL CHANGE: Use InsertItemAsync (which you already provided)
+        await InsertItemAsync(item); 
+    });
+    await Task.WhenAll(tasksAdd);
+    
+    Debug.WriteLine($"{DateTime.Now:HH:mm:ss.ffffff} - Update: Added {add.Count} items.");
+    Debug.WriteLine($"{DateTime.Now:HH:mm:ss.ffffff} - Update: Update completed.");
+}
+        
+        public async Task<int> DeleteItemAsync<T>(T item, Guid uid) where T : class
+        {
+            var tableName = typeof(T).Name;
+            var sql = $"DELETE FROM dbo.[{tableName}] WHERE [UID] = @UID";
+    
+            // Note: ExecuteAsync takes an object for parameters, so using an anonymous object is fine.
+            return await ExecuteAsync(sql, new { UID = uid });
+        }
+        
+        
     /// <summary></summary>
     public async Task<List<T>?> LoadData<T, U>(string sql, U parameters)
     {
@@ -182,6 +437,117 @@ public class MyTableService : IMyTableService
         }
     }
 
+    public async Task<int> SaveDataAsync<T>(string sql, T parameters, int? commandTimeout = null)
+        => await ExecuteAsync(sql, parameters, commandTimeout);
+    
+    
+    
+/// <summary>
+/// Updates only the specified fields of an entity.
+/// Automatically finds the record using UID first → then falls back to unique fields like Tag, Code, Email, etc.
+/// No need to pass UID manually!
+/// </summary>
+/// <param name="item">The entity with updated values</param>
+/// <param name="fields">Fields to update (e.g. "TagDescription", "XEW")</param>
+/// <returns>Number of rows affected</returns>
+public async Task<int> UpdateParameterAsync<T>(T item, params string[]? fields)
+{
+    if (item == null) throw new ArgumentNullException(nameof(item));
+ if (fields == null || fields.Length == 0) return 0;
+
+ var type = typeof(T);
+ var tableName = type.Name;
+ var parameters = new DynamicParameters();
+
+ // Build SET clause
+ var sets = new List<string>();
+ foreach (var field in fields)
+ {
+     var prop = type.GetProperty(field)
+         ?? throw new ArgumentException($"Property '{field}' not found on type {tableName}");
+
+     var value = prop.GetValue(item);
+     parameters.Add($"@{field}", value);
+     sets.Add($"[{field}] = @{field}");
+ }
+
+ // Build smart WHERE clause
+ var whereClause = GetUniqueWhereClause(item, parameters, out bool hasUid);
+
+ var sql = $"UPDATE dbo.[{tableName}] SET {string.Join(", ", sets)} WHERE {whereClause}";
+
+ var rowsAffected = await ExecuteAsync(sql, parameters);
+
+ if (rowsAffected == 0 && hasUid)
+ {
+     _logger.LogWarning("UpdateParameterAsync: No rows updated for {Table} with UID {Uid}", tableName, parameters.Get<Guid>("@Uid"));
+ }
+
+ return rowsAffected;
+}
+
+
+/// <summary>
+/// Smart helper: finds the best way to identify the record
+/// Priority: UID → [Key] attribute → Tag/Code/Name/Email → throws if nothing found
+/// </summary>
+private string GetUniqueWhereClause<T>(T item, DynamicParameters parameters, out bool hasUid)
+{
+ hasUid = false;
+ var type = typeof(T);
+
+ // 1. Try UID property (most common case-sensitive: UID, Uid, Id, etc.)
+ var uidProp = type.GetProperty("UID") ?? type.GetProperty("Uid") ?? type.GetProperty("Id");
+ if (uidProp != null && uidProp.PropertyType == typeof(Guid) || uidProp.PropertyType == typeof(Guid?))
+ {
+     var uidValue = uidProp.GetValue(item);
+     if (uidValue is Guid uid && uid != Guid.Empty)
+     {
+         hasUid = true;
+         parameters.Add("@Uid", uid);
+         return "[UID] = @Uid";
+     }
+ }
+
+ // 2. Try property with [Key] attribute
+ var keyProp = type.GetProperties()
+     .FirstOrDefault(p => p.GetCustomAttribute<KeyAttribute>() != null);
+ if (keyProp != null)
+ {
+     var val = keyProp.GetValue(item);
+     if (val != null && !string.IsNullOrWhiteSpace(val.ToString()))
+     {
+         parameters.Add("@Key", val);
+         return $"[{keyProp.Name}] = @Key";
+     }
+ }
+
+ // 3. Fallback: common unique fields (you can customize this list)
+ var uniqueCandidates = new[] { "Tag", "Code", "Name", "Email", "UserName", "ProjectCode", "ProjectTag", "LoginId" };
+
+ var conditions = new List<string>();
+ foreach (var name in uniqueCandidates)
+ {
+     var prop = type.GetProperty(name);
+     if (prop == null) continue;
+
+     var val = prop.GetValue(item);
+     if (val == null || string.IsNullOrWhiteSpace(val.ToString())) continue;
+
+     var paramName = "@" + name;
+     parameters.Add(paramName, val);
+     conditions.Add($"[{name}] = {paramName}");
+ }
+
+ if (conditions.Count > 0)
+     return string.Join(" AND ", conditions);
+
+ // 4. Nothing found → fail fast fail
+ throw new InvalidOperationException(
+     $"Cannot update {type.Name}: No UID and no unique field (Tag/Code/Name/Email) has a value. " +
+     "Make sure at least one unique identifier is set on the entity.");
+}
+    
 
     /// <summary></summary>
     public async Task SaveData<T>(string sql, T parameters)
@@ -247,7 +613,23 @@ public class MyTableService : IMyTableService
         }
     }
 
+    public async Task<List<string>> GetSqlFieldsNamesAsync(string tableName)
+    {
+        // The connection string logic is typically handled by how _connection is instantiated.
+        // Assuming _connection is a Dapper-ready IDbConnection (like SqlConnection)
 
+        // SQL to get column names from the database
+        var query = @"SELECT COLUMN_NAME 
+                  FROM INFORMATION_SCHEMA.COLUMNS 
+                  WHERE TABLE_NAME = @TableName
+                  ORDER BY ORDINAL_POSITION"; // Added ORDER BY for consistency
+
+        // Use Dapper's QueryAsync to execute the query
+        var columns = await _connection.QueryAsync<string>(query, new { TableName = tableName });
+    
+        // Return the results as a List<string>
+        return columns.ToList();
+    }
     /// <summary></summary>
     public List<string> GetSqlFieldsNames(string tableName)
     {
@@ -356,13 +738,7 @@ public class MyTableService : IMyTableService
         }
     }
 
-/// <summary>
-/// Updates the database by comparing a new list with the original list.
-/// Adds new items, updates changed items, and deletes removed items.
-/// </summary>
-/// <param name="list">New list of items.</param>
-/// <param name="originalList">Original list from the database.</param>
-/// <param name="updatedBy">User performing the update (default: "KP").</param>
+
 public async Task Update<T>(List<T> list, List<T> originalList, string updatedBy = "KP")
 {
     // Validate properties
@@ -592,13 +968,8 @@ public async Task Update<T>(List<T> list, List<T> originalList, string updatedBy
         await SaveData(sql, item);
     }
 
-
-    /// <summary>
-    /// </summary>
-    /// <param name="items"></param>
-    /// <typeparam name="T"></typeparam>
-    /// <returns></returns>
-    public List<T> AssignSequenceToList<T>(List<T> items)
+    
+ public List<T> AssignSequenceToList<T>(List<T> items)
     {
         // Handle null or empty input
         if (items == null || items.Count == 0)
@@ -634,8 +1005,153 @@ public async Task Update<T>(List<T> list, List<T> originalList, string updatedBy
         return items.OrderBy(item => Convert.ToInt32(seqProperty.GetValue(item))).ToList();
     }
 
+public async Task<(List<T> Items, string Summary)> ImportFromExcel<T>(
+    IBrowserFile? file, 
+    T item, 
+    string? sheetName = null)
+{
+    var importedItems = new List<T>();
+    string summary;
 
-    public async Task<(List<T> Items, string Summary)> ImportFromExcel<T>(InputFileChangeEventArgs e, T item)
+    ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+    
+    if (file == null || file.Size == 0)
+    {
+        summary = "No file uploaded or file is empty.";
+        return (importedItems, summary);
+    }
+
+    try
+    {
+        await using var stream = file.OpenReadStream(file.Size);
+        using var package = new ExcelPackage();
+        await package.LoadAsync(stream);
+        
+        // Select worksheet by name or default to first
+        ExcelWorksheet? ws;
+        if (!string.IsNullOrEmpty(sheetName))
+        {
+            ws = package.Workbook.Worksheets[sheetName];
+            if (ws == null)
+            {
+                return (importedItems, $"Worksheet '{sheetName}' not found.");
+            }
+        }
+        else
+        {
+            ws = package.Workbook.Worksheets.FirstOrDefault();
+            if (ws == null) return (importedItems, "No worksheet found.");
+        }
+
+        var rowCount = ws.Dimension?.Rows ?? 0;
+        var colCount = ws.Dimension?.Columns ?? 0;
+        
+        if (rowCount <= 1 || colCount == 0)
+        {
+            return (importedItems, $"No data rows found in worksheet '{ws.Name}'.");
+        }
+
+        // Map headers to properties (DisplayAttribute preferred)
+        var props = typeof(T).GetProperties();
+        var headerMap = new Dictionary<int, PropertyInfo>();
+        
+        for (int c = 1; c <= colCount; c++)
+        {
+            var header = ws.Cells[1, c].Value?.ToString()?.Trim();
+            if (string.IsNullOrWhiteSpace(header)) continue;
+
+            var prop = props.FirstOrDefault(p =>
+                (p.GetCustomAttribute<System.ComponentModel.DataAnnotations.DisplayAttribute>()?.Name ?? p.Name)
+                    .Equals(header, StringComparison.OrdinalIgnoreCase)
+                || p.Name.Equals(header, StringComparison.OrdinalIgnoreCase));
+
+            if (prop != null) headerMap[c] = prop;
+        }
+
+        var uidProp = props.FirstOrDefault(p => p.Name == "UID");
+        var failedRows = new List<string>();
+        
+        for (int r = 2; r <= rowCount; r++)
+        {
+            try
+            {
+                var instance = Activator.CreateInstance<T>()!;
+                
+                foreach (var kv in headerMap)
+                {
+                    var cell = ws.Cells[r, kv.Key].Value;
+                    if (cell == null) continue;
+
+                    var tprop = kv.Value;
+                    var targetType = Nullable.GetUnderlyingType(tprop.PropertyType) ?? tprop.PropertyType;
+                    
+                    try
+                    {
+                        object? val = null;
+                        
+                        if (targetType == typeof(string)) 
+                            val = cell.ToString();
+                        else if (targetType == typeof(int)) 
+                            val = Convert.ToInt32(cell);
+                        else if (targetType == typeof(double)) 
+                            val = Convert.ToDouble(cell);
+                        else if (targetType == typeof(decimal)) 
+                            val = Convert.ToDecimal(cell);
+                        else if (targetType == typeof(float)) 
+                            val = Convert.ToSingle(cell);
+                        else if (targetType == typeof(bool)) 
+                            val = Convert.ToBoolean(cell);
+                        else if (targetType == typeof(DateTime)) 
+                            val = Convert.ToDateTime(cell);
+                        else if (targetType == typeof(Guid)) 
+                            val = Guid.Parse(cell.ToString()!);
+                        else 
+                            val = Convert.ChangeType(cell, targetType);
+
+                        tprop.SetValue(instance, val);
+                    }
+                    catch (Exception convEx)
+                    {
+                        throw new InvalidOperationException(
+                            $"Failed to convert cell [{r},{kv.Key}] ('{cell}') to {tprop.PropertyType.Name}: {convEx.Message}");
+                    }
+                }
+
+                // Ensure UID exists or generate one
+                if (uidProp != null)
+                {
+                    var uidVal = uidProp.GetValue(instance);
+                    if (uidVal == null || uidVal.Equals(Guid.Empty))
+                        uidProp.SetValue(instance, Guid.NewGuid());
+                }
+
+                importedItems.Add(instance);
+            }
+            catch (Exception rowEx)
+            {
+                _logger.LogWarning(rowEx, "Failed to import row {Row} from sheet {Sheet}", r, ws.Name);
+                failedRows.Add($"Row {r}: {rowEx.Message}");
+            }
+        }
+
+        summary = $"Sheet '{ws.Name}' - Imported: {importedItems.Count}, Failed: {failedRows.Count}";
+        if (failedRows.Count > 0)
+        {
+            summary += ". Failures: " + string.Join("; ", failedRows.Take(5));
+            if (failedRows.Count > 5) summary += $"... and {failedRows.Count - 5} more";
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "ImportFromExcel failed for sheet {Sheet}", sheetName ?? "default");
+        summary = $"Import failed: {ex.Message}";
+    }
+
+    return (importedItems, summary);
+}
+ 
+ 
+    public async Task<(List<T> Items, string Summary)> ImportFromExcel<T>(InputFileChangeEventArgs e, T item, string sheetName = null)
 {
     string[] formats =
     [
@@ -670,7 +1186,18 @@ public async Task Update<T>(List<T> list, List<T> originalList, string updatedBy
             using (var package = new ExcelPackage())
             {
                 await package.LoadAsync(stream);
-                var worksheet = package.Workbook.Worksheets.FirstOrDefault();
+                var worksheet = string.IsNullOrEmpty(sheetName)
+                    ? package.Workbook.Worksheets.FirstOrDefault()
+                    : package.Workbook.Worksheets[sheetName] 
+                      ?? package.Workbook.Worksheets.FirstOrDefault();
+
+                if (worksheet == null)
+                {
+                    summary = string.IsNullOrEmpty(sheetName)
+                        ? "Error: No worksheet found in the Excel file."
+                        : $"Error: Worksheet '{sheetName}' not found.";
+                    return (importedItems, summary);
+                }
 
                 if (worksheet == null)
                 {
@@ -848,223 +1375,7 @@ public async Task Update<T>(List<T> list, List<T> originalList, string updatedBy
 }
     
     
-    /// <summary>
-    ///     import list of item type T from excel file e with headers matching the properties of type T
-    /// </summary>
-    /// <param name="e"></param>
-    /// <param name="item"></param>
-    /// <typeparam name="T"></typeparam>
-    /// <returns></returns>
-    public async Task<(List<T> Items, string Summary)> ImportFromExcelOld15July2025<T>(InputFileChangeEventArgs e, T item)
-    {
-        string[] formats =
-        [
-            "yyyy-MM-ddTHH:mm:ss.fff",
-            "MM/dd/yyyy HH:mm:ss",
-            "dd/MM/yyyy HH:mm:ss",
-            "yyyy/MM/dd HH:mm:ss",
-            "MM/dd/yyyy",
-            "dd/MM/yyyy",
-            "yyyy/MM/dd",
-            "yyyy-MM-dd",
-            "HH:mm:ss",
-            "MM/dd/yyyy hh:mm:ss tt",
-            "dd/MM/yyyy hh:mm:ss tt",
-            "dd/MM/yyyy hh:mm tt",
-            "DD/MM/YYYY HH:MM tt"
-        ];
-        List<T> importedItems = new List<T>();
-        var summary = "";
-        ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
-        try
-        {
-            if (e.File == null || e.File.Size == 0)
-            {
-                summary = "Error: No file selected or file is empty.";
-                return (importedItems, summary);
-            }
-
-            using (var stream = e.File.OpenReadStream(e.File.Size))
-            {
-                using (var package = new ExcelPackage())
-                {
-                    await package.LoadAsync(stream); // Use LoadAsync
-                    var worksheet = package.Workbook.Worksheets.FirstOrDefault();
-
-                    if (worksheet == null)
-                    {
-                        summary = "Error: No worksheet found in the Excel file.";
-                        return (importedItems, summary);
-                    }
-
-                    var rowCount = worksheet.Dimension?.Rows ?? 0;
-                    var colCount = worksheet.Dimension?.Columns ?? 0;
-
-                    if (rowCount <= 1 || colCount == 0)
-                    {
-                        summary = "Error: Excel file has no data or only headers.";
-                        return (importedItems, summary);
-                    }
-
-                    Dictionary<string, int> headerMap = new Dictionary<string, int>();
-                    for (var col = 1; col <= colCount; col++)
-                    {
-                        var header = worksheet.Cells[1, col].Value?.ToString();
-                        if (!string.IsNullOrEmpty(header)) headerMap[header.Trim()] = col;
-                    }
-
-                    Dictionary<string, PropertyInfo> propertyMap = typeof(T).GetProperties()
-                        .ToDictionary(p => p.Name.Trim(), p => p);
-
-                    var successfulImports = 0;
-                    var failedImports = 0;
-                    List<string> failedRows = new List<string>();
-                    var processedUIDs = new HashSet<object>();
-
-                    var uidProperty = propertyMap.GetValueOrDefault("UID");
-
-                    for (var row = 2; row <= rowCount; row++)
-                    {
-                        var newItem = Activator.CreateInstance<T>()!;
-                        var rowFailed = false;
-
-                        foreach (var kvp in propertyMap)
-                            if (headerMap.TryGetValue(kvp.Key, out var col))
-                            {
-                                var cellValue = worksheet.Cells[row, col].Value;
-
-                                try
-                                {
-                                    if (cellValue != null)
-                                    {
-                                        var propertyType = kvp.Value.PropertyType;
-                                        var underlyingType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
-
-                                        
-                                        if (underlyingType == typeof(string))
-                                        {
-                                            kvp.Value.SetValue(newItem, cellValue.ToString());
-                                        }
-                                        else if (underlyingType == typeof(int) &&
-                                                 int.TryParse(cellValue.ToString(), out var intValue))
-                                        {
-                                            kvp.Value.SetValue(newItem, intValue);
-                                        }
-                                        else if (underlyingType == typeof(double) &&
-                                                 double.TryParse(cellValue.ToString(), out var doubleValue))
-                                        {
-                                            kvp.Value.SetValue(newItem, doubleValue);
-                                        }
-                                        
-                                        else if (underlyingType == typeof(float) )
-                                        {
-                                            // Convert cellValue to string and handle cultural differences
-                                            string cellString = cellValue.ToString().Trim();
-                                            if (float.TryParse(cellString, NumberStyles.Any, CultureInfo.InvariantCulture, out var floatValue))
-                                            {
-                                                kvp.Value.SetValue(newItem, floatValue);
-                                            }
-                                            else
-                                            {
-                                                // Log or handle invalid float values (optional)
-                                                Debug.WriteLine($"Failed to parse '{cellString}' as float for property '{kvp.Key}'");
-                                            }
-                                        }
-                                        
-                                        
-                                        
-                                        // else if (underlyingType == typeof(float) &&
-                                        //          float.TryParse(cellValue.ToString(), out var floatValue))
-                                        // {
-                                        //     kvp.Value.SetValue(newItem, floatValue);
-                                        // }
-
-
-                                        else if (underlyingType == typeof(DateTime) )
-                                                 // && DateTime.TryParse(cellValue.ToString(), out DateTime dateValue))
-                                        {
-                                            kvp.Value.SetValue(newItem, cellValue);
-                                        }
-
-                                        else if (underlyingType == typeof(bool) &&
-                                                 bool.TryParse(cellValue.ToString(), out var boolValue))
-                                        {
-                                            kvp.Value.SetValue(newItem, boolValue);
-                                        }
-                                        else if (underlyingType == typeof(decimal) &&
-                                                 decimal.TryParse(cellValue.ToString(), out var decimalValue))
-                                        {
-                                            kvp.Value.SetValue(newItem, decimalValue);
-                                        }
-                                        else if (underlyingType == typeof(long) &&
-                                                 long.TryParse(cellValue.ToString(), out var longValue))
-                                        {
-                                            kvp.Value.SetValue(newItem, longValue);
-                                        }
-                                        else if (underlyingType == typeof(Guid) &&
-                                                 Guid.TryParse(cellValue.ToString(), out var guidValue))
-                                        {
-                                            kvp.Value.SetValue(newItem, guidValue);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        if (Nullable.GetUnderlyingType(kvp.Value.PropertyType) != null)
-                                            kvp.Value.SetValue(newItem, null);
-                                    }
-                                }
-                                catch (Exception)
-                                {
-                                    rowFailed = true;
-                                    break;
-                                }
-                            }
-
-                        if (uidProperty != null)
-                        {
-                            var uidValue = uidProperty.GetValue(newItem);
-
-                            if (uidValue == null)
-                            {
-                                if (Nullable.GetUnderlyingType(uidProperty.PropertyType) == null)
-                                {
-                                    rowFailed = true;
-                                    failedRows.Add($"Row {row}: UID is null.");
-                                }
-                            }
-                            else if (!processedUIDs.Add(uidValue))
-                            {
-                                rowFailed = true;
-                                failedRows.Add($"Row {row}: Duplicate UID '{uidValue}'.");
-                            }
-                        }
-
-                        if (rowFailed)
-                        {
-                            failedImports++;
-                        }
-                        else
-                        {
-                            importedItems.Add(newItem);
-                            successfulImports++;
-                        }
-                    }
-
-                    summary =
-                        $"Import Summary: Successful Imports: {successfulImports}, Failed Imports: {failedImports}.";
-                    if (failedImports > 0) summary += $" Failed Rows: {string.Join(", ", failedRows)}.";
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            summary = $"An error occurred during import: {ex.Message}";
-        }
-
-        return (importedItems, summary);
-    }
-
-
+  
     public byte[] GenerateExcelWorkbookByte<T>(List<T>? list)
     {
         if (list == null || list.Count == 0)

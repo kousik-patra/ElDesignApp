@@ -11,10 +11,10 @@
 @using ElDesignApp.Services
 @using System.Security.Claims
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject Services.IDataRetrievalService DataService
-@inject Services.IGlobalDataService GlobalData
-@inject Services.IMyFunctionService MyFunction
-@inject Services.ILayoutFunctionService LayoutFunction
+@inject IDataRetrievalService DataService
+@inject IGlobalDataService GlobalData
+@inject IMyFunctionService MyFunction
+@inject ILayoutFunctionService LayoutFunction
 
 
 @if (!GlobalData.dbConnected)

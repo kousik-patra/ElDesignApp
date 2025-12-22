@@ -10,11 +10,12 @@
 @inject NavigationManager MyNavigationManager
 @inject IJSRuntime JsRuntime
 
-@inject Services.IDataRetrievalService DataService
-@inject Services.IMyTableService MyTable 
-@inject Services.IGlobalDataService GlobalData
-@inject Services.ILayoutFunctionService LayoutFunction
-@inject Services.IMyFunctionService MyFunction
+@inject IDataRetrievalService DataService
+@inject IMyTableService MyTable
+@inject ITableService Table
+@inject IGlobalDataService GlobalData
+@inject ILayoutFunctionService LayoutFunction
+@inject IMyFunctionService MyFunction
 
 @if (loadChild)
 {

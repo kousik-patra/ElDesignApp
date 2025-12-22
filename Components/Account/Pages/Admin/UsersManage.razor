@@ -1,26 +1,25 @@
 @page "/admin/users"
-@attribute [Authorize(Roles = "SuperAdmin")]
+@attribute [Authorize(Policy = "RequireSuperAdmin")]
 @rendermode InteractiveServer
 @attribute [StreamRendering]
 
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
+@using ElDesignApp.Components.MyModals
+@using System.Text.Json
+@using Microsoft.AspNetCore.Authorization
 @inject UserManager<ApplicationUser> UserManager
 @inject RoleManager<IdentityRole> RoleManager
 @inject IDataRetrievalService DataService
 @inject IJSRuntime JS
-@using ElDesignApp.Data
-@using Microsoft.AspNetCore.Authorization
-@using Microsoft.AspNetCore.Identity
-@using Microsoft.EntityFrameworkCore
-@inject Services.IMyTableService MyTable 
-
+@inject Services.IMyTableService MyTable
+@inject IRoleAuthorizationService RoleAuthService
 
 <PageTitle>User Management</PageTitle>
 
 <h3>User Management</h3>
 
-@if (_allRoles == null || usersWithRoles == null)
+@if (_isLoading)
 {
     <div class="text-center my-5">
         <div class="spinner-border text-primary" role="status">
@@ -30,17 +29,33 @@
 }
 else if (!string.IsNullOrEmpty(ErrorMessage))
 {
-    <div class="alert alert-danger">@ErrorMessage</div>
+    <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle"></i> @ErrorMessage
+    </div>
 }
 else
 {
+    <!-- Role Mapping Management Button -->
+    <div class="d-flex justify-content-between mb-3">
+        <h4>User & Role Management</h4>
+        <div>
+            <button class="btn btn-info me-2" @onclick="ShowRoleMappingModal">
+                <i class="bi bi-gear"></i> Manage Role Mappings
+            </button>
+            <button class="btn btn-success" @onclick="ShowAddProjectModal">
+                <i class="bi bi-plus-lg"></i> Add New Project
+            </button>
+        </div>
+    </div>
+    
     <div class="table-responsive">
         <table class="table table-hover align-middle">
             <thead class="table-light">
             <tr>
                 <th>Email</th>
                 <th>Username</th>
-                <th class="text-center">Roles</th>
+                <th class="text-center">Custom Roles</th>
+                <th class="text-center">Mapped Hard Roles</th>
                 <th class="text-center">Projects</th>
                 <th>Actions</th>
             </tr>
@@ -49,29 +64,33 @@ else
             @foreach (var item in usersWithRoles)
             {
                 var user = item.User;
-                var userRoles = item.Roles;
+                var userCustomRoles = item.Roles; // These are custom roles now
                 var currentUserId = item.User.Id;
 
                 <tr>
                     <td><strong>@user.Email</strong></td>
                     <td>@user.UserName</td>
+                    
+                    <!-- Custom Roles Column -->
                     <td class="text-center py-3">
                         <div class="d-flex flex-wrap gap-2 justify-content-center">
-                            @foreach (var role in _allRoles!)
+                            @foreach (var customRole in _activeCustomRoles)
                             {
-                                var currentRoleName = role.Name!;
-                                var vm = item; // viewmodel for toggling state
+                                var vm = item;
+                                var isAssigned = userCustomRoles.Contains(customRole.CustomRoleName);
+                                
                                 <button type="button"
-                                        class="@(userRoles.Contains(currentRoleName) ? "btn btn-success" : "btn btn-outline-secondary") btn-sm"
+                                        class="@(isAssigned ? "btn btn-success" : "btn btn-outline-secondary") btn-sm"
                                         style="min-width: 110px;"
-                                        @onclick="async () => await ToggleRoleAsync(currentUserId, currentRoleName)"
-                                        disabled="@(vm.IsToggling && vm.TogglingRoleName == currentRoleName)">
-                                    @if (vm.IsToggling && vm.TogglingRoleName == currentRoleName)
+                                        @onclick="async () => await ToggleCustomRoleAsync(currentUserId, customRole.CustomRoleName)"
+                                        disabled="@(vm.IsToggling && vm.TogglingRoleName == customRole.CustomRoleName)"
+                                        title="@customRole.Description">
+                                    @if (vm.IsToggling && vm.TogglingRoleName == customRole.CustomRoleName)
                                     {
                                         <span class="spinner-border spinner-border-sm me-1" role="status"></span>
                                     }
-                                    <strong>@currentRoleName</strong>
-                                    @if (!userRoles.Contains(currentRoleName))
+                                    <strong>@customRole.CustomRoleName</strong>
+                                    @if (!isAssigned)
                                     {
                                         <small class="ms-1">(off)</small>
                                     }
@@ -80,15 +99,44 @@ else
                         </div>
                     </td>
                     
+                    <!-- Mapped Hard Roles Column (Read-only display) -->
+                    <td class="text-center py-3">
+                        <div class="d-flex flex-wrap gap-1 justify-content-center">
+                            @{
+                                var userHardRoles = GetUserHardRoles(userCustomRoles);
+                            }
+                            @if (userHardRoles.Any())
+                            {
+                                @foreach (var hardRole in userHardRoles)
+                                {
+                                    var badgeClass = hardRole switch
+                                    {
+                                        "SuperAdmin" => "bg-danger",
+                                        "Admin" => "bg-warning text-dark",
+                                        "User" => "bg-primary",
+                                        "Report" => "bg-secondary",
+                                        "Guest" => "bg-secondary",
+                                        _ => "bg-info"
+                                    };
+                                    <span class="badge @badgeClass">@hardRole</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="text-muted small">No roles</span>
+                            }
+                        </div>
+                    </td>
+                    
+                    <!-- Projects Column -->
                     <td class="text-center py-3">
                         <div class="d-flex flex-wrap gap-2 justify-content-center">
-
                             @{
                                 var allProjectTags = _projects.Select(p => p.Tag).Distinct().ToList();
                                 var assignedProjectTags = _projects
                                     .Where(p => p.ProjUsers != null && 
                                                 JsonSerializer.Deserialize<List<string>>(p.ProjUsers)
-                                                    .Contains(user.UserName!))
+                                                    ?.Contains(user.UserName!) == true)
                                     .Select(p => p.Tag)
                                     .Distinct()
                                     .ToList();
@@ -96,10 +144,9 @@ else
                                 var notAssignedProjectTags = allProjectTags.Except(assignedProjectTags).ToList();
                             }
 
-                            <!-- Assigned Projects (Info Outline → Red on Hover) -->
+                            <!-- Assigned Projects -->
                             @foreach (var tag in assignedProjectTags)
                             {
-                                var project = _projects.Find(p => p.Tag == tag);
                                 var hoverKey = GetHoverKey(currentUserId, tag);
     
                                 <button type="button"
@@ -107,7 +154,7 @@ else
                                         style="min-width: 110px;"
                                         @onmouseover="() => SetHover(currentUserId, tag, true)"
                                         @onmouseout="() => SetHover(currentUserId, tag, false)"
-                                        @onclick="async () => await RemoveProjectAsyn(currentUserId, tag)">
+                                        @onclick="async () => await RemoveProjectAsync(currentUserId, tag)">
         
                                     <span class="@(IsHovered(currentUserId, tag) ? "text-danger fw-bold" : "")">
                                         @tag
@@ -120,14 +167,14 @@ else
                                 </button>
                             }
 
-                            <!-- Add Project Button (Green) -->
+                            <!-- Add Project Button -->
                             @if (notAssignedProjectTags.Count > 0)
                             {
                                 <button type="button"
                                         class="btn btn-success btn-sm"
                                         style="min-width: 110px;"
                                         @onclick="() => showProjectDropdown[currentUserId] = !showProjectDropdown.GetValueOrDefault(currentUserId)">
-                                    Add Project
+                                    <i class="bi bi-plus"></i> Add Project
                                 </button>
 
                                 @if (showProjectDropdown.GetValueOrDefault(currentUserId))
@@ -152,11 +199,11 @@ else
                         </div>
                     </td>
                     
-                    @* Remove User *@
+                    <!-- Actions -->
                     <td class="text-center">
                         <button type="button" class="btn btn-danger btn-sm" 
                                 @onclick="() => ConfirmDeleteUser(user)">
-                            Remove User
+                            <i class="bi bi-trash"></i> Remove
                         </button>
                     </td>
                 </tr>
@@ -165,13 +212,14 @@ else
         </table>
     </div>
     
-    <!-- ADD USER button (below the table) -->
+    <!-- Add User Button -->
     <div class="mt-4 text-center">
         <button class="btn btn-primary btn-lg" @onclick="ShowAddUserModal">
-            Add New User
+            <i class="bi bi-person-plus"></i> Add New User
         </button>
     </div>
-    <!-- Add-User Modal -->
+    
+    <!-- Add User Modal -->
     @if (showAddUserModal)
     {
         <ElementPropertyModal T="ApplicationUser"
@@ -181,54 +229,104 @@ else
                               OnClose="HandleAddUserClose" />
     }
     
-    <!-- Add-Project Modal -->
-    @if (_showModal)
+    <!-- Add Project Modal -->
+    @if (_showProjectModal)
     {
         <ElementPropertyModal T="Project" 
                               Title="Add New Project" 
                               Item="@_newProject" 
-                              Fields="_fields"
-                              OnClose="@HandleModalClose" />
+                              Fields="_projectFields"
+                              OnClose="@HandleProjectModalClose" />
     }
-    <div class="col-auto">
-        <button class="btn btn-primary" @onclick="ShowAddProjectModal">Add</button>
-    </div>
+    
+    <!-- Role Mapping Management Modal -->
+    @if (_showRoleMappingModal)
+    {
+        <Rolemappingmodal OnClose="HandleRoleMappingModalClose" />
+    }
 }
 
 @code {
-    private List<IdentityRole>? _allRoles;
-    private List<Project> _projects = [];
-    private List<string> _projectNames = [];
+    private bool _isLoading = true;
+    private List<RoleMapping> _allRoleMappings = new();
+    private List<RoleMapping> _activeCustomRoles = new();
+    private List<Project> _projects = new();
     private List<UserRoleViewModel> usersWithRoles = new();
     private string? ErrorMessage;
     
-    private readonly Dictionary<string, bool> showProjectDropdown = new(); // userId → dropdown visible?
-    private readonly HashSet<string> hoveredProjects = new(); // "userId|projectTag"
-    
+    private readonly Dictionary<string, bool> showProjectDropdown = new();
+    private readonly HashSet<string> hoveredProjects = new();
     
     private bool showAddUserModal = false;
     private ApplicationUser _newUser = new();
-    private readonly string[] _userFields = ["UserName", "Email"]; // only these are editable
+    private readonly string[] _userFields = ["UserName", "Email"];
     
-    bool _showModal = false;
-    Project _newProject = new Project();
-    readonly string[] _fields = ["Tag", "TagDescription", "ProjAlt", "ProjClient", "ProjPartners", "ProjLocation", "ProjUsers", "XEW"];
+    private bool _showProjectModal = false;
+    private Project _newProject = new();
+    private readonly string[] _projectFields = new[]
+    {
+        "Tag", "TagDescription", "ProjAlt", "ProjClient", "ProjPartners",
+        "ProjLocation", "ProjUsers", "Display", "XEW", "GlobalE", "GlobalN"
+    };
+    
+    private bool _showRoleMappingModal = false;
     
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            _allRoles = await RoleManager.Roles.OrderBy(r => r.Name).ToListAsync();
+            await LoadRoleMappings();
+            await LoadUsersAndRoles();
+            await LoadProjects();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = "Error loading data: " + ex.Message;
+            System.Diagnostics.Debug.WriteLine($"OnInitializedAsync Error: {ex}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
 
+    private async Task LoadRoleMappings()
+    {
+        try
+        {
+            _allRoleMappings = await RoleAuthService.GetAllRoleMappings();
+            _activeCustomRoles = _allRoleMappings.Where(m => m.IsActive).ToList();
+            
+            // Ensure all custom roles exist in Identity
+            foreach (var mapping in _activeCustomRoles)
+            {
+                if (!await RoleManager.RoleExistsAsync(mapping.CustomRoleName))
+                {
+                    await RoleManager.CreateAsync(new IdentityRole(mapping.CustomRoleName));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"LoadRoleMappings Error: {ex.Message}");
+            throw;
+        }
+    }
+
+    private async Task LoadUsersAndRoles()
+    {
+        try
+        {
+            usersWithRoles.Clear();
             var users = await UserManager.Users.OrderBy(u => u.Email).ToListAsync();
 
             foreach (var user in users)
             {
-                IList<string> roles = await UserManager.GetRolesAsync(user);
+                var roles = await UserManager.GetRolesAsync(user);
                 usersWithRoles.Add(new UserRoleViewModel
                 {
                     User = user,
-                    Roles = roles.ToList(),
+                    Roles = roles.ToList(), // These are custom roles
                     IsToggling = false,
                     TogglingRoleName = null
                 });
@@ -236,251 +334,351 @@ else
         }
         catch (Exception ex)
         {
-            ErrorMessage = "Error loading users and roles: " + ex.Message;
+            System.Diagnostics.Debug.WriteLine($"LoadUsersAndRoles Error: {ex.Message}");
+            throw;
         }
-        
-        (_projects, string logInfo, string logWarning, string logError) = await DataService.ReadFromCacheOrDb(new Project());
-        
-        
-        
-        
     }
 
-    
-    private async Task ToggleRoleAsync(string userId, string role)
+    private async Task LoadProjects()
     {
-        var userViewModel = usersWithRoles.First(x => x.User.Id == userId);
-        
-        // 1. Set the state to indicate toggling has started
-        userViewModel.IsToggling = true;
-        userViewModel.TogglingRoleName = role;
+        try
+        {
+            var result = await DataService.ReadFromCacheOrDb(new Project());
+            _projects = result.Item1;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"LoadProjects Error: {ex.Message}");
+            throw;
+        }
+    }
 
-        // 2. Call StateHasChanged() to refresh the UI
-        //    (Show the spinner and disable the button)
+    private List<string> GetUserHardRoles(List<string> userCustomRoles)
+    {
+        var hardRoles = new HashSet<string>();
+        
+        foreach (var customRole in userCustomRoles)
+        {
+            var mapping = _allRoleMappings.FirstOrDefault(m => 
+                m.CustomRoleName.Equals(customRole, StringComparison.OrdinalIgnoreCase) && m.IsActive);
+            
+            if (mapping != null)
+            {
+                try
+                {
+                    var mappedRoles = JsonSerializer.Deserialize<List<string>>(mapping.MappedHardRoles);
+                    if (mappedRoles != null)
+                    {
+                        foreach (var role in mappedRoles)
+                        {
+                            hardRoles.Add(role);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error deserializing roles for {customRole}: {ex.Message}");
+                }
+            }
+        }
+        
+        return hardRoles.OrderBy(r => r).ToList();
+    }
+
+    private async Task ToggleCustomRoleAsync(string userId, string customRoleName)
+    {
+        var userViewModel = usersWithRoles.FirstOrDefault(x => x.User.Id == userId);
+        if (userViewModel == null) return;
+        
+        userViewModel.IsToggling = true;
+        userViewModel.TogglingRoleName = customRoleName;
         StateHasChanged();
 
         try
         {
             var user = userViewModel.User;
-            bool isInRole = userViewModel.Roles.Contains(role);
+            bool isInRole = userViewModel.Roles.Contains(customRoleName);
 
             IdentityResult result;
             if (isInRole)
             {
-                result = await UserManager.RemoveFromRoleAsync(user, role);
+                result = await UserManager.RemoveFromRoleAsync(user, customRoleName);
                 if (result.Succeeded)
-                    userViewModel.Roles.Remove(role);
+                {
+                    userViewModel.Roles.Remove(customRoleName);
+                }
             }
             else
             {
-                result = await UserManager.AddToRoleAsync(user, role);
+                result = await UserManager.AddToRoleAsync(user, customRoleName);
                 if (result.Succeeded)
-                    userViewModel.Roles.Add(role);
+                {
+                    userViewModel.Roles.Add(customRoleName);
+                }
             }
 
             if (!result.Succeeded)
             {
                 var errors = string.Join("; ", result.Errors.Select(e => e.Description));
-                await JS.InvokeVoidAsync("alert", $"Failed: {errors}");
+                await JS.InvokeVoidAsync("alert", $"Failed to toggle role: {errors}");
             }
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", "Error: " + ex.Message);
+            await JS.InvokeVoidAsync("alert", $"Error toggling role: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"ToggleCustomRoleAsync Error: {ex}");
         }
         finally
         {
-            // 3. Set the state back to not toggling
             userViewModel.IsToggling = false;
-            
-            // 4. Call StateHasChanged() again to refresh the UI
-            //    (Hide the spinner, re-enable the button, and show the new button state/color)
             StateHasChanged();
         }
     }
-    
-    
- 
-    private string GetHoverKey(string userId, string projectTag) => $"{userId}|{projectTag}";
 
-    private void SetHover(string userId, string projectTag, bool isHovering)
+    // Project Management Methods
+    private string GetHoverKey(string userId, string projectTag) => $"{userId}|{projectTag}";
+    
+    private void SetHover(string userId, string projectTag, bool isHovered)
     {
         var key = GetHoverKey(userId, projectTag);
-        if (isHovering) hoveredProjects.Add(key);
-        else hoveredProjects.Remove(key);
-    }
-
-    private bool IsHovered(string userId, string projectTag) 
-        => hoveredProjects.Contains(GetHoverKey(userId, projectTag));
-
-
-    private void ShowAddUserModal()
-    {
-        _newUser = new ApplicationUser { UserName = "", Email = "" };
-        showAddUserModal = true;
-        StateHasChanged();
-    }
-    
-    private async Task HandleAddUserClose((string json, string type, string tag, string tagValue, string action) result)
-    {
-        showAddUserModal = false;
-        if (result.action != "Ok" || string.IsNullOrWhiteSpace(result.json)) return;
-
-        var options = new JsonSerializerOptions { IncludeFields = true };
-        var user = JsonSerializer.Deserialize<ApplicationUser>(result.json, options);
-        if (user?.UserName == null || user.Email == null) return;
-
-        var createResult = await UserManager.CreateAsync(user, "MyPwd@123");
-        if (createResult.Succeeded)
-        {
-            await LoadUsersAndRoles(); // refresh list
-        }
+        if (isHovered)
+            hoveredProjects.Add(key);
         else
-        {
-            ErrorMessage = string.Join("; ", createResult.Errors.Select(e => e.Description));
-        }
+            hoveredProjects.Remove(key);
         StateHasChanged();
     }
     
-    private async Task ConfirmDeleteUser(ApplicationUser user)
-    {
-        var confirmed = await JS.InvokeAsync<bool>("confirm", $"Delete user {user.UserName}?");
-        if (confirmed)
-        {
-            await UserManager.DeleteAsync(user);
-            await LoadUsersAndRoles();
-            StateHasChanged();
-        }
-    }
+    private bool IsHovered(string userId, string projectTag) => 
+        hoveredProjects.Contains(GetHoverKey(userId, projectTag));
 
-    private async Task LoadUsersAndRoles()
-    {
-        var users = await UserManager.Users.OrderBy(u => u.Email).ToListAsync();
-        usersWithRoles.Clear();
-        foreach (var u in users)
-        {
-            var roles = (await UserManager.GetRolesAsync(u)).ToList();
-            usersWithRoles.Add(new UserRoleViewModel
-            {
-                User = u,
-                Roles = roles,
-                IsToggling = false
-            });
-        }
-        _projects = (await DataService.ReadFromCacheOrDb(new Project())).Item1;
-    }
-    
     private async Task AddProjectSelected(ChangeEventArgs e, string userId)
     {
         var selectedTag = e.Value?.ToString();
+        if (string.IsNullOrEmpty(selectedTag)) return;
 
-        if (string.IsNullOrEmpty(selectedTag))
-            return;
-
-        await AddProjectAsyn(userId, selectedTag);
-
-        // Close dropdown for this specific user only
+        await AddProjectAsync(userId, selectedTag);
         showProjectDropdown[userId] = false;
         StateHasChanged();
     }
-    private async Task AddProjectAsyn(string userId, string projectTag)
+
+    private async Task AddProjectAsync(string userId, string projectTag)
     {
         if (string.IsNullOrEmpty(projectTag)) return;
 
-        // Find the project
-        var project = _projects.FirstOrDefault(p => p.Tag == projectTag);
-        if (project == null) return;
-
-        // Find the actual ApplicationUser object
-        var user = usersWithRoles.FirstOrDefault(u => u.User.Id == userId)?.User;
-        if (user == null || string.IsNullOrEmpty(user.UserName)) return;
-
-        // Deserialize current ProjUsers list (it's stored as JSON string)
-        var userList = string.IsNullOrEmpty(project.ProjUsers)
-            ? new List<string>()
-            : JsonSerializer.Deserialize<List<string>>(project.ProjUsers)!;
-
-        // Add username if not already there
-        if (!userList.Contains(user.UserName))
+        try
         {
-            userList.Add(user.UserName);
-            project.ProjUsers = JsonSerializer.Serialize(userList);
+            var project = _projects.FirstOrDefault(p => p.Tag == projectTag);
+            if (project == null) return;
 
-            // Save to DB
-            await MyTable.UpdateParameter(project, project.UID, ["ProjUsers"]);
+            var user = usersWithRoles.FirstOrDefault(u => u.User.Id == userId)?.User;
+            if (user == null || string.IsNullOrEmpty(user.UserName)) return;
 
-            // Optional: refresh projects from DB/cache so UI stays in sync
-            // (_projects, _, _, _) = await DataService.ReadFromCacheOrDb(new Project());
+            var userList = string.IsNullOrEmpty(project.ProjUsers)
+                ? new List<string>()
+                : JsonSerializer.Deserialize<List<string>>(project.ProjUsers) ?? new List<string>();
+
+            if (!userList.Contains(user.UserName))
+            {
+                userList.Add(user.UserName);
+                project.ProjUsers = JsonSerializer.Serialize(userList);
+                await MyTable.UpdateParameter(project, project.UID, ["ProjUsers"]);
+            }
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error adding project: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"AddProjectAsync Error: {ex}");
+        }
+    }
+
+    private async Task RemoveProjectAsync(string userId, string selectedProjectName)
+    {
+        try
+        {
+            var selectedProject = _projects.Find(p => p.Tag == selectedProjectName);
+            if (selectedProject == null) return;
+
+            var userList = string.IsNullOrEmpty(selectedProject.ProjUsers)
+                ? new List<string>()
+                : JsonSerializer.Deserialize<List<string>>(selectedProject.ProjUsers) ?? new List<string>();
+
+            var user = usersWithRoles.First(u => u.User.Id == userId).User;
+            userList.RemoveAll(u => u == user.UserName);
+
+            selectedProject.ProjUsers = JsonSerializer.Serialize(userList);
+            await MyTable.UpdateParameter(selectedProject, selectedProject.UID, ["ProjUsers"]);
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error removing project: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"RemoveProjectAsync Error: {ex}");
+        }
+    }
+
+    // User Management
+    private void ShowAddUserModal()
+    {
+        _newUser = new ApplicationUser();
+        showAddUserModal = true;
+    }
+
+    private async Task HandleAddUserClose((string ItemJson, string Type, string OriginalTag, string CurrentTag, string Action) result)
+    {
+        showAddUserModal = false;
+        if (result.Action != "Ok" || string.IsNullOrWhiteSpace(result.ItemJson))
+        {
+            StateHasChanged();
+            return;
         }
 
-        StateHasChanged();
-    }
-    
-    private async Task RemoveProjectAsyn(string userId, string selectedProjectName)
-    {
-        var selectedProject = _projects.Find(p => p.Tag == selectedProjectName);
-        if (selectedProject == null) return;
-
-        var userList = string.IsNullOrEmpty(selectedProject.ProjUsers)
-            ? new List<string>()
-            : JsonSerializer.Deserialize<List<string>>(selectedProject.ProjUsers)!;
-
-        var user = usersWithRoles.First(u => u.User.Id == userId).User;
-
-        userList.RemoveAll(u => u == user.UserName); // Remove properly
-
-        selectedProject.ProjUsers = JsonSerializer.Serialize(userList);
-        await MyTable.UpdateParameter(selectedProject, selectedProject.UID, ["ProjUsers"]);
-
-        StateHasChanged();
-    }
-    
-    private void ShowAddProjectModal()
-    {
-        var tag = $"Project {new Random().Next(10000, 99999)}";
-        _newProject = new Project
+        try
         {
-            UID = Guid.NewGuid(),
-            Tag = tag,
-            TagDescription = tag,
-            ProjAlt = "base",
-            ProjClient = "",
-            ProjPartners = "[\"self\"]",
-            ProjLocation = "",
-            ProjUsers = "[\"test\"]",
-            Order = 0,
-            Display = true,
-            XEW = true // X-Axis for East-West is true
-        };
-        _showModal = true;
-        StateHasChanged();
-    }
-
-    private async Task HandleModalClose((string json, string type, string tag, string tagValue, string action) result)
-    {
-        if (result.action == "Ok" && !string.IsNullOrEmpty(result.json))
-        {
-            var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
-            var savedProject = System.Text.Json.JsonSerializer.Deserialize<Project>(result.json, jsonSerializerOption);
-            if (savedProject != null)
+            var options = new JsonSerializerOptions { IncludeFields = true };
+            var user = JsonSerializer.Deserialize<ApplicationUser>(result.ItemJson, options);
+            
+            if (user?.UserName == null || user.Email == null)
             {
-                await MyTable.InsertItem(savedProject);
+                await JS.InvokeVoidAsync("alert", "Username and Email are required");
+                return;
+            }
+
+            var createResult = await UserManager.CreateAsync(user, "MyPwd@123"); // Consider making password configurable
+            
+            if (createResult.Succeeded)
+            {
+                await LoadUsersAndRoles();
+                await JS.InvokeVoidAsync("alert", "User created successfully!");
+            }
+            else
+            {
+                ErrorMessage = string.Join("; ", createResult.Errors.Select(e => e.Description));
+                await JS.InvokeVoidAsync("alert", $"Error creating user: {ErrorMessage}");
             }
         }
-        _showModal = false;
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"HandleAddUserClose Error: {ex}");
+        }
+
         StateHasChanged();
     }
-    
-    
-    // Helper class to track per-user state
+
+    private async Task ConfirmDeleteUser(ApplicationUser user)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", 
+            $"Are you sure you want to delete user '{user.UserName}'?");
+        
+        if (confirmed)
+        {
+            try
+            {
+                await UserManager.DeleteAsync(user);
+                await LoadUsersAndRoles();
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                await JS.InvokeVoidAsync("alert", $"Error deleting user: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"ConfirmDeleteUser Error: {ex}");
+            }
+        }
+    }
+
+    // Project Management
+    private void ShowAddProjectModal()
+    {
+        _newProject = new Project
+        {
+            Tag = $"PROJ-{DateTime.Now:yyyyMMddHHmmss}",
+            TagDescription = "New project - please update description",
+            UID = Guid.NewGuid(),
+            Display = true
+        };
+        _showProjectModal = true;
+    }
+
+    private async Task HandleProjectModalClose((string ItemJson, string Type, string OriginalTag, string CurrentTag, string Action) result)
+    {
+        _showProjectModal = false;
+        if (result.Action != "Ok" || string.IsNullOrWhiteSpace(result.ItemJson))
+        {
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            var options = new JsonSerializerOptions 
+            { 
+                PropertyNameCaseInsensitive = true,
+                IncludeFields = true 
+            };
+            
+            var project = JsonSerializer.Deserialize<Project>(result.ItemJson, options);
+
+            if (project == null || string.IsNullOrWhiteSpace(project.Tag))
+            {
+                await JS.InvokeVoidAsync("alert", "Project Code is required");
+                return;
+            }
+
+            // Check if project already exists
+            bool exists = _projects.Any(p => p.Tag.Equals(project.Tag, StringComparison.OrdinalIgnoreCase));
+            
+            if (exists)
+            {
+                await JS.InvokeVoidAsync("alert", $"Project '{project.Tag}' already exists!");
+                return;
+            }
+
+            project.UID = Guid.NewGuid();
+            project.Order = _projects.Count;
+            
+            int rows = await MyTable.InsertItemAsync(project);
+            
+            if (rows > 0)
+            {
+                await JS.InvokeVoidAsync("alert", "Project created successfully!");
+                await LoadProjects();
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("alert", "Failed to create project");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"HandleProjectModalClose Error: {ex}");
+        }
+
+        StateHasChanged();
+    }
+
+    // Role Mapping Management
+    private void ShowRoleMappingModal()
+    {
+        _showRoleMappingModal = true;
+    }
+
+    private async Task HandleRoleMappingModalClose()
+    {
+        _showRoleMappingModal = false;
+        await LoadRoleMappings(); // Reload mappings in case they changed
+        StateHasChanged();
+    }
+
+    // Helper class
     public class UserRoleViewModel
     {
         public required ApplicationUser User { get; set; }
-        public List<string> Roles { get; set; } = [];
-        public List<string> ProjectNames{ get; set; } = [];
+        public List<string> Roles { get; set; } = new(); // Custom roles
         public bool IsToggling { get; set; }
-        public string? TogglingRoleName { get; set; }  // This is the key!
+        public string? TogglingRoleName { get; set; }
     }
-    
-
 }

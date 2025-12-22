@@ -1,6 +1,6 @@
 @attribute [StreamRendering]
 
-
+@using System.ComponentModel.DataAnnotations
 @using System.Diagnostics
 @using System.IO
 @using System.Linq.Expressions
@@ -10,6 +10,7 @@
 @using ElDesignApp.Models
 @using ElDesignApp.Services
 @using ElDesignApp.Components.MyModals
+@using OfficeOpenXml;
 
 @typeparam T;
 
@@ -18,10 +19,14 @@
 
 
 @using ElDesignApp.Services
-@inject Services.IDataRetrievalService DataService
-@inject Services.IMyTableService MyTable 
-@inject Services.IGlobalDataService GlobalData
-@inject Services.IMyFunctionService MyFunction
+@using OfficeOpenXml
+@using LicenseContext = OfficeOpenXml.LicenseContext
+@inject IDataRetrievalService DataService
+@inject IMyTableService MyTable
+@inject ITableService TableService
+@inject IGlobalDataService GlobalData
+@inject IMyFunctionService MyFunction
+@inject IMiscService MiscService
 
 <style>
 
@@ -118,15 +123,59 @@
                             <!-- Button Groups -->
                             <div class="btn-toolbar" role="toolbar" aria-label="Toolbar with button groups">
                                 <!-- First Button Group -->
+                                
+                                <!-- First Button Group - Import Section -->
                                 <div class="btn-group me-2" role="group" aria-label="First group">
-                                    <button hidden="@(!_showInputFile)" @onclick="@(() => { _showInputFile = false; })"
-                                            title="Import to add the existing table" data-toggle="button"
-                                            class="btn btn-outline-info">Import
+                                    <!-- File selection button -->
+                                    <button hidden="@(!_showInputFile)" 
+                                            @onclick="@(() => { _showInputFile = false; })"
+                                            title="Import to add the existing table" 
+                                            class="btn btn-outline-info">
+                                        Cancel Import
                                     </button>
-                                    <InputFile hidden="@_showInputFile" OnChange="@ImportRecord"
+    
+                                    <InputFile hidden="@_showInputFile" 
+                                               OnChange="@OnFileSelected" 
+                                               accept=".xlsx,.xls"
                                                class="btn btn-outline-secondary btn-sm"/>
-                                </div>
 
+                                    <!-- Show sheet selector only after file is loaded -->
+                                    @if (sheetsLoaded && sheetNames.Count > 0)
+                                    {
+                                        <div class="ms-2">
+                                            @if (sheetNames.Count > 1)
+                                            {
+                                                <label class="form-label mb-1">Select Sheet:</label>
+                                                <select @bind="selectedSheet" class="form-select form-select-sm">
+                                                    @foreach (var sheet in sheetNames)
+                                                    {
+                                                        <option value="@sheet">@sheet</option>
+                                                    }
+                                                </select>
+                                            }
+                                            else
+                                            {
+                                                <small class="text-muted ms-2">Sheet: @selectedSheet</small>
+                                            }
+                                        </div>
+        
+                                        <!-- Import button -->
+                                        <button class="btn btn-primary btn-sm ms-2" 
+                                                @onclick="ImportData" 
+                                                disabled="@(!sheetsLoaded || string.IsNullOrEmpty(selectedSheet))">
+                                            Import Data
+                                        </button>
+                                    }
+
+                                    <!-- Show file selection summary -->
+                                    @if (!string.IsNullOrEmpty(fileSelectionSummary))
+                                    {
+                                        <div class="alert alert-info alert-sm mt-2 mb-0">
+                                            @fileSelectionSummary
+                                        </div>
+                                    }
+                                </div>
+                                
                                 <!-- Second Button Group -->
                                 <div class="btn-group me-2" role="group" aria-label="Second group">
                                     <button @onclick="DeleteRecord" data-toggle="button" class="btn btn-outline-danger"
@@ -490,18 +539,54 @@
             </div>
         </div>
     }
+    
+    @* Import Excel validation results *@
+    @if (_importValidationErrors.Any())
+    {
+        <div class="row mt-3">
+            <div class="col">
+                <div class="alert alert-danger">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            Import Validation Failed
+                        </h6>
+                        <button class="btn btn-sm btn-outline-danger" type="button" 
+                                @onclick="() => _showValidationDetails = !_showValidationDetails">
+                            @(_showValidationDetails ? "Hide" : "Show") Details 
+                            (@_importValidationErrors.Count error(s))
+                        </button>
+                    </div>
+                
+                    @if (_showValidationDetails)
+                    {
+                        <hr />
+                        <div style="max-height: 300px; overflow-y: auto;">
+                            <ul class="mb-0 small">
+                                @foreach (var error in _importValidationErrors)
+                                {
+                                    <li>@error</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    
     <div class="row justify-content-md-left">
         <span style="width:900px; text-overflow:ellipsis; font-weight:lighter">@Result : @ActionMessage</span>
         @if (SuccessMessage != "")
         {
             <div class="alert alert-success" role="alert">
-                Row @_selectedRecord, Column @_selectedColumn : @SuccessMessage
+                @SuccessMessage
             </div>
         }
         @if (InfoMessage != "")
         {
             <div class="alert alert-info" role="alert">
-                Row @_selectedRecord, Column @_selectedColumn : @InfoMessage
+                @InfoMessage
             </div>
         }
         @if (WarningMessage != "")
@@ -582,133 +667,31 @@
 
 @code {
 
-    /// <summary>
-    ///     Render fragment in ChildContent
-    /// </summary>
-    [Parameter]
-    public RenderFragment? ChildContent { get; set; }
-
-    /// <summary>
-    ///     Render fragment in Header
-    /// </summary>
-    [Parameter]
-    public RenderFragment? Header { get; set; }
-
-    /// <summary>
-    ///     Render fragment in ExtraButtons
-    /// </summary>
-    [Parameter]
-    public RenderFragment? ExtraButtons { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public List<T>? List { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public List<T>? ListOriginal { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public string[]? Fields { get; set; } // field list to display
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public List<List<string>>? Button { get; set; } // field list where button needed
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public List<List<string>>? ButtonText { get; set; } // text in the buttons
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public EventCallback<(T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string)> AutoCheck { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public EventCallback Refresh { get; set; }
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public EventCallback<(T, List<T>, List<T>)> Discard { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public EventCallback<(T, List<T>, List<T>, string, string, string, string)> Update { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public EventCallback<Guid> SetSelectedUid { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public EventCallback<(T, Guid)> SelectedItem { get; set; }
-
-    //[Parameter] public EventCallback<CellStatus> CellButton { get; set; }
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public string? ActionMessage { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public string? SuccessMessage { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public string? InfoMessage { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public string? WarningMessage { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public string? ErrorMessage { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public RenderFragment? Result { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public RenderFragment? Footer { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public RenderFragment<T>? ItemTemplate { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public RenderFragment<PropertyInfo>? FieldTemplate { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public RenderFragment<ContextItemField>? ItemFieldTemplate { get; set; }
-
-    /// <summary>
-    /// </summary>
-    [Parameter]
-    public string? TableWidthPx { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Header { get; set; }
+    [Parameter] public RenderFragment? ExtraButtons { get; set; }
+    [Parameter] public List<T>? List { get; set; }
+    [Parameter] public List<T>? ListOriginal { get; set; }
+    [Parameter] public string[]? Fields { get; set; } // field list to display
+    [Parameter] public List<List<string>>? Button { get; set; } // field list where button needed
+    [Parameter] public List<List<string>>? ButtonText { get; set; } // text in the buttons
+    [Parameter] public EventCallback<(T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string)> AutoCheck { get; set; }
+    [Parameter] public EventCallback Refresh { get; set; }
+    [Parameter] public EventCallback<(T, List<T>, List<T>)> Discard { get; set; }
+    [Parameter] public EventCallback<(T, List<T>, List<T>, string, string, string, string)> Update { get; set; }
+    [Parameter] public EventCallback<Guid> SetSelectedUid { get; set; }
+    [Parameter] public EventCallback<(T, Guid)> SelectedItem { get; set; }
+    [Parameter] public string? ActionMessage { get; set; }
+    [Parameter] public string? SuccessMessage { get; set; }
+    [Parameter] public string? InfoMessage { get; set; }
+    [Parameter] public string? WarningMessage { get; set; }
+    [Parameter] public string? ErrorMessage { get; set; }
+    [Parameter] public RenderFragment? Result { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+    [Parameter] public RenderFragment<T>? ItemTemplate { get; set; }
+    [Parameter] public RenderFragment<PropertyInfo>? FieldTemplate { get; set; }
+    [Parameter] public RenderFragment<ContextItemField>? ItemFieldTemplate { get; set; }
+    [Parameter] public string? TableWidthPx { get; set; }
 
     private List<PropertyInfo> _tableProperties = null!;
     private List<DBMaster>? _dbMaster;
@@ -757,7 +740,22 @@
     private CellStatus _currentCell = new(); //mousehovered
 
     private string _displayMsgAction = "";
+    
+    private string _loginUser = "Guest";
+    
+    private List<string> sheetNames = new();
+    private string selectedSheet = "";
+    private bool sheetsLoaded = false;
+    private string fileSelectionSummary = "";
+    private IBrowserFile? _selectedFile;
 
+
+    // fields to track validation results for Excel Import
+    private List<string> _importValidationErrors = new();
+    private List<string> _importValidationWarnings = new();
+    private int _importedSuccessCount = 0;
+    private int _importedSkippedCount = 0;
+    private bool _showValidationDetails = false;
 
     // used in Table Component
     private class CellStatus
@@ -772,29 +770,17 @@
     }
 
 
-    /// <summary>
-    /// </summary>
     public class ContextItemField
     {
         //used in cable component to refer to the RenderFragment
-        /// <summary>
-        /// </summary>
         public T? Item { get; set; }
 
-        /// <summary>
-        /// </summary>
         public PropertyInfo? Field { get; set; }
 
-        /// <summary>
-        /// </summary>
         public ContextItemField()
         {
         }
 
-        /// <summary>
-        /// </summary>
-        /// <param name="item"></param>
-        /// <param name="field"></param>
         public ContextItemField(T item, PropertyInfo field)
         {
             Item = item;
@@ -824,8 +810,7 @@
     
    
 
-    /// <summary>
-    /// </summary>
+
     protected override void OnInitialized()
     {
      // Log method entry for debugging
@@ -927,6 +912,21 @@
         //Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
         //
         //return base.OnInitializedAsync();
+        // Get current user information
+        try
+        {
+            var (_, userName) = await MiscService.GetCurrentUserInfoAsync();
+            _loginUser = userName ?? "Guest";
+            Debug.WriteLine($"Current user: {_loginUser}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error getting user info: {ex.Message}");
+            _loginUser = "Guest";
+        }
+    
+        await base.OnInitializedAsync();
+        
     }
 
     protected override void OnParametersSet()
@@ -940,10 +940,6 @@
         DoPagination();
     }
 
-    /// <summary>
-    /// </summary>
-    /// <param name="firstRender"></param>
-    /// <returns></returns>
     protected override Task OnAfterRenderAsync(bool firstRender)
     {
         //System.Diagnostics.Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
@@ -951,9 +947,7 @@
     }
 
 
-    /// <summary>
-    /// </summary>
-    /// <returns></returns>
+
     protected override bool ShouldRender()
     {
         //System.Diagnostics.Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
@@ -961,8 +955,6 @@
         //return ShouldRenderAgain;
     }
 
-    /// <summary>
-    /// </summary>
     public void Dispose()
     {
         //Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
@@ -1001,43 +993,88 @@
     }
 
     private async Task DoSubmit()
+{
+    if (_currentDblClickedCell.DblClickedStatus == false) return;
+    
+    var currentSeq = _currentDblClickedCell.Seq;
+    var currentProperty = typeof(T).GetProperty(_currentDblClickedCell.FieldName);
+    
+    if (currentProperty == null)
     {
-        if (_currentDblClickedCell.DblClickedStatus == false) return;
-        var currentSeq = _currentDblClickedCell.Seq;
-        var currentProperty = typeof(T).GetProperty(_currentDblClickedCell.FieldName);
-        var currentValue = currentProperty.GetValue(_iteratedList[_currentDblClickedCell.Seq]);
-        //
-        var uidProperty = typeof(T).GetProperty("UID");
-        var currentuid = (Guid)uidProperty.GetValue(_iteratedList[_currentDblClickedCell.Seq]);
-        //
-        var previousValue = currentProperty.GetValue(List[_currentDblClickedCell.Seq]);
-        //System.Diagnostics.Debug.WriteLine($"Table - DoSubmit : updating '{previousValue}' to '{currentValue}'");
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name} " +
-                        $":Record # {currentSeq + 1} field '{currentProperty.Name}' : '{previousValue}' being changed to '{currentValue}'");
-        //System.Diagnostics.Debug.WriteLine($"Table - DoSubmit : checking '{currentValue}' with server...");
-        //
-        // validate the input data
-        _iteratedList[currentSeq] = ValidatedGeneralInput(_iteratedList[currentSeq], currentProperty, _iteratedList, List);
-
-        // If Validated then only update List as per changed value (IterateList)
-        if (ErrorMessage == "")
-        {
-            List[_currentDblClickedCell.Seq] = _iteratedList[currentSeq];
-        }
-
-        _selectedRecord = currentSeq + 1;
-        _selectedColumn = currentProperty.Name;
-        StateHasChanged();
-        //
-        // further validation at Parent Component
-        var args = (_iteratedList[currentSeq], currentuid, currentProperty, ListOriginal[currentSeq], List, ListOriginal, SuccessMessage, WarningMessage, InfoMessage, ErrorMessage);
-
-        await AutoCheck.InvokeAsync(args!);
-
-        _currentDblClickedCell.DblClickedStatus = false;
-        _currentDblClickedCell.Edited = true;
-        DoFilter();
+        ErrorMessage = $"Property '{_currentDblClickedCell.FieldName}' not found.";
+        return;
     }
+    
+    // Safety check for index bounds
+    if (currentSeq < 0 || currentSeq >= _iteratedList.Count)
+    {
+        ErrorMessage = $"Invalid sequence index: {currentSeq}";
+        Debug.WriteLine($"DoSubmit: Invalid currentSeq {currentSeq}, _iteratedList.Count = {_iteratedList.Count}");
+        return;
+    }
+    
+    var currentValue = currentProperty.GetValue(_iteratedList[currentSeq]);
+    
+    // Get UID to find the correct item in ListOriginal
+    var uidProperty = typeof(T).GetProperty("UID");
+    if (uidProperty == null)
+    {
+        ErrorMessage = "UID property not found on type.";
+        return;
+    }
+    
+    var currentuid = (Guid)uidProperty.GetValue(_iteratedList[currentSeq]);
+    
+    // Find the original item by UID instead of using index
+    var originalItemIndex = ListOriginal?.FindIndex(item => 
+        (Guid)uidProperty.GetValue(item) == currentuid) ?? -1;
+    
+    if (originalItemIndex < 0 || ListOriginal == null)
+    {
+        ErrorMessage = $"Original item with UID {currentuid} not found.";
+        Debug.WriteLine($"DoSubmit: Item with UID {currentuid} not found in ListOriginal");
+        return;
+    }
+    
+    var originalItem = ListOriginal[originalItemIndex];
+    var previousValue = currentProperty.GetValue(List[currentSeq]);
+    
+    Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name} " +
+                    $":Record # {currentSeq + 1} field '{currentProperty.Name}' : '{previousValue}' being changed to '{currentValue}'");
+    
+    // Validate the input data
+    _iteratedList[currentSeq] = ValidatedGeneralInput(_iteratedList[currentSeq], currentProperty, _iteratedList, List);
+
+    // If Validated then only update List as per changed value (IterateList)
+    if (ErrorMessage == "")
+    {
+        List[currentSeq] = _iteratedList[currentSeq];
+    }
+
+    _selectedRecord = currentSeq + 1;
+    _selectedColumn = currentProperty.Name;
+    StateHasChanged();
+    
+    // Further validation at Parent Component - now using the correct original item
+    var args = (
+        _iteratedList[currentSeq],      // Current edited item
+        currentuid,                      // UID of the item
+        currentProperty,                 // Property being changed
+        originalItem,                    // ✅ FIXED: Original item found by UID
+        List,                            // Current working list
+        ListOriginal,                    // Original list
+        SuccessMessage, 
+        WarningMessage, 
+        InfoMessage, 
+        ErrorMessage
+    );
+
+    await AutoCheck.InvokeAsync(args!);
+
+    _currentDblClickedCell.DblClickedStatus = false;
+    _currentDblClickedCell.Edited = true;
+    DoFilter();
+}
 
     private async Task DoCellButton(CellStatus cell)
     {
@@ -1224,78 +1261,543 @@
         return itemChanged;
     }
 
-
-    private async Task ImportRecord(InputFileChangeEventArgs e)
+    
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
-        Debug.WriteLine("Generic Table Excel Import Function ");
-        _showInputFile = !_showInputFile;
+        sheetNames.Clear();
+        sheetsLoaded = false;
+        selectedSheet = "";
+        fileSelectionSummary = "";
+        _selectedFile = null;
 
-        var result = await MyTable.ImportFromExcel(e, (T)Activator.CreateInstance(typeof(T)));
-
-        _importedItemsFromExcel = result.Items;
-        _excelImportSummary = result.Summary;
-
-        Debug.WriteLine($"Import Result: {_excelImportSummary} ");
-
-
-        ResetMassages();
-        SuccessMessage = $"{_importedItemsFromExcel.Count} Records imported";
-        _basicModalText = $"{_importedItemsFromExcel.Count.ToString()} Records imported from file. What would you like to do?";
-        _showBasicModal = true;
-    }
-
-    private void AppendRecord()
-    {
-        Dictionary<string, PropertyInfo> propertyMap = typeof(T).GetProperties()
-            .ToDictionary(p => p.Name.Trim(), p => p);
-        HashSet<object> existingUIDs = new HashSet<object>();
-
-        var uidProperty = propertyMap.TryGetValue("UID", out var prop) ? prop : null;
-        List.ForEach(item =>
+        if (e.File == null || e.File.Size == 0)
         {
-            var uidValue = uidProperty.GetValue(item);
-            existingUIDs.Add(uidValue);
-        });
+            fileSelectionSummary = "No file selected.";
+            StateHasChanged();
+            return;
+        }
 
-        var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
-
-        _importedItemsFromExcel.ForEach(item =>
+        try
         {
-            var uidValue = uidProperty.GetValue(item);
-            // if the record does not exist
-            if (!existingUIDs.Add(uidValue))
+            _selectedFile = e.File; // Store the file for later use
+            
+            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+            
+            using var stream = e.File.OpenReadStream(e.File.Size);
+            using var package = new ExcelPackage();
+            await package.LoadAsync(stream);
+
+            sheetNames = package.Workbook.Worksheets
+                .Select(ws => ws.Name)
+                .ToList();
+
+            if (sheetNames.Any())
             {
-                Debug.WriteLine($"Duplicate UID '{uidValue}'.");
+                selectedSheet = sheetNames.First(); // Pre-select first sheet
+                sheetsLoaded = true;
+                fileSelectionSummary = $"File loaded successfully. Found {sheetNames.Count} sheet(s).";
             }
             else
             {
-                List.Add(JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(item, jsonSerializerOption), jsonSerializerOption));
-                _iteratedList.Add(JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(item, jsonSerializerOption), jsonSerializerOption));
+                fileSelectionSummary = "No worksheets found in the file.";
             }
-        });
-
-        ResetMassages();
-        SuccessMessage = $"{_importedItemsFromExcel.Count} Records appended.";
-        DoPagination();
-        StateHasChanged();
-        _showInputFile = false;
-    }
-
-    private void ReplaceRecord()
-    {
-        var jsonSerializerOption = new JsonSerializerOptions
+        }
+        catch (Exception ex)
         {
-            IncludeFields = true
-        };
-        List = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(_importedItemsFromExcel, jsonSerializerOption), jsonSerializerOption);
-        _iteratedList = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(_importedItemsFromExcel, jsonSerializerOption), jsonSerializerOption);
-        ResetMassages();
-        SuccessMessage = $"{_importedItemsFromExcel.Count} Records replaced";
-        DoPagination();
+            fileSelectionSummary = $"Error reading Excel file: {ex.Message}";
+            Debug.WriteLine($"OnFileSelected error: {ex}");
+        }
+
         StateHasChanged();
-        _showInputFile = false;
+    }
+    
+    private async Task ImportData()
+    {
+        if (_selectedFile == null)
+        {
+            ErrorMessage = "No file selected.";
+            StateHasChanged();
+            return;
+        }
+
+        if (string.IsNullOrEmpty(selectedSheet))
+        {
+            ErrorMessage = "No worksheet selected.";
+            StateHasChanged();
+            return;
+        }
+
+        Debug.WriteLine($"Importing from sheet: {selectedSheet}");
+        
+        try
+        {
+            // Call the updated service method with sheet name
+            var result = await MyTable.ImportFromExcel(
+                _selectedFile, 
+                (T)Activator.CreateInstance(typeof(T))!, 
+                selectedSheet
+            );
+
+            _importedItemsFromExcel = result.Items;
+            _excelImportSummary = result.Summary;
+
+            Debug.WriteLine($"Import Result: {_excelImportSummary}");
+
+            ResetMassages();
+            SuccessMessage = $"{_importedItemsFromExcel?.Count ?? 0} records imported from sheet '{selectedSheet}'";
+            
+            if (_importedItemsFromExcel?.Count > 0)
+            {
+                _basicModalText = $"{_importedItemsFromExcel.Count} record(s) imported from sheet '{selectedSheet}'. What would you like to do?";
+                _showBasicModal = true;
+            }
+            else
+            {
+                WarningMessage = "No records were imported. Please check the file format.";
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Import failed: {ex.Message}";
+            Debug.WriteLine($"ImportData error: {ex}");
+        }
+
+        StateHasChanged();
     }
 
+
+private async Task AppendRecord()
+{
+    _importValidationErrors.Clear();
+    _importValidationWarnings.Clear();
+    _importedSuccessCount = 0;
+    _importedSkippedCount = 0;
+
+    if (_importedItemsFromExcel == null || !_importedItemsFromExcel.Any())
+    {
+        ErrorMessage = "No records to append.";
+        StateHasChanged();
+        return;
+    }
+
+    var propertyMap = typeof(T).GetProperties().ToDictionary(p => p.Name.Trim(), p => p);
+    var uidProperty = propertyMap.TryGetValue("UID", out var uidProp) ? uidProp : null;
+    var tagProperty = propertyMap.TryGetValue("Tag", out var tagProp) ? tagProp : null;
+
+    // Build existing UID and Tag sets from current list
+    var existingUIDs = new HashSet<object>();
+    var existingTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    if (List != null)
+    {
+        foreach (var item in List)
+        {
+            if (uidProperty != null)
+            {
+                var uid = uidProperty.GetValue(item);
+                if (uid != null) existingUIDs.Add(uid);
+            }
+
+            if (tagProperty != null)
+            {
+                var tag = tagProperty.GetValue(item)?.ToString();
+                if (!string.IsNullOrWhiteSpace(tag)) existingTags.Add(tag);
+            }
+        }
+    }
+
+    // Validate and add imported items
+    var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
+    var rowNumber = 2; // Excel starts data at row 2 (row 1 is header)
+
+    foreach (var item in _importedItemsFromExcel)
+    {
+        var canAdd = true;
+        var itemIdentifier = $"Row {rowNumber}";
+        string tagValue = null;
+
+        // Check UID (if property exists)
+        if (uidProperty != null)
+        {
+            var uidValue = uidProperty.GetValue(item);
+            if (uidValue == null || uidValue.Equals(Guid.Empty))
+            {
+                _importValidationErrors.Add($"{itemIdentifier}: Missing or empty UID");
+                canAdd = false;
+            }
+            else if (!existingUIDs.Add(uidValue))
+            {
+                _importValidationErrors.Add($"{itemIdentifier}: Duplicate UID '{uidValue}'");
+                canAdd = false;
+            }
+        }
+
+        // Check Tag (if property exists) - REQUIRED, cannot be empty
+        if (tagProperty != null)
+        {
+            tagValue = tagProperty.GetValue(item)?.ToString()?.Trim();
+            
+            if (string.IsNullOrWhiteSpace(tagValue))
+            {
+                _importValidationErrors.Add($"{itemIdentifier}: Tag is required and cannot be empty");
+                canAdd = false;
+            }
+            else
+            {
+                // Update identifier with tag for better error messages
+                itemIdentifier = $"Row {rowNumber} (Tag: '{tagValue}')";
+                
+                if (!existingTags.Add(tagValue))
+                {
+                    _importValidationErrors.Add($"{itemIdentifier}: Duplicate Tag '{tagValue}' - already exists in current list");
+                    canAdd = false;
+                }
+            }
+        }
+        
+        // Validate using Data Annotations
+        if (canAdd)
+        {
+            var validationErrors = ValidateItem(item);
+            if (validationErrors.Any())
+            {
+                foreach (var validationError in validationErrors)
+                {
+                    _importValidationErrors.Add($"{itemIdentifier}: {validationError}");
+                }
+                canAdd = false;
+            }
+        }
+        
+
+        // Add item if validation passed
+        if (canAdd)
+        {
+            var clonedItem = JsonSerializer.Deserialize<T>(
+                JsonSerializer.Serialize(item, jsonSerializerOption), 
+                jsonSerializerOption);
+            // Call Update method if it exists
+            await CallUpdateMethodIfExists(clonedItem);
+            List.Add(clonedItem);
+            _iteratedList.Add(JsonSerializer.Deserialize<T>(
+                JsonSerializer.Serialize(item, jsonSerializerOption), 
+                jsonSerializerOption));
+            
+            _importedSuccessCount++;
+        }
+        else
+        {
+            _importedSkippedCount++;
+        }
+
+        rowNumber++;
+    }
+
+    // Update messages
+    ResetMassages();
+    
+    if (_importedSuccessCount > 0)
+    {
+        SuccessMessage = $"{_importedSuccessCount} record(s) successfully appended to the list.";
+    }
+
+    if (_importedSkippedCount > 0)
+    {
+        WarningMessage = $"{_importedSkippedCount} record(s) skipped due to validation errors.";
+    }
+
+    if (_importValidationErrors.Any())
+    {
+        var errorSummary = string.Join("; ", _importValidationErrors.Take(5));
+        if (_importValidationErrors.Count > 5)
+        {
+            errorSummary += $"... and {_importValidationErrors.Count - 5} more error(s)";
+        }
+        ErrorMessage = $"Validation errors found: {errorSummary}";
+        
+        // Log all errors for debugging
+        Debug.WriteLine($"=== Import Append Validation Errors ({_importValidationErrors.Count}) ===");
+        _importValidationErrors.ForEach(e => Debug.WriteLine(e));
+    }
+
+    if (_importedSuccessCount == 0)
+    {
+        ErrorMessage = "No records were appended. All imported records failed validation.";
+    }
+
+    DoPagination();
+    StateHasChanged();
+    _showInputFile = false;
+}
+
+private async Task ReplaceRecord()
+{
+    _importValidationErrors.Clear();
+    _importValidationWarnings.Clear();
+    _importedSuccessCount = 0;
+    _importedSkippedCount = 0;
+
+    if (_importedItemsFromExcel == null || !_importedItemsFromExcel.Any())
+    {
+        ErrorMessage = "No records to replace with.";
+        StateHasChanged();
+        return;
+    }
+
+    var propertyMap = typeof(T).GetProperties().ToDictionary(p => p.Name.Trim(), p => p);
+    var uidProperty = propertyMap.TryGetValue("UID", out var uidProp) ? uidProp : null;
+    var tagProperty = propertyMap.TryGetValue("Tag", out var tagProp) ? tagProp : null;
+
+    // Validate imported items for internal duplicates
+    var validatedItems = new List<T>();
+    var seenUIDs = new HashSet<object>();
+    var seenTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var rowNumber = 2; // Excel starts data at row 2
+
+    foreach (var item in _importedItemsFromExcel)
+    {
+        var canAdd = true;
+        var itemIdentifier = $"Row {rowNumber}";
+        string tagValue = null;
+
+        // Check UID (if property exists)
+        if (uidProperty != null)
+        {
+            var uidValue = uidProperty.GetValue(item);
+            if (uidValue == null || uidValue.Equals(Guid.Empty))
+            {
+                _importValidationErrors.Add($"{itemIdentifier}: Missing or empty UID");
+                canAdd = false;
+            }
+            else if (!seenUIDs.Add(uidValue))
+            {
+                _importValidationErrors.Add($"{itemIdentifier}: Duplicate UID '{uidValue}' within imported data");
+                canAdd = false;
+            }
+        }
+
+        // Check Tag (if property exists) - REQUIRED, cannot be empty
+        if (tagProperty != null)
+        {
+            tagValue = tagProperty.GetValue(item)?.ToString()?.Trim();
+            
+            if (string.IsNullOrWhiteSpace(tagValue))
+            {
+                _importValidationErrors.Add($"{itemIdentifier}: Tag is required and cannot be empty");
+                canAdd = false;
+            }
+            else
+            {
+                // Update identifier with tag for better error messages
+                itemIdentifier = $"Row {rowNumber} (Tag: '{tagValue}')";
+                
+                if (!seenTags.Add(tagValue))
+                {
+                    _importValidationErrors.Add($"{itemIdentifier}: Duplicate Tag '{tagValue}' within imported data");
+                    canAdd = false;
+                }
+            }
+        }
+        
+        // Validate using Data Annotations
+        if (canAdd)
+        {
+            var validationErrors = ValidateItem(item);
+            if (validationErrors.Any())
+            {
+                foreach (var validationError in validationErrors)
+                {
+                    _importValidationErrors.Add($"{itemIdentifier}: {validationError}");
+                }
+                canAdd = false;
+            }
+        }
+        
+
+        // Add to validated list
+        if (canAdd)
+        {
+            await CallUpdateMethodIfExists(item);
+            validatedItems.Add(item);
+            _importedSuccessCount++;
+        }
+        else
+        {
+            _importedSkippedCount++;
+        }
+
+        rowNumber++;
+    }
+
+    // Only replace if we have valid items
+    if (!validatedItems.Any())
+    {
+        ErrorMessage = "No valid records found to replace with. All imported records failed validation. Operation cancelled.";
+        
+        // Show detailed errors
+        if (_importValidationErrors.Any())
+        {
+            var errorDetail = string.Join("; ", _importValidationErrors.Take(10));
+            if (_importValidationErrors.Count > 10)
+            {
+                errorDetail += $"... and {_importValidationErrors.Count - 10} more error(s)";
+            }
+            ErrorMessage += $" Errors: {errorDetail}";
+        }
+        
+        StateHasChanged();
+        return;
+    }
+
+    // Perform the replacement
+    var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
+    
+    List = JsonSerializer.Deserialize<List<T>>(
+        JsonSerializer.Serialize(validatedItems, jsonSerializerOption), 
+        jsonSerializerOption);
+    
+    _iteratedList = JsonSerializer.Deserialize<List<T>>(
+        JsonSerializer.Serialize(validatedItems, jsonSerializerOption), 
+        jsonSerializerOption);
+
+    // Update messages
+    ResetMassages();
+    
+    SuccessMessage = $"{_importedSuccessCount} valid record(s) replaced the existing list successfully.";
+
+    if (_importedSkippedCount > 0)
+    {
+        WarningMessage = $"{_importedSkippedCount} record(s) from import were skipped due to validation errors.";
+    }
+
+    if (_importValidationErrors.Any())
+    {
+        var errorSummary = string.Join("; ", _importValidationErrors.Take(5));
+        if (_importValidationErrors.Count > 5)
+        {
+            errorSummary += $"... and {_importValidationErrors.Count - 5} more error(s)";
+        }
+        InfoMessage = $"Note - Validation errors found: {errorSummary}";
+        
+        // Log all errors for debugging
+        Debug.WriteLine($"=== Import Replace Validation Errors ({_importValidationErrors.Count}) ===");
+        _importValidationErrors.ForEach(e => Debug.WriteLine(e));
+    }
+
+    DoPagination();
+    StateHasChanged();
+    _showInputFile = false;
+}
+
+/// <summary>
+/// Validates an item using Data Annotations (Required, RegularExpression, Range, etc.)
+/// </summary>
+/// <param name="item">The item to validate</param>
+/// <returns>List of validation error messages</returns>
+private List<string> ValidateItem(T item)
+{
+    var validationResults = new List<ValidationResult>();
+    var validationContext = new ValidationContext(item, serviceProvider: null, items: null);
+    
+    // Validate the entire object
+    Validator.TryValidateObject(item, validationContext, validationResults, validateAllProperties: true);
+    
+    // Convert ValidationResult to readable error messages
+    var errors = new List<string>();
+    foreach (var validationResult in validationResults)
+    {
+        var propertyNames = validationResult.MemberNames.Any() 
+            ? string.Join(", ", validationResult.MemberNames) 
+            : "Object";
+        
+        errors.Add($"{propertyNames}: {validationResult.ErrorMessage}");
+    }
+    
+    return errors;
+}
+
+/// <summary>
+/// Sets audit fields (UpdatedBy, UpdatedOn) and calls the Update() method on the item if it exists
+/// Supports both synchronous Update() and asynchronous UpdateAsync() methods
+/// </summary>
+/// <param name="item">The item to update</param>
+private async Task CallUpdateMethodIfExists(T item)
+{
+    if (item == null) return;
+
+    var itemType = typeof(T);
+    
+    try
+    {
+        // Set UpdatedBy field if it exists
+        var updatedByProperty = itemType.GetProperty("UpdatedBy", 
+            BindingFlags.Public | BindingFlags.Instance);
+        
+        if (updatedByProperty != null && updatedByProperty.PropertyType == typeof(string))
+        {
+            updatedByProperty.SetValue(item, _loginUser);
+            Debug.WriteLine($"Set UpdatedBy to '{_loginUser}' for {itemType.Name}");
+        }
+        
+        // Set UpdatedOn field if it exists
+        var updatedOnProperty = itemType.GetProperty("UpdatedOn", 
+            BindingFlags.Public | BindingFlags.Instance);
+        
+        if (updatedOnProperty != null && updatedOnProperty.PropertyType == typeof(DateTime))
+        {
+            updatedOnProperty.SetValue(item, DateTime.Now);
+            Debug.WriteLine($"Set UpdatedOn to '{DateTime.Now}' for {itemType.Name}");
+        }
+        else if (updatedOnProperty != null && updatedOnProperty.PropertyType == typeof(DateTime?))
+        {
+            updatedOnProperty.SetValue(item, DateTime.Now);
+            Debug.WriteLine($"Set UpdatedOn to '{DateTime.Now}' for {itemType.Name}");
+        }
+        
+        // Check for async Update method first (UpdateAsync)
+        var updateAsyncMethod = itemType.GetMethod("UpdateAsync", 
+            BindingFlags.Public | BindingFlags.Instance);
+        
+        if (updateAsyncMethod != null && updateAsyncMethod.ReturnType == typeof(Task))
+        {
+            Debug.WriteLine($"Calling UpdateAsync() on {itemType.Name}");
+            await (Task)updateAsyncMethod.Invoke(item, null);
+            return;
+        }
+        
+        // Check for synchronous Update method
+        var updateMethod = itemType.GetMethod("Update", 
+            BindingFlags.Public | BindingFlags.Instance, 
+            null, 
+            Type.EmptyTypes, 
+            null);
+        
+        if (updateMethod != null)
+        {
+            Debug.WriteLine($"Calling Update() on {itemType.Name}");
+            
+            // Check if it returns a Task
+            if (updateMethod.ReturnType == typeof(Task))
+            {
+                await (Task)updateMethod.Invoke(item, null);
+            }
+            else
+            {
+                // Synchronous method
+                updateMethod.Invoke(item, null);
+            }
+        }
+        else
+        {
+            Debug.WriteLine($"No Update() or UpdateAsync() method found on {itemType.Name}");
+        }
+    }
+    catch (Exception ex)
+    {
+        Debug.WriteLine($"Error calling Update method on {itemType.Name}: {ex.Message}");
+        _importValidationWarnings.Add($"Warning: Update method failed for item - {ex.Message}");
+    }
+}
 
     private async void Download()
     {
@@ -1368,7 +1870,7 @@
     /// </summary>
     private async Task ParentDiscard()
     {
-        // although discard is done at Chiled component, however on parent side the List is not reset
+        // although discard is done at Child component, however on parent side the List is not reset
         // hence only reset at Child component is not sufficient
         //await Discard.InvokeAsync();
         //System.Diagnostics.Debug.WriteLine("Table - Discard");

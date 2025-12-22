@@ -7,7 +7,9 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using ElDesignApp.Services;
+using ElDesignApp.Services.Cache;
+using ElDesignApp.Services.Global;
+using ElDesignApp.Services.DataBase;
 using Microsoft.Extensions.Logging;
 
 public interface IDataRetrievalService
@@ -19,13 +21,15 @@ public interface IDataRetrievalService
 
 public class DataRetrievalService : IDataRetrievalService
 {
-    private readonly ICacheService _cache;
-    private readonly IMyTableService _myTable;
-    private readonly IGlobalDataService _globalData;
+    private readonly Cache.ICacheService _cache;
+    //private readonly IMyTableService _myTable;
+    private readonly ITableService _myTable;
+    private readonly Global.IGlobalDataService _globalData;
+    //private readonly IGlobalDataService _globalData;
     private readonly ILogger<DataRetrievalService> _logger;
 
-    public DataRetrievalService(ICacheService cache, IMyTableService myTable, 
-        IGlobalDataService globalData, ILogger<DataRetrievalService> logger)
+    public DataRetrievalService(Cache.ICacheService cache, ITableService myTable, 
+        Global.IGlobalDataService globalData, ILogger<DataRetrievalService> logger)
     {
         _cache = cache;
         _myTable = myTable;
@@ -79,7 +83,7 @@ public class DataRetrievalService : IDataRetrievalService
         try
         {
             string selectedProjectTag = _globalData?.SelectedProject?.Tag ?? string.Empty;
-            listT = await _myTable.GetList(item, selectedProjectTag) ?? [];
+            listT = await _myTable.GetListAsync(item, selectedProjectTag) ?? [];
 
             loadLocation = listT.Any() ? "SQL Database" : "SQL Database (empty)";
             

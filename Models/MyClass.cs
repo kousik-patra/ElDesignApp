@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace ElDesignApp.Models;
 
@@ -17,6 +18,18 @@ public class MyClass
 {
     
 }
+
+public class RoleMapping
+{
+    public Guid UID { get; set; }
+    public string CustomRoleName { get; set; } = string.Empty;      // "Manager", "Engineer"
+    public string Description { get; set; } = string.Empty;
+    public string MappedHardRoles { get; set; } = "[]";             // JSON: ["Admin", "User"]
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedOn { get; set; } = DateTime.Now;
+    public string CreatedBy { get; set; } = string.Empty;
+}
+
 
 
 public class DBMaster: BaseInfo
@@ -36,31 +49,79 @@ public class DBMaster: BaseInfo
     public bool Display { get; set; }
 }
 
+public class ProjectUserAssignment
+{
+    public Guid UID { get; set; }
+    public Guid ProjectId { get; set; }              // FK to Project
+    public string UserId { get; set; }               // FK to AspNetUsers
+    public string ProjectRoles { get; set; }         // JSON: ["User", "Report"]
+    public bool IsActive { get; set; }
+    public string AssignedBy { get; set; }           // Who assigned this user
+    public DateTime AssignedOn { get; set; }
+    public string? RemovedBy { get; set; }
+    public DateTime? RemovedOn { get; set; }
+}
+
 public class Project
 {
     public Project()
     {
+        UID = Guid.NewGuid();
+        Tag = "";
+        TagDescription = "";
+        ProjAlt = "base";
+        ProjClient = "";
+        ProjPartners = "[\"self\"]";  // JSON array as string
+        ProjLocation = "";
+        ProjUsers = "[]";            // Start empty!
+        Order = 0;
+        Display = true;
+        XEW = true;
+        GlobalE = 0f;
+        GlobalN = 0f;
     }
-    [Display(Name = "UID", Order = 1)] public Guid UID { get; set; }
-    
-    [Required] [Display(Name = "Project Code", Order = 2)]
-    [RegularExpression(@"^([ .\/\a-zA-Z0-9]){3,100}$",
-        ErrorMessage = "Project Code should be 3 to 100 characters and can not contain any special characters")]
-    public string Tag { get; set; }
-    [Required] [Display(Name = "Project Description", Order = 3)]
-    [RegularExpression(@"^([ .\/\a-zA-Z0-9]){3,200}$",
-        ErrorMessage = "Project Description should be 3 to 200 characters and can not contain any special characters")]
-    public string TagDescription { get; set; }
-    public string ProjAlt { get; set; } // default = "base"
-    public string ProjClient { get; set; }
-    public string ProjPartners { get; set; } // ["self"]
+    [Key]
+    public Guid UID { get; set; }
+
+    [Required(ErrorMessage = "Project Code is required")]
+    [StringLength(20, MinimumLength = 3, ErrorMessage = "Project Code must be 3–20 characters")]
+    [RegularExpression(@"^[a-zA-Z0-9\s._-]+$", ErrorMessage = "Only letters, numbers, space, dot, underscore, hyphen allowed")]
+    [Display(Name = "Project Code", Order = 2)]
+    public string Tag { get; init; }
+
+    [Required(ErrorMessage = "Description is required")]
+    [StringLength(100, MinimumLength = 3)]
+    [Display(Name = "Project Description", Order = 3)]
+    public string TagDescription { get; init; }
+
+    [Display(Name = "Alternative Name", Order = 4)] public string ProjAlt { get; set; } = "base";
+
+    [Display(Name = "Client", Order = 5)] public string ProjClient { get; init; }
+
+    [Display(Name = "Partners (JSON)", Order = 6)]
+    public string ProjPartners { get; init; }
+    [Display(Name = "Location", Order = 7)]
     public string ProjLocation { get; set; }
-    public string ProjUsers { get; set; } // ["test"]
+
+    [Display(Name = "Assigned Users (JSON)", Order = 8)]
+    public string ProjUsers { get; set; } = "[]";  // Important: start empty
+    public string ProjectAdmins { get; set; } = "[]"; 
+    public string SoftAssignedUsers { get; set; } = "[]";
+
+    [Display(Name = "Display in List", Order = 9)]
+    public bool Display { get; set; } = true;
+
+    [Display(Name = "X-Axis = East-West", Order = 10)]
+    public bool XEW { get; set; } = true;
+
+    [Display(Name = "Global Easting (X=0)", Order = 11)]
+    public float GlobalE { get; set; } = 0f;
+
+    [Display(Name = "Global Northing (Y=0)", Order = 12)]
+    public float GlobalN { get; set; } = 0f;
     public int Order { get; set; }
-    public bool Display { get; set; }
-    public bool XEW { get; set; } // Plot plan display X-axis for East-West is true else X-axis for North-South
-    public float GlobalE { get; set; } // E value for x= 0
-    public float GlobalN { get; set; } // N value for y= 0
+    
+    
 }
 
 
@@ -107,40 +168,40 @@ public class Bus : BaseInfo, IBaseMethod
     {
     }
 
-    public Bus(string category, string tag, float vr, string sc, float xr = 10)
-    {
-        Tag = tag;
-        VR = vr;
-        XR = xr;
-        Vit = new Complex(1, 0); // initialised
-        Sit = new Complex(0, 0); // initialised
-        Cn = new List<string>();
-        SC = sc;
-        ISC = SCFloat(SC, VR);
-        CordX = 0;
-        CordY = 0;
-        SLDL = 0;
-        Category = category;
-        UID = Guid.NewGuid();
-        return;
-    }
+    // public Bus(string category, string tag, float vr, string sc, float xr = 10)
+    // {
+    //     Tag = tag;
+    //     VR = vr;
+    //     XR = xr;
+    //     Vit = new Complex(1, 0); // initialised
+    //     Sit = new Complex(0, 0); // initialised
+    //     Cn = new List<string>();
+    //     SC = sc;
+    //     ISC = SCFloat(SC, VR);
+    //     CordX = 0;
+    //     CordY = 0;
+    //     SLDL = 0;
+    //     Category = category;
+    //     UID = Guid.NewGuid();
+    //     return;
+    // }
 
     //Swing Bus or Slack Bus (aka reference bus): the voltage magnitude is known and voltage angle=0, real and reactive power not known
     //PV Bus or Generation bus: Real power and voltage magnitude known, reactive power and voltage angle unknown
     //PQ Bus or Load Bus: Real and reactive power known, voltage angle and magnitude unknown (motor)
     // other bus (switchboards) are "" unknown bus as none of the parameters voltage, angle, Real or Imaginary Power not known
     public string Category { get; set; } // Type of the bus (Swing/PV/PQ/"")
-    public float VR { get; set; } // Bus Nominal/Rated Voltage in V
+    [Display(Name = "Rated Voltage (V)")] public float VR { get; set; } // Bus Nominal/Rated Voltage in V
 
     [RegularExpression(@"^[0-9]{1,5}?[\.]{0,1}[0-9]{0,3}[ ]{0,2}[k]?[M]?[V]?[A]?$",
         ErrorMessage = "Short Circuit value with unit kA or MVA, value should be max 5 digit. Default unit 'kA'")]
-    public float IR { get; set; } // Rated FLC (A)
+    [Display(Name = "Rated Current (A)")] public float IR { get; set; } // Rated FLC (A)
 
-    public string SC { get; set; } // Bus Short Circuit (e.g., 25kA, 325 MVA, 200MVA, 25) default unit kA
-    public float ISC { get; set; } // Bus Short Circuit Current in kA
-    public float XR { get; set; } = 10; // Bus X/R ratio (applicable for source
-    public string SwbdTag { get; set; } // corresponding Switchboard Tag
-    public string SwitchboardSection { get; set; } // corresponding bus section A/B/.. or blank
+    [Display(Name = "Short Circuit")] public string SC { get; set; } // Bus Short Circuit (e.g., 25kA, 325 MVA, 200MVA, 25) default unit kA
+    [Display(Name = "SC Current (kA)")] public float ISC { get; set; } // Bus Short Circuit Current in kA
+    [Display(Name = "X/R Ratio")] public float XR { get; set; } = 10; // Bus X/R ratio (applicable for source
+    [Display(Name = "Switchboard Tag")] public string SwbdTag { get; set; } // corresponding Switchboard Tag
+    [Display(Name = "Switchboard Section")] public string Sec { get; set; } // Switchboard Section corresponding bus section A/B/.. or blank
     public float Vb { get; set; } // Base Voltage for this Bus in kV
     public Complex Vo { get; set; } // Bus Operating Voltage in PU
     public Complex Ybb { get; set; } // Self Admittance (sum of admittances of all connected branches)
@@ -179,37 +240,71 @@ public class Bus : BaseInfo, IBaseMethod
         Sit = new Complex(0, 0); // initialised
         // nothing further to update
     }
+    public async Task UpdateAsync()
+    {
+        // Perform async operations if needed
+        await Task.Run(() => Update());
+        
+        Debug.WriteLine($"UpdateAsync() called for {Tag}");
+    }
     
+    /// <summary>
+    /// Converts short circuit string to ISC float value
+    /// </summary>
+    /// <param name="sc">Short circuit string (e.g., "100 kA", "50 MVA")</param>
+    /// <param name="vr">Rated voltage in V</param>
+    /// <returns>Short circuit current in kA</returns>
     float SCFloat(string sc, float vr)
     {
-        const int phase = 3;
-        var isc = 25f;
-        if (!string.IsNullOrEmpty(sc))
+        const float defaultISC = 25f;
+    
+        if (string.IsNullOrWhiteSpace(sc))
         {
-            // remove whitespace
-            sc = Regex.Replace(sc, @"\s+", "");
-
-            var matchkA = Regex.Match(sc, @"^[0-9]{1,4}?[\.]{0,1}[0-9]{0,4}[ ]{0,2}[k][A]");
-            if (matchkA.Success)
-            {
-                isc = float.Parse(matchkA.Captures[0].Value.Replace("kA", ""));
-            }
-            else
-            {
-                var matchMVA = Regex.Match(sc, @"^[0-9]{1,4}?[\.]{0,1}[0-9]{0,4}[ ]{0,2}[M][V][A]");
-                if (matchMVA.Success)
-                {
-                    var mVA = float.Parse(matchMVA.Captures[0].Value.Replace("MVA", ""));
-                    isc = mVA * 1000 / vr / phase;
-                }
-                else
-                {
-                    isc = float.Parse(sc);
-                }
-            }
+            return defaultISC;
         }
 
-        return isc;
+        try
+        {
+            // Remove whitespace and convert to uppercase
+            sc = Regex.Replace(sc, @"\s+", "").ToUpper();
+
+            // Match kA format
+            var matchkA = Regex.Match(sc, @"^([0-9]{1,5}\.?[0-9]{0,3})KA$");
+            if (matchkA.Success)
+            {
+                return float.Parse(matchkA.Groups[1].Value);
+            }
+
+            // Match MVA format
+            var matchMVA = Regex.Match(sc, @"^([0-9]{1,5}\.?[0-9]{0,3})MVA$");
+            if (matchMVA.Success)
+            {
+                var mva = float.Parse(matchMVA.Groups[1].Value);
+            
+                if (vr <= 0)
+                {
+                    Debug.WriteLine($"Invalid voltage {vr}V. Using default ISC {defaultISC}kA.");
+                    return defaultISC;
+                }
+            
+                // ISC = MVA * 1000000 / (√3 * VR_V)
+                return mva * 1000000f / ((float)Math.Sqrt(3) * vr);
+            }
+
+            // No unit - assume kA
+            if (float.TryParse(sc, out var value))
+            {
+                return value;
+            }
+        
+            Debug.WriteLine($"Unable to parse '{sc}'. Using default {defaultISC}kA.");
+            return defaultISC;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error parsing '{sc}': {ex.Message}. Using default {defaultISC}kA.");
+            return defaultISC;
+        }
     }
 }
 

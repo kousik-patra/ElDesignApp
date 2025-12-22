@@ -11,11 +11,12 @@
 @using ElDesignApp.Models
 
 
-@inject Services.IDataRetrievalService DataService
-@inject Services.IMyTableService MyTable 
-@inject Services.IGlobalDataService GlobalData
-@inject Services.IMyFunctionService MyFunction
-@inject Services.ILayoutFunctionService LayoutFunction
+@inject IDataRetrievalService DataService
+@inject IMyTableService MyTable
+@inject ITableService Table
+@inject IGlobalDataService GlobalData
+@inject IMyFunctionService MyFunction
+@inject ILayoutFunctionService LayoutFunction
 
 @if (_plotPlans.Count > 0)
 {

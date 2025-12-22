@@ -1,0 +1,194 @@
+@typeparam T
+
+<div class="modal fade show" id="myModal" style="display:block; background-color: rgba(10,10,10,.8);" aria-modal="true"
+     role="dialog">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">@Title</h5>
+                <button type="button" class="close" @onclick="@ModalCancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>@Text</p>
+                <EditForm Model="Item" OnValidSubmit="DoSubmit">
+                <div class="modal-body">
+                    @foreach (var prop in _propertyNames)
+                    {
+                        var label = prop.GetCustomAttribute<DisplayAttribute>()?.Name ?? prop.Name;
+
+                        <div class="mb-3">
+                            <label class="form-label fw-medium">@label</label>
+
+                            @{
+                                var value = prop.GetValue(Item);
+                            }
+
+                            @if (prop.PropertyType == typeof(bool) || prop.PropertyType == typeof(bool?))
+                            {
+                                var b = (bool)(value ?? false);
+                                <InputCheckbox @bind-Value="b" />
+                            }
+                            else if (prop.PropertyType == typeof(DateTime) || prop.PropertyType == typeof(DateTime?))
+                            {
+                                <InputDate @bind-Value="value" />
+                            }
+                            else if (prop.PropertyType == typeof(int) || prop.PropertyType == typeof(int?))
+                            {
+                                <InputNumber @bind-Value="value" />
+                            }
+                            else if (IsNumericType(prop.PropertyType))
+                            {
+                                <InputNumber @bind-Value="value" step="0.001" />
+                            }
+                            else
+                            {
+                                var stringValue = GetStringValue(prop);
+                                <InputText @bind-Value="stringValue" class="form-control" />
+                            }
+                        </div>
+                    }
+                </div>
+
+            </EditForm>
+            </div>
+            <div class="modal-footer">
+                @switch (DialogType)
+                {
+                    case ModalDialogType.Ok:
+                        <button type="button" class="btn btn-primary" @onclick="@ModalOk">OK</button>
+                        break;
+                    case ModalDialogType.OkCancel: 
+                        <button type="button" class="btn" @onclick="@ModalCancel">Cancel</button>
+                        <button type="button" class="btn btn-primary" @onclick="@ModalOk">OK</button>
+                        break;
+                    case ModalDialogType.SaveCancel:
+                        <button type="button" class="btn" @onclick="@ModalCancel">Cancel</button>
+                        <button type="button" class="btn btn-success" @onclick="@ModalSave">Save</button>
+                        break;
+                    case ModalDialogType.DeleteCancel:
+                        <button type="button" class="btn" @onclick="@ModalCancel">Cancel</button>
+                        <button type="button" class="btn btn-danger" @onclick="@ModalDelete">Delete</button>
+                        break;
+                    case ModalDialogType.SaveDeleteCancelOk:
+                        <button type="button" class="btn" @onclick="@ModalCancel">Cancel</button>
+                        <button type="button" class="btn btn-success" @onclick="@ModalSave">Save</button>
+                        <button type="button" class="btn btn-danger" @onclick="@ModalDelete">Delete</button>
+                        <button type="button" class="btn btn-info" @onclick="@ModalOk">OK</button>
+                        break;
+                    case ModalDialogType.AppendReplaceDiscard:
+                        <button type="button" class="btn btn-success" @onclick="@ModalAppend">Append</button>
+                        <button type="button" class="btn btn-warning" @onclick="@ModalReplace">Replace</button>
+                        <button type="button" class="btn btn-danger" @onclick="@ModalDiscard">Discard</button>
+                        break;
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+
+    [Parameter] public string? Title { get; set; }
+
+    [Parameter] public string? Text { get; set; }
+    
+    [Parameter] public T? Item { get; set; }
+
+    private readonly PropertyInfo[] _propertyNames = typeof(T).GetProperties();
+
+
+    [Parameter] public EventCallback<(T Item, string Action)> OnClose { get; set; }
+
+
+    [Parameter] public ModalDialogType DialogType { get; set; }
+
+
+    private async Task DoSubmit()
+    {
+               switch (DialogType)
+                {
+                    case ModalDialogType.Ok:
+                        await ModalOk();
+                        break;
+                    case ModalDialogType.OkCancel:
+                        await ModalOk();
+                        await ModalCancel();
+ break;
+                    case ModalDialogType.SaveCancel:
+                        await ModalCancel();
+                        await ModalSave();
+                        break;
+                    case ModalDialogType.DeleteCancel:
+                        await ModalCancel();
+                        await ModalDelete();
+                        break;
+                    case ModalDialogType.SaveDeleteCancelOk:
+                        await ModalOk();
+                        await ModalCancel();
+                        await ModalDelete();
+                        await ModalSave();
+                        break;
+                    case ModalDialogType.AppendReplaceDiscard:
+                        await ModalReplace();
+                        await ModalDiscard();
+                        await ModalAppend();
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+    }
+    
+    private Task ModalOk()
+    {
+        return OnClose.InvokeAsync((Item, "Ok"));
+    }
+
+    private Task ModalCancel()
+    {
+        return OnClose.InvokeAsync((Item, "Cancel"));
+    }
+
+    private Task ModalSave()
+    {
+        return OnClose.InvokeAsync((Item, "Save"));
+    }
+
+    private Task ModalDelete()
+    {
+        return OnClose.InvokeAsync((Item, "Delete"));
+    }
+
+    private Task ModalAppend()
+    {
+        return OnClose.InvokeAsync((Item, "Append"));
+    }
+
+    private Task ModalReplace()
+    {
+        return OnClose.InvokeAsync((Item, "Replace"));
+    }
+
+    private Task ModalDiscard()
+    {
+        return OnClose.InvokeAsync((Item, "Discard"));
+    }
+    
+    private string? GetStringValue(PropertyInfo prop)
+        => prop.GetValue(Item)?.ToString();
+    
+    private bool IsNumericType(Type t) => t == typeof(float) || t == typeof(float?) ||
+                                          t == typeof(double) || t == typeof(double?) ||
+                                          t == typeof(decimal) || t == typeof(decimal?);
+    
+
+    public enum ModalDialogType
+    {
+        Ok,
+        SaveCancel,
+        OkCancel,
+        DeleteCancel,
+        SaveDeleteCancelOk,
+        AppendReplaceDiscard
+    }
+
+}

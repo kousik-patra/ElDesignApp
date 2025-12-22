@@ -1,0 +1,80 @@
+/* Collapsible Nav Group Container */
+.collapsible-nav-group {
+    width: 100%;
+    margin: 0;
+}
+
+/* Group Header Button */
+.group-header-btn {
+    width: 100%;
+    background: none;
+    border: none;
+    color: #d7d7d7;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    height: 3rem;
+    border-radius: 4px;
+    text-align: left;
+}
+
+.group-header-btn:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.group-header-btn:focus {
+    outline: none;
+}
+
+/* Icon in header */
+.group-header-btn [class*="bi-"] {
+    font-size: 1.25rem;
+    min-width: 1.25rem;
+    margin-right: 0.5rem;
+    flex-shrink: 0;
+}
+
+/* Title text */
+.group-title-text {
+    flex: 1;
+    text-align: left;
+    margin-left: 0.5rem;
+    white-space: nowrap;
+}
+
+/* Chevron toggle icon */
+.toggle-chevron {
+    font-size: 0.875rem;
+    transition: transform 0.2s ease;
+    margin-left: auto;
+}
+
+.group-header-btn.expanded .toggle-chevron {
+    transform: rotate(90deg);
+}
+
+/* Group Content/Children */
+.group-children-content {
+    padding-left: 1rem;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+}
+
+/* When sidebar is collapsed - center icon and hide text */
+.sidebar-collapsed .collapsible-nav-group .group-title-text,
+.sidebar-collapsed .collapsible-nav-group .toggle-chevron {
+    display: none;
+}
+
+.sidebar-collapsed .collapsible-nav-group .group-header-btn {
+    justify-content: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.sidebar-collapsed .collapsible-nav-group .group-header-btn [class*="bi-"] {
+    margin-right: 0;
+}

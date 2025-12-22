@@ -1,0 +1,27 @@
+@inject IProjectAuthorizationService ProjectAuth
+@using Microsoft.AspNetCore.Identity
+@using ElDesignApp.Data
+@inject UserManager<ApplicationUser> UserManager
+
+<select @bind="SelectedProjectId" class="form-select">
+    <option value="">Select Project...</option>
+    @foreach (var project in _userProjects)
+    {
+        <option value="@project.UID">@project.Tag - @project.TagDescription</option>
+    }
+</select>
+
+@code {
+    [CascadingParameter] public Task<AuthenticationState>? AuthState { get; set; }
+    
+    private List<Project> _userProjects = new();
+    private Guid SelectedProjectId { get; set; }
+    
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState!;
+        var userId = UserManager.GetUserId(authState.User);
+        
+        _userProjects = await ProjectAuth.GetUserProjectsAsync(userId);
+    }
+}

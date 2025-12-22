@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Reflection;
 using ElDesignApp.Models;
+using ElDesignApp.Services.Cache;
+using ElDesignApp.Services.Global;
 using Switch = ElDesignApp.Models.Switch;
 using System.Text.Json;
 
@@ -756,7 +758,18 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
                           new Complex(1 / bus.XR, Math.Sin(Math.Acos(1 / bus.XR)));
                 var Zb = (float)Math.Pow(bus.Vb, 2) / (1000000 * _globalData.Sb);
                 var Zscpu = Zsc / Zb;
-                var newBus = new Bus("Swing", bus.Tag + "-Dummy", bus.VR, bus.SC);
+
+                var newBus = new Bus
+                {
+                    Category = "Swing",
+                    Tag = bus.Tag + "-Dummy",
+                    Vb = bus.VR,
+                    SC = bus.SC,
+                    ISC = bus.ISC,
+                    XR = bus.XR
+                };
+                
+                
                 newBus.Cn.Clear();
                 newBus.Cn.Add(bus.Tag);
                 newBus.Vb = bus.Vb;
@@ -949,7 +962,16 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         var Zpu = Zsc / Zb * new Complex(lrpf, Math.Sin(Math.Acos(lrpf)));
         var Ypu = 1 / Zpu;
         //            
-        var newBus = new Bus("Swing", loadTag + "-Dummy", connectedBus.VR, connectedBus.SC);
+        var newBus = new Bus
+        {
+            Category = "Swing",
+            Tag = loadTag + "-Dummy",
+            Vb = connectedBus.VR,
+            SC = connectedBus.SC,
+            ISC = connectedBus.ISC,
+            XR = connectedBus.XR
+        };
+
         newBus.Cn.Clear();
         newBus.Cn.Add(connectedBus.Tag);
         newBus.Vb = connectedBus.Vb;

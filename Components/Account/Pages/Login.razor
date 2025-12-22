@@ -6,12 +6,16 @@
 @using ElDesignApp.Data
 @using Microsoft.AspNetCore.Http
 @using Microsoft.Extensions.Logging
+@using ElDesignApp.Services.Global
+
 
 @inject UserManager<ApplicationUser> UserManager
 @inject SignInManager<ApplicationUser> SignInManager
 @inject ILogger<Login> Logger
 @inject NavigationManager NavigationManager
 @inject IdentityRedirectManager RedirectManager
+@inject IGlobalDataService GlobalData
+@inject IMiscService MiscService
 
 <PageTitle>Log in</PageTitle>
 

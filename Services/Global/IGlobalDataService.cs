@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace ElDesignApp.Services;
+namespace ElDesignApp.Services.Global;
 
 
 using System.Numerics;
@@ -9,6 +9,7 @@ using ElDesignApp.Models;
 
 public interface IGlobalDataService
 {
+    string? LoginUser { get; set; }
     
     Project? SelectedProject { get; set; } // Or whatever properties GlobalData holds
         
@@ -355,10 +356,10 @@ public enum ModalDialogType // <-- Defined directly in the namespace
 
 public class GlobalDataService : IGlobalDataService
     {
-       
+        public string LoginUser { get; set; }
+
         /// <summary>Gets or sets the global data.</summary>
         public Project? SelectedProject { get; set; } 
-
 
         public int ClickCount { get; set; }
 

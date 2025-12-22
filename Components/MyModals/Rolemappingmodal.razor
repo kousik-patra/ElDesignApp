@@ -1,0 +1,379 @@
+@using System.Text.Json
+@using Microsoft.AspNetCore.Identity
+@inject IRoleAuthorizationService RoleAuthService
+@inject RoleManager<IdentityRole> RoleManager
+@inject IJSRuntime JS
+@inject Services.IMyTableService MyTable
+
+<div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.6);" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-gear-fill"></i> Role Mapping Management
+                </h5>
+                <button type="button" class="btn-close" @onclick="Close"></button>
+            </div>
+            
+            <div class="modal-body">
+                @if (_isLoading)
+                {
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="mb-3">
+                        <button class="btn btn-primary" @onclick="ShowAddEditModal">
+                            <i class="bi bi-plus-circle"></i> Add New Custom Role
+                        </button>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <strong>Info:</strong> Custom roles are user-facing role names that map to hard-coded system roles (SuperAdmin, Admin, User, Guest, Report) for authorization.
+                    </div>
+
+                    @if (!_roleMappings.Any())
+                    {
+                        <div class="alert alert-warning">
+                            No custom roles defined yet. Click "Add New Custom Role" to create one.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-light">
+                                <tr>
+                                    <th>Custom Role Name</th>
+                                    <th>Description</th>
+                                    <th>Mapped Hard Roles</th>
+                                    <th>Status</th>
+                                    <th style="width: 150px;">Actions</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (var mapping in _roleMappings.OrderBy(m => m.CustomRoleName))
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong>@mapping.CustomRoleName</strong>
+                                        </td>
+                                        <td>@mapping.Description</td>
+                                        <td>
+                                            @{
+                                                var hardRoles = GetHardRoles(mapping);
+                                            }
+                                            @foreach (var role in hardRoles)
+                                            {
+                                                var badgeClass = role switch
+                                                {
+                                                    "SuperAdmin" => "bg-danger",
+                                                    "Admin" => "bg-warning text-dark",
+                                                    "User" => "bg-primary",
+                                                    "Report" => "bg-secondary",
+                                                    "Guest" => "bg-secondary",
+                                                    _ => "bg-info"
+                                                };
+                                                <span class="badge @badgeClass me-1">@role</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (mapping.IsActive)
+                                            {
+                                                <span class="badge bg-success">Active</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">Inactive</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary me-1" 
+                                                    @onclick="() => EditMapping(mapping)">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger" 
+                                                    @onclick="() => DeleteMapping(mapping)">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+            
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Role Mapping Modal -->
+@if (_showEditModal)
+{
+    <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.7); z-index: 1060;" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        @(_editingMapping == null ? "Add New" : "Edit") Custom Role
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="CloseEditModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Custom Role Name <span class="text-danger">*</span></label>
+                        <input type="text" 
+                               class="form-control" 
+                               @bind="_customRoleName"
+                               placeholder="e.g., Manager, Engineer, Designer"
+                               disabled="@(_editingMapping != null)" />
+                        <small class="form-text text-muted">This is the name users will see</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" 
+                                  rows="2"
+                                  @bind="_description"
+                                  placeholder="Describe what this role is for"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Mapped Hard Roles <span class="text-danger">*</span></label>
+                        <div class="border rounded p-3">
+                            @foreach (var hardRole in _availableHardRoles)
+                            {
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" 
+                                           type="checkbox" 
+                                           id="role_@hardRole"
+                                           checked="@_selectedHardRoles.Contains(hardRole)"
+                                           @onchange="e => ToggleHardRole(hardRole, e)" />
+                                    <label class="form-check-label" for="role_@hardRole">
+                                        <strong>@hardRole</strong>
+                                        <small class="text-muted">
+                                            @(GetHardRoleDescription(hardRole))
+                                        </small>
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                        <small class="form-text text-muted">
+                            Select one or more hard roles that this custom role should map to
+                        </small>
+                    </div>
+                    
+                    @if (!string.IsNullOrEmpty(_validationError))
+                    {
+                        <div class="alert alert-danger">
+                            @_validationError
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseEditModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveMapping">
+                        <i class="bi bi-save"></i> Save
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+    
+    private bool _isLoading = true;
+    private List<RoleMapping> _roleMappings = new();
+    private List<string> _availableHardRoles = new() { "SuperAdmin", "Admin", "User", "Report","Guest" };
+    
+    private bool _showEditModal = false;
+    private RoleMapping? _editingMapping;
+    private string _customRoleName = string.Empty;
+    private string _description = string.Empty;
+    private List<string> _selectedHardRoles = new();
+    private string _validationError = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMappings();
+        _isLoading = false;
+    }
+
+    private async Task LoadMappings()
+    {
+        try
+        {
+            _roleMappings = await RoleAuthService.GetAllRoleMappings();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error loading role mappings: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"LoadMappings Error: {ex}");
+        }
+    }
+
+    private List<string> GetHardRoles(RoleMapping mapping)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(mapping.MappedHardRoles) ?? new List<string>();
+        }
+        catch
+        {
+            return new List<string>();
+        }
+    }
+
+    private string GetHardRoleDescription(string hardRole)
+    {
+        return hardRole switch
+        {
+            "SuperAdmin" => "- Full system access",
+            "Admin" => "- Administrative privileges",
+            "User" => "- Standard user access",
+            "Report" => "- Read-only access",
+            "Guest" => "- Limited access",
+            _ => ""
+        };
+    }
+
+    private void ShowAddEditModal()
+    {
+        _editingMapping = null;
+        _customRoleName = string.Empty;
+        _description = string.Empty;
+        _selectedHardRoles.Clear();
+        _validationError = string.Empty;
+        _showEditModal = true;
+    }
+
+    private void EditMapping(RoleMapping mapping)
+    {
+        _editingMapping = mapping;
+        _customRoleName = mapping.CustomRoleName;
+        _description = mapping.Description;
+        _selectedHardRoles = GetHardRoles(mapping);
+        _validationError = string.Empty;
+        _showEditModal = true;
+    }
+
+    private void ToggleHardRole(string role, ChangeEventArgs e)
+    {
+        var isChecked = (bool)(e.Value ?? false);
+        if (isChecked)
+        {
+            if (!_selectedHardRoles.Contains(role))
+                _selectedHardRoles.Add(role);
+        }
+        else
+        {
+            _selectedHardRoles.Remove(role);
+        }
+    }
+
+    private async Task SaveMapping()
+    {
+        _validationError = string.Empty;
+
+        // Validation
+        if (string.IsNullOrWhiteSpace(_customRoleName))
+        {
+            _validationError = "Role name is required";
+            return;
+        }
+
+        if (!_selectedHardRoles.Any())
+        {
+            _validationError = "At least one hard role must be selected";
+            return;
+        }
+
+        try
+        {
+            if (_editingMapping == null)
+            {
+                var newMapping = new RoleMapping
+                {
+                    UID = Guid.NewGuid(),
+                    CustomRoleName = _customRoleName.Trim(),
+                    Description = _description?.Trim() ?? string.Empty,
+                    MappedHardRoles = JsonSerializer.Serialize(_selectedHardRoles),
+                    IsActive = true,
+                    CreatedOn = DateTime.Now,
+                    CreatedBy = "Admin"
+                };
+            
+                await MyTable.InsertItemAsync(newMapping);
+            
+                // Create role in Identity
+                if (!await RoleManager.RoleExistsAsync(newMapping.CustomRoleName))
+                {
+                    await RoleManager.CreateAsync(new IdentityRole(newMapping.CustomRoleName));
+                }
+            }
+            else
+            {
+                _editingMapping.Description = _description?.Trim() ?? string.Empty;
+                _editingMapping.MappedHardRoles = JsonSerializer.Serialize(_selectedHardRoles);
+            
+                await MyTable.UpdateParameter(_editingMapping, _editingMapping.UID, 
+                    new List<string>() { "Description", "MappedHardRoles" });
+            }
+
+            await LoadMappings();
+            CloseEditModal();
+        }
+        catch (Exception ex)
+        {
+            _validationError = $"Error saving mapping: {ex.Message}";
+            System.Diagnostics.Debug.WriteLine($"SaveMapping Error: {ex}");
+        }
+    }
+
+    private async Task DeleteMapping(RoleMapping mapping)
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", 
+            $"Are you sure you want to delete the custom role '{mapping.CustomRoleName}'?\n\n" +
+            $"Note: Users with this role will lose their access. Consider deactivating instead.");
+        
+        if (!confirmed) return;
+
+        try
+        {
+            // Soft delete by setting IsActive to false
+            mapping.IsActive = false;
+            await MyTable.UpdateParameter(mapping, mapping.UID, new List<string>() { "IsActive" });
+            
+            await LoadMappings();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error deleting mapping: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"DeleteMapping Error: {ex}");
+        }
+    }
+
+    private void CloseEditModal()
+    {
+        _showEditModal = false;
+        _validationError = string.Empty;
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
+    }
+}

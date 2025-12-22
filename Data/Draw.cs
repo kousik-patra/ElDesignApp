@@ -10,6 +10,7 @@ using System.Text.Json;
 using ElDesignApp.Models;
 using Microsoft.JSInterop;
 using ElDesignApp.Services;
+using ElDesignApp.Services.Global;
 
 
 public class Draw

@@ -7,15 +7,18 @@
 @inject IJSRuntime JsRuntime
 
 
-@inject Services.IDataRetrievalService DataService
-@inject Services.IMyTableService MyTable 
-@inject Services.ICacheService CacheService
-@inject Services.IGlobalDataService GlobalData
-@inject Services.ILayoutFunctionService LayoutFunction
-@inject Services.ISystemStudyFunctionService StudyFunction
-@inject Services.IMyFunctionService MyFunction
+@inject IDataRetrievalService DataService
+@inject IMyTableService MyTable 
+@inject ITableService Table
+@inject ICacheService CacheService
+@inject IGlobalDataService GlobalData
+@inject ILayoutFunctionService LayoutFunction
+@inject ISystemStudyFunctionService StudyFunction
+@inject IMyFunctionService MyFunction
+@inject IMiscService MiscService
 
 @using Switch = ElDesignApp.Models.Switch
+@using ElDesignApp.Services
 
 <style>
     /*https://www.jointjs.com/demos/shapes-drawing*/
@@ -327,56 +330,56 @@ else
     {
         case "grid":
         case "bus":
-            <ElementPropertyModal Title="Properties"
+            <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modalBus"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         case "transformer":
-            <ElementPropertyModal Title="Properties"
+            <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modalTransformer"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         case "cable":
-            <ElementPropertyModal Title="Properties"
+            <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modalCableBranch"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         case "busduct":
-            <ElementPropertyModal Title="Properties"
+            <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modalBusDuct"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         case "motor":
         case "heater":
         case "capacitor":
         case "lumpload":
-            <ElementPropertyModal Title="Properties"
+            <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modalLoad"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         case "switch":
-            <ElementPropertyModal Title="Properties"
+            <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modalSwitch"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         default:
-            <ElementPropertyModal Title="Properties"
+            <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modelEquipment"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal>
+                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
     }
 }
@@ -394,9 +397,9 @@ else
     
     private readonly bool[] tab = new bool[10];
     private int clickTab = 1;
-    private readonly string[] tabName = { "Load", "Bus", "Transformer", "CableBranch", "BusDuct", "Switch" };
-    private readonly string[] loadFieldList = { "RecordId", "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Unit", "PA", "Duty", "VR", "IR", "Pf", "Eff", "Supply", "BfT", "FeederType", "L", "CblDesc", "CblAuto", "CblDescA", "VdRA", "VdSA", "CblDescM", "VdRM", "VdSM", "UpdatedBy", "UpdatedOn" };
-    private readonly string[] busFieldList = { "Tag", "TagDesc", "Category", "VR", "IR", "SC", "XR", "SwbdTag", "UpdatedBy", "UpdatedOn", "Remark" };
+    private readonly string[] tabName = ["Load", "Bus", "Transformer", "CableBranch", "BusDuct", "Switch"];
+    private readonly string[] loadFieldList = ["RecordId", "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Unit", "PA", "Duty", "VR", "IR", "Pf", "Eff", "Supply", "BfT", "FeederType", "L", "CblDesc", "CblAuto", "CblDescA", "VdRA", "VdSA", "CblDescM", "VdRM", "VdSM", "UpdatedBy", "UpdatedOn"];
+    private readonly string[] busFieldList = ["Tag", "TagDesc", "VR", "IR", "SC", "ISC", "XR", "SwbdTag", "Sec", "UpdatedBy", "UpdatedOn", "Remark"];
     private readonly string[] transformerFieldList = { "Tag", "TagDesc", "Category", "kVA", "Z", "XR", "V1", "V2", "BfT", "BtT", "UpdatedBy", "UpdatedOn", "Remark" };
     private readonly string[] cableBranchFieldList = { "Tag", "TagDesc", "CblDesc", "BfT", "BtT", "L", "Rl", "Xl", "R", "X", "UpdatedBy", "UpdatedOn", "Remark" };
     private readonly string[] busDuctFieldList = { "Tag", "TagDesc", "CblDesc", "BfT", "BtT", "L", "Rl", "Xl", "R", "X", "UpdatedBy", "UpdatedOn", "Remark" };
@@ -553,6 +556,10 @@ else
 
     private static string _divString;
 
+    private ILogger _logger;
+
+    private string? loginUser;
+
 
     protected override void OnInitialized()
     {
@@ -565,6 +572,8 @@ else
         GlobalData.selectedPage = "Segments: Cable Ladders, Trays, Trenches and Sleeves";
         GlobalData.sceneCurrent = "Segment";
         GlobalData.sceneDataCable.SceneName = GlobalData.sceneCurrent;
+        
+        
         StateHasChanged();
         base.OnInitialized();
     }
@@ -572,6 +581,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        
     }
 
 
@@ -581,7 +591,23 @@ else
         // do something for the first time rendere
         if (firstRender)
         {
-            // do something
+            
+            
+            var (userId, userName) = await MiscService.GetCurrentUserInfoAsync();
+            loginUser = userName ?? "Guest";
+            
+            // read cabledata and motor data at outset, if not read yet
+            if (GlobalData.CableData != null && GlobalData.CableData.Count == 0)
+            {
+                (GlobalData.CableData, _, _, _) 
+                    = await DataService.ReadFromCacheOrDb(new Models.CableData()) ;
+            }
+            if (GlobalData.MotorData != null && GlobalData.MotorData.Count == 0)
+            {
+                (GlobalData.MotorData, _, _, _) 
+                    = await DataService.ReadFromCacheOrDb(new Models.MotorData()) ;
+            }
+            
             // read Buses at the outset
             //Buses = await ReadFromCacheOrDB(new Bus());
             (Buses, string logInfo, string logWarning, string logError) 
@@ -869,34 +895,43 @@ else
     }
 
 
-    protected async void UpdateOnTableChange<T>((T item, List<T> list, List<T> originalList, string success, string info, string warning, string error ) args)
-
+    protected async void UpdateOnTableChange<T>(
+        (T item, List<T> list, List<T> originalList, string success, string info, string warning, string error ) args) where T : class
     {
-        ResetTableMessages();
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
-        //
-        List<T> itemslist = args.Item2;
-        List<T> origialItemslist = args.Item3;
-        //
-        await MyTable.Update(itemslist, origialItemslist);
-
-        // clear cache invoking the parent page
-        tableSuccessMessage = "Data updated to the Database";
-        tableActionMessage = tableSuccessMessage;
-        StateHasChanged();
+        try
+        {
+            ResetTableMessages();
+            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+            //
+            List<T> itemslist = args.Item2;
+            List<T> origialItemslist = args.Item3;
+            //
+            //await MyTable.Update(itemslist, origialItemslist);
+            var reult = await Table.UpdateAsync(itemslist, origialItemslist, loginUser);
+            _logger = reult.logger;
+            _logger.LogInformation($"Records Added: {reult.AddedRows}, Modified: {reult.modifiedRows} and Deleted: {reult.DeletedRows}.");
+            // clear cache invoking the parent page
+            tableSuccessMessage = "Data updated to the Database";
+            tableActionMessage = tableSuccessMessage;
+            StateHasChanged();
         
         
-        // as the data is updated, to clear the cache entry for the current hour
-        var recordKey = "NavMenu_"  + "_" + GlobalData.SelectedProject.Tag + "_" +typeof(T).Name + "_" + DateTime.Now.ToString("yyyyMMdd_hh");
-        //await CacheService.RemoveAsync(recordKey);
+            // as the data is updated, to clear the cache entry for the current hour
+            var recordKey = "NavMenu_"  + "_" + GlobalData.SelectedProject.Tag + "_" +typeof(T).Name + "_" + DateTime.Now.ToString("yyyyMMdd_hh");
+            //await CacheService.RemoveAsync(recordKey);
        
-        // Construct the pattern to match all hourly keys for this type.
-        // The pattern needs a wildcard for the varying parts.
-        // Original key format: "NavMenu_" + dbName + "_" + DateTime.Now.ToString("yyyyMMdd_hh")
-        // So, the pattern will be: "NavMenu_CableData_*"
-        var pattern = $"NavMenu_{typeof(T).Name}_*";
-        await CacheService.RemoveByPatternAsync(pattern);
-        System.Diagnostics.Debug.WriteLine($"Attempted to clear all cache for pattern: {pattern}");
+            // Construct the pattern to match all hourly keys for this type.
+            // The pattern needs a wildcard for the varying parts.
+            // Original key format: "NavMenu_" + dbName + "_" + DateTime.Now.ToString("yyyyMMdd_hh")
+            // So, the pattern will be: "NavMenu_CableData_*"
+            var pattern = $"NavMenu_{typeof(T).Name}_*";
+            await CacheService.RemoveByPatternAsync(pattern);
+            System.Diagnostics.Debug.WriteLine($"Attempted to clear all cache for pattern: {pattern}");
+        }
+        catch (Exception e)
+        {
+            throw; // TODO handle exception
+        }
     }
 
     private void ResetTableMessages()
@@ -1326,7 +1361,7 @@ else
                 var switchboard = bus.SwbdTag;
                 var busesOfThisBoard = buses.FindAll(item => item.SwbdTag == switchboard).ToList();
                 var busTags = busesOfThisBoard.Select(item => item.Tag).ToList();
-                var busSections = busesOfThisBoard.Select(item => item.SwitchboardSection).ToList();
+                var busSections = busesOfThisBoard.Select(item => item.Sec).ToList();
                 if (busTags.Count > 1)
                 {
                     switchboards.Add(new List<string> { switchboard, JsonSerializer.Serialize(busTags), JsonSerializer.Serialize(busSections) });

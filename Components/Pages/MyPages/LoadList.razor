@@ -8,17 +8,17 @@
 @using System.Diagnostics
 @using System.Reflection
 @using System.Text.Json
+@using ElDesignApp.Constants;
 
-@using ElDesignApp.Data
-@using ElDesignApp.Models
 @using Microsoft.Extensions.Logging;
 
-@inject Services.IDataRetrievalService DataService
-@inject Services.IMyTableService MyTable
-@inject Services.ICacheService CacheService
-@inject Services.IGlobalDataService GlobalData
-@inject Services.ILayoutFunctionService LayoutFunction
-@inject Services.IMyFunctionService MyFunction
+@inject IDataRetrievalService DataService
+@inject IMyTableService MyTable
+@inject ITableService Table
+@inject ICacheService CacheService
+@inject IGlobalDataService GlobalData
+@inject ILayoutFunctionService LayoutFunction
+@inject IMyFunctionService MyFunction
 
 
 
@@ -155,10 +155,18 @@
             await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
 
             _isProcessing = true;
+            
+            if (GlobalData.Loads.Count >= AppConstants.Limits.GuestMaxLoads)
+            {
+                throw new InvalidOperationException($"Guest users can only process {AppConstants.Limits.GuestMaxLoads} loads.");
+            }
+            
+            
             GlobalData.Loads.ForEach(load => LayoutFunction.LoadUpdate(load));
             UpdateDbLocalVariable(GlobalData.Loads);
             await Task.Delay(1000);
             _isProcessing = false;
+            
         }
         catch (Exception ex)
         {
@@ -192,7 +200,7 @@
             await JsRuntime.InvokeVoidAsync("initialiseObjectRef", objPlot);
             Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
                             $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
-
+            
             StateHasChanged();
         }
 

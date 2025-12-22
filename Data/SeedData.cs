@@ -5,7 +5,7 @@ namespace ElDesignApp.Data;
 
 using Microsoft.AspNetCore.Identity;
 using ElDesignApp.Middleware;
-
+using ElDesignApp.Constants;
 
 public static class SeedData
 {
@@ -14,53 +14,34 @@ public static class SeedData
         RoleManager<IdentityRole> roleManager)
         //SignInManager<ApplicationUser> signInManager)
     {
-        string seedEmail = "admin@eldesign.app";
-        string seedUserName = "admin";
-        string seedPassword = "!Useless@123";
-        
-        List<string> rolesToAssign = ["SuperAdmin", "Admin", "User"];
-        
-        // Create Admin and SuperAdmin role if it doesn't exist
-        foreach (var roleName in rolesToAssign)
+        // Create all hard roles if they don't exist
+        foreach (var roleName in HardRoles.GetAll())
         {
-            if (await roleManager.FindByNameAsync(roleName) == null)
+            if (!await roleManager.RoleExistsAsync(roleName))
             {
-                // If they are not in the role, add them
                 await roleManager.CreateAsync(new IdentityRole(roleName));
             }
         }
-
-        // Create the admin user if it doesn't exist
-        //var user = await userManager.FindByEmailAsync(seedEmail);
-        var user = await userManager.FindByNameAsync(seedUserName);
-        if (user == null)
+        
+        // Create SuperAdmin user
+        var superAdminEmail = "admin@eldesignapp.com";
+        var superAdmin = await userManager.FindByEmailAsync(superAdminEmail);
+        
+        if (superAdmin == null)
         {
-            user = new ApplicationUser
+            superAdmin = new ApplicationUser
             {
-                UserName = seedUserName,
-                Email = seedEmail,
+                UserName = "admin",
+                Email = superAdminEmail,
                 EmailConfirmed = true
             };
-
-            var createResult = await userManager.CreateAsync(user, seedPassword);
-            if (createResult.Succeeded)
-            {
-                await userManager.AddToRolesAsync(user, rolesToAssign);
-            }
+            
+            await userManager.CreateAsync(superAdmin, "!Useless@123");
+            await userManager.AddToRoleAsync(superAdmin, HardRoles.SuperAdmin);
         }
-        else
-        {
-            // If the user already exists but has no role, add it
-            foreach (var roleName in rolesToAssign)
-            {
-                // Check if the user is ALREADY in the current role
-                if (!await userManager.IsInRoleAsync(user, roleName))
-                {
-                    // If they are not in the role, add them
-                    await userManager.AddToRoleAsync(user, roleName);
-                }
-            }
-        }
+        
+        
+        
         
     }
 }
