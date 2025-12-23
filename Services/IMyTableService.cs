@@ -659,7 +659,10 @@ private string GetUniqueWhereClause<T>(T item, DynamicParameters parameters, out
     {
         var sql = "select * from dbo." + typeof(T).Name;
         // project filter not applicable for catalogue data or Project tables
-        if (typeof(T).Name.Contains("Data") == false && typeof(T).Name.Contains("Project") == false ) 
+        if (typeof(T).Name.Contains("Data") == false 
+            && typeof(T).Name.Contains("Project") == false
+            && typeof(T).Name.Contains("ProjectUserAssignment") == false
+            && typeof(T).Name.Contains("ProjectUserRole") == false) 
             sql += " WHERE ProjectId = '" + selectedProject + "'";
         if (typeof(T).Name == "DBMaster") sql += " OR ProjectId = ''";
         if (typeof(T).Name == "LoadMaster")

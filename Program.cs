@@ -1,5 +1,6 @@
 using System;
 using System.Data;
+using System.Security.Claims;
 using ElDesignApp.Authorization;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -89,6 +90,7 @@ builder.Services.AddDistributedMemoryCache();
     builder.Services.AddScoped<ISystemStudyFunctionService, SystemStudyFunctionService>();
     builder.Services.AddSingleton<IGlobalDataService, GlobalDataService>();
     builder.Services.AddScoped<IRoleAuthorizationService, RoleAuthorizationService>();
+    builder.Services.AddScoped<IProjectContextService, ProjectContextService>();
     builder.Services.AddScoped<IAuthorizationHandler, HardRoleHandler>();
 
     builder.Services.AddScoped<IDbConnection>(sp => 
@@ -101,8 +103,62 @@ builder.Services.AddDistributedMemoryCache();
         options.AddPolicy("RequireSuperAdmin", policy =>
             policy.RequireRole(HardRoles.SuperAdmin));
     
-        options.AddPolicy("RequireAdmin", policy =>
-            policy.RequireRole(HardRoles.Admin, HardRoles.SuperAdmin));
+        // options.AddPolicy("RequireAdmin", policy =>
+        //     policy.RequireRole(HardRoles.Admin, HardRoles.SuperAdmin));
+        
+options.AddPolicy("RequireAdmin", policy =>
+    {
+        policy.RequireAssertion(async context =>
+        {
+            var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            
+            if (string.IsNullOrEmpty(userId))
+                return false;
+
+            // Check 1: SuperAdmin always has access
+            if (context.User.IsInRole("SuperAdmin"))
+                return true;
+
+            // Check 2: Identity Admin role
+            if (context.User.IsInRole("Admin"))
+                return true;
+
+            // Check 3: Project-based admin using ProjectContextService
+            var httpContext = context.Resource as HttpContext;
+            if (httpContext != null)
+            {
+                var projectContext = httpContext.RequestServices.GetService<IProjectContextService>();
+                if (projectContext != null)
+                {
+                    // Ensure project is loaded
+                    var currentProject = await projectContext.GetCurrentProjectAsync();
+                    if (currentProject == null)
+                    {
+                        var userProjects = await projectContext.GetUserProjectsAsync(userId);
+                        if (userProjects.Any())
+                        {
+                            await projectContext.SetCurrentProjectAsync(userProjects.First().UID);
+                        }
+                    }
+                    
+                    // Check if user is Project Admin
+                    var isProjectAdmin = await projectContext.IsUserAdminInCurrentProjectAsync(userId);
+                    if (isProjectAdmin)
+                        return true;
+
+                    // Check if user has Admin hard role via custom role mapping
+                    var hardRoles = await projectContext.GetUserHardRolesInCurrentProjectAsync(userId);
+                    if (hardRoles.Contains("Admin", StringComparer.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+
+            return false;
+        });
+    });
+
+        options.AddPolicy("RequireUser", policy =>
+            policy.RequireAuthenticatedUser());
     
         options.AddPolicy("RequireUser", policy =>
             policy.RequireRole(HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));

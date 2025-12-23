@@ -304,6 +304,17 @@
         {
             if (_editingMapping == null)
             {
+                // CHECK FOR DUPLICATE BEFORE CREATING
+                var existingRole = _roleMappings.FirstOrDefault(r => 
+                    r.CustomRoleName.Equals(_customRoleName.Trim(), StringComparison.OrdinalIgnoreCase) && 
+                    r.IsActive);
+            
+                if (existingRole != null)
+                {
+                    _validationError = $"A role named '{_customRoleName}' already exists";
+                    return;
+                }
+            
                 var newMapping = new RoleMapping
                 {
                     UID = Guid.NewGuid(),
@@ -314,9 +325,9 @@
                     CreatedOn = DateTime.Now,
                     CreatedBy = "Admin"
                 };
-            
+        
                 await MyTable.InsertItemAsync(newMapping);
-            
+        
                 // Create role in Identity
                 if (!await RoleManager.RoleExistsAsync(newMapping.CustomRoleName))
                 {
@@ -327,7 +338,7 @@
             {
                 _editingMapping.Description = _description?.Trim() ?? string.Empty;
                 _editingMapping.MappedHardRoles = JsonSerializer.Serialize(_selectedHardRoles);
-            
+        
                 await MyTable.UpdateParameter(_editingMapping, _editingMapping.UID, 
                     new List<string>() { "Description", "MappedHardRoles" });
             }

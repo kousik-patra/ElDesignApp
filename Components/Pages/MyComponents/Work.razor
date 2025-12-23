@@ -15,6 +15,9 @@
 @inject IGlobalDataService GlobalData
 @inject IMyFunctionService MyFunction
 @inject ILayoutFunctionService LayoutFunction
+@inject IProjectContextService ProjectContext
+
+@namespace ElDesignApp.Components.Pages.MyComponents
 
 
 @if (!GlobalData.dbConnected)
@@ -25,102 +28,307 @@
 }
 
 <div class="container mt-4">
-    <div class="row g-3 align-items-center">
-        @if (_projects != null && _projects.Any())
-        {
-            <div class="col-auto">
-                <label for="projectDropdown" class="form-label me-2">Select Project</label>
+    @if (_isLoading)
+    {
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading projects...</span>
             </div>
-            <div class="col-auto">
-                <select id="projectDropdown"
-                        class="form-select"
-                        @bind="_selectedProjectTag"
-                        @bind:after="Refresh">
-                    @foreach (var project in _projects)
-                    {
-                        <option value="@project.Tag">@project.Tag | @project.TagDescription</option>
-                    }
-                </select>
+        </div>
+    }
+    else if (_projects == null || !_projects.Any())
+    {
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>No Projects Assigned</strong>
+            <p class="mb-0">You are not assigned to any projects yet. Please contact your administrator.</p>
+        </div>
+    }
+    else
+    {
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-folder2-open me-2"></i>
+                    Project Selection
+                </h5>
             </div>
-        }
-    </div>
-    <br />
-    <br />
-    Selected Project: @GlobalData.SelectedProject?.Tag (@GlobalData.SelectedProject?.TagDescription)
+            <div class="card-body">
+                <div class="row g-3 align-items-center">
+                    <div class="col-auto">
+                        <label for="projectDropdown" class="form-label fw-bold me-2">Select Project:</label>
+                    </div>
+                    <div class="col-auto flex-grow-1">
+                        <select id="projectDropdown"
+                                class="form-select form-select-lg"
+                                @bind="_selectedProjectTag"
+                                @bind:after="OnProjectChanged">
+                            @foreach (var project in _projects)
+                            {
+                                <option value="@project.Tag">
+                                    @project.Tag | @project.TagDescription
+                                    @if (IsUserAdmin(project.UID))
+                                    {
+                                        <text> ⭐ (Admin)</text>
+                                    }
+                                </option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <button class="btn btn-outline-secondary" @onclick="RefreshProjects" title="Refresh">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                </div>
+
+                @if (GlobalData.SelectedProject != null)
+                {
+                    <div class="mt-3 p-3 bg-light rounded">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <h6 class="text-primary mb-2">
+                                    <i class="bi bi-check-circle-fill me-1"></i>
+                                    Current Project
+                                </h6>
+                                <p class="mb-1">
+                                    <strong>Code:</strong> @GlobalData.SelectedProject.Tag
+                                </p>
+                                <p class="mb-1">
+                                    <strong>Description:</strong> @GlobalData.SelectedProject.TagDescription
+                                </p>
+                                @if (!string.IsNullOrEmpty(GlobalData.SelectedProject.ProjLocation))
+                                {
+                                    <p class="mb-0">
+                                        <strong>Location:</strong> @GlobalData.SelectedProject.ProjLocation
+                                    </p>
+                                }
+                            </div>
+                            <div class="col-md-4 text-end">
+                                @if (_isCurrentUserAdmin)
+                                {
+                                    <span class="badge bg-success fs-6 py-2 px-3">
+                                        <i class="bi bi-shield-check me-1"></i>
+                                        Project Admin
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary fs-6 py-2 px-3">
+                                        <i class="bi bi-person me-1"></i>
+                                        Team Member
+                                    </span>
+                                }
+                                
+                                @if (_userCustomRoles.Any())
+                                {
+                                    <div class="mt-2">
+                                        <small class="text-muted d-block mb-1">Your Roles:</small>
+                                        @foreach (var role in _userCustomRoles)
+                                        {
+                                            <span class="badge bg-info me-1">@role</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
 </div>
-
-
 
 @code {
     List<Project> _projects = [];
     string? _userName = "";
-    string _selectedProjectTag = "JI-2048";
+    string? _userId = "";
+    string _selectedProjectTag = "";
+    bool _isLoading = true;
+    bool _isCurrentUserAdmin = false;
+    List<string> _userCustomRoles = new();
+    Dictionary<Guid, bool> _adminProjectsCache = new();
 
-    
     protected override async Task OnInitializedAsync()
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
-        (_projects, string logInfo, string logWarning, string logError) = await DataService.ReadFromCacheOrDb(new Project());
-        // filter projects assigned to this user
-        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        var user = authState.User;
-        _userName = user.Identity?.Name;
-        _projects = _projects.Where(p => _userName != null && p.ProjUsers.Contains(_userName)).ToList();
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} - {MethodBase.GetCurrentMethod()?.Name}");
         
-        if (_projects.Count > 0)
+        try
         {
-            GlobalData.dbConnected = true;
-            var projects = _projects.Where(project => project.Tag == _selectedProjectTag).ToList();
-            GlobalData.SelectedProject = projects.Count > 0 ? projects[0] : _projects[0];
-        }
+            // Get current user
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            _userName = user.Identity?.Name;
+            _userId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
+            if (string.IsNullOrEmpty(_userId))
+            {
+                _isLoading = false;
+                return;
+            }
+
+            // Load projects using new ProjectContextService
+            await LoadUserProjectsAsync();
+
+            // Try to restore previously selected project or select first one
+            var currentProject = await ProjectContext.GetCurrentProjectAsync();
+            if (currentProject != null && _projects.Any(p => p.UID == currentProject.UID))
+            {
+                _selectedProjectTag = currentProject.Tag;
+                GlobalData.SelectedProject = currentProject;
+            }
+            else if (_projects.Any())
+            {
+                // Select first project by default
+                var firstProject = _projects.First();
+                _selectedProjectTag = firstProject.Tag;
+                GlobalData.SelectedProject = firstProject;
+                await ProjectContext.SetCurrentProjectAsync(firstProject.UID);
+            }
+
+            // Load user roles for current project
+            await LoadUserRolesAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error in OnInitializedAsync: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
     }
-    
-    
+
+    private async Task LoadUserProjectsAsync()
+    {
+        try
+        {
+            // Get projects from new ProjectUserAssignment table
+            _projects = await ProjectContext.GetUserProjectsAsync(_userId!);
+            
+            // Cache admin status for each project
+            foreach (var project in _projects)
+            {
+                _adminProjectsCache[project.UID] = await ProjectContext.IsUserAdminInProjectAsync(_userId!, project.UID);
+            }
+
+            if (_projects.Any())
+            {
+                GlobalData.dbConnected = true;
+            }
+
+            Debug.WriteLine($"Loaded {_projects.Count} projects for user {_userName}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error loading projects: {ex.Message}");
+            _projects = new List<Project>();
+        }
+    }
+
+    private async Task LoadUserRolesAsync()
+    {
+        if (GlobalData.SelectedProject == null || string.IsNullOrEmpty(_userId))
+            return;
+
+        try
+        {
+            _isCurrentUserAdmin = await ProjectContext.IsUserAdminInCurrentProjectAsync(_userId);
+            _userCustomRoles = await ProjectContext.GetUserCustomRolesInCurrentProjectAsync(_userId);
+            
+            Debug.WriteLine($"User is admin: {_isCurrentUserAdmin}, Roles: {string.Join(", ", _userCustomRoles)}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error loading user roles: {ex.Message}");
+            _isCurrentUserAdmin = false;
+            _userCustomRoles = new List<string>();
+        }
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
-                                           $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender}");
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} - " +
+                        $"{MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender}");
 
         if (firstRender)
         {
-            //
+            // Any first-render logic here
         }
     }
-    
-    private void OnProjectSelected(ChangeEventArgs e)
+
+    private async Task OnProjectChanged()
     {
-        _selectedProjectTag = e.Value?.ToString() ?? "";
-        GlobalData.SelectedProject = _projects?.Find(proj=>proj?.Tag == _selectedProjectTag);
+        try
+        {
+            if (string.IsNullOrEmpty(_selectedProjectTag))
+                return;
+
+            // Find selected project
+            var selectedProject = _projects.FirstOrDefault(p => p.Tag == _selectedProjectTag);
+            
+            if (selectedProject != null)
+            {
+                // Update GlobalData (for backward compatibility)
+                GlobalData.SelectedProject = selectedProject;
+                
+                // Update ProjectContextService (for new authorization)
+                await ProjectContext.SetCurrentProjectAsync(selectedProject.UID);
+                
+                // Reload user roles for new project
+                await LoadUserRolesAsync();
+                
+                Debug.WriteLine($"Selected Project: {selectedProject.Tag}");
+                
+                // Refresh cache
+                await Refresh();
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error changing project: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshProjects()
+    {
+        _isLoading = true;
+        StateHasChanged();
+        
+        await LoadUserProjectsAsync();
+        await LoadUserRolesAsync();
+        await Refresh();
+        
+        _isLoading = false;
         StateHasChanged();
     }
-    
 
-    
-
-
-   
     private async Task Refresh()
     {
-        
-        // refreshing cache
-        if (GlobalData.SelectedProject != null && _selectedProjectTag !="")
+        try
         {
-            GlobalData.SelectedProject = _projects?.Find(proj=>proj?.Tag == _selectedProjectTag);
-            Debug.WriteLine($"Selected Project: {GlobalData.SelectedProject?.Tag}");
+            // Refreshing cache
+            if (GlobalData.SelectedProject != null && !string.IsNullOrEmpty(_selectedProjectTag))
+            {
+                GlobalData.SelectedProject = _projects?.FirstOrDefault(proj => proj?.Tag == _selectedProjectTag);
+                Debug.WriteLine($"Selected Project: {GlobalData.SelectedProject?.Tag}");
+            }
+
+            (string logInfo, string logWarning, string logError) = await DataService.RefreshCache();
+
+            var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
+            Debug.WriteLine(displayText);
+            
+            await InvokeAsync(StateHasChanged);
         }
-
-
-        (string logInfo, string logWarning, string logError)
-            = await DataService.RefreshCache();
-
-        var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
-        Debug.WriteLine(displayText);
-        await InvokeAsync(StateHasChanged);
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error in Refresh: {ex.Message}");
+        }
     }
-    
-    
-    
-    
-    
+
+    private bool IsUserAdmin(Guid projectId)
+    {
+        return _adminProjectsCache.TryGetValue(projectId, out var isAdmin) && isAdmin;
+    }
 }

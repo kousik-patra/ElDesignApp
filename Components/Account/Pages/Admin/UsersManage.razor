@@ -1,5 +1,6 @@
 @page "/admin/users"
-@attribute [Authorize(Policy = "RequireSuperAdmin")]
+@attribute [Authorize(Policy = "RequireAdmin")]
+
 @rendermode InteractiveServer
 @attribute [StreamRendering]
 
@@ -14,6 +15,8 @@
 @inject IJSRuntime JS
 @inject Services.IMyTableService MyTable
 @inject IRoleAuthorizationService RoleAuthService
+@inject IProjectContextService ProjectContext
+@inject AuthenticationStateProvider AuthState
 
 <PageTitle>User Management</PageTitle>
 
@@ -35,16 +38,47 @@ else if (!string.IsNullOrEmpty(ErrorMessage))
 }
 else
 {
-    <!-- Role Mapping Management Button -->
+    <!-- Top Action Buttons -->
     <div class="d-flex justify-content-between mb-3">
-        <h4>User & Role Management</h4>
+        <h4>User & Project Management</h4>
         <div>
-            <button class="btn btn-info me-2" @onclick="ShowRoleMappingModal">
+            @* <button class="btn btn-info me-2" @onclick="ShowRoleMappingModal">
                 <i class="bi bi-gear"></i> Manage Role Mappings
-            </button>
+            </button> *@
             <button class="btn btn-success" @onclick="ShowAddProjectModal">
                 <i class="bi bi-plus-lg"></i> Add New Project
             </button>
+        </div>
+    </div>
+
+    <!-- Filter Section -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-3 align-items-center">
+                <div class="col-auto">
+                    <label class="form-label fw-bold">Filter by Project:</label>
+                </div>
+                <div class="col-auto">
+                    <select class="form-select" @bind="_selectedProjectFilter" @bind:after="StateHasChanged">
+                        <option value="">All Projects</option>
+                        @foreach (var project in _projects.OrderBy(p => p.Tag))
+                        {
+                            
+                            <option value="@project.UID">@project.Tag - @project.TagDescription</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label class="form-label fw-bold">Search User:</label>
+                </div>
+                <div class="col-auto">
+                    <input type="text" 
+                           class="form-control" 
+                           placeholder="Username or email..." 
+                           @bind="_userSearchFilter" 
+                           @bind:after="StateHasChanged"/>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -54,143 +88,130 @@ else
             <tr>
                 <th>Email</th>
                 <th>Username</th>
-                <th class="text-center">Custom Roles</th>
-                <th class="text-center">Mapped Hard Roles</th>
-                <th class="text-center">Projects</th>
+                <th class="text-center">Projects & Roles</th>
                 <th>Actions</th>
             </tr>
             </thead>
             <tbody>
-            @foreach (var item in usersWithRoles)
+            @foreach (var item in GetFilteredUsers())
             {
                 var user = item.User;
-                var userCustomRoles = item.Roles; // These are custom roles now
                 var currentUserId = item.User.Id;
 
+               
                 <tr>
                     <td><strong>@user.Email</strong></td>
                     <td>@user.UserName</td>
-                    
-                    <!-- Custom Roles Column -->
-                    <td class="text-center py-3">
-                        <div class="d-flex flex-wrap gap-2 justify-content-center">
-                            @foreach (var customRole in _activeCustomRoles)
-                            {
-                                var vm = item;
-                                var isAssigned = userCustomRoles.Contains(customRole.CustomRoleName);
-                                
-                                <button type="button"
-                                        class="@(isAssigned ? "btn btn-success" : "btn btn-outline-secondary") btn-sm"
-                                        style="min-width: 110px;"
-                                        @onclick="async () => await ToggleCustomRoleAsync(currentUserId, customRole.CustomRoleName)"
-                                        disabled="@(vm.IsToggling && vm.TogglingRoleName == customRole.CustomRoleName)"
-                                        title="@customRole.Description">
-                                    @if (vm.IsToggling && vm.TogglingRoleName == customRole.CustomRoleName)
-                                    {
-                                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                                    }
-                                    <strong>@customRole.CustomRoleName</strong>
-                                    @if (!isAssigned)
-                                    {
-                                        <small class="ms-1">(off)</small>
-                                    }
-                                </button>
-                            }
-                        </div>
-                    </td>
-                    
-                    <!-- Mapped Hard Roles Column (Read-only display) -->
-                    <td class="text-center py-3">
-                        <div class="d-flex flex-wrap gap-1 justify-content-center">
-                            @{
-                                var userHardRoles = GetUserHardRoles(userCustomRoles);
-                            }
-                            @if (userHardRoles.Any())
-                            {
-                                @foreach (var hardRole in userHardRoles)
+ 
+                    <!-- Projects & Roles Column -->
+                    <td class="py-3">
+                        @{
+                            var userAssignments = _projectAssignments
+                                .Where(pa => pa.UserId == currentUserId && pa.IsActive)
+                                .ToList();
+                        }
+                        
+                        @if (!userAssignments.Any())
+                        {
+                            <div class="text-center">
+                                <span class="text-muted small">No projects assigned</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="d-flex flex-column gap-2">
+                                @foreach (var assignment in userAssignments)
                                 {
-                                    var badgeClass = hardRole switch
+                                    var project = _projects.FirstOrDefault(p => p.UID == assignment.ProjectId);
+                                    if (project != null)
                                     {
-                                        "SuperAdmin" => "bg-danger",
-                                        "Admin" => "bg-warning text-dark",
-                                        "User" => "bg-primary",
-                                        "Report" => "bg-secondary",
-                                        "Guest" => "bg-secondary",
-                                        _ => "bg-info"
-                                    };
-                                    <span class="badge @badgeClass">@hardRole</span>
-                                }
-                            }
-                            else
-                            {
-                                <span class="text-muted small">No roles</span>
-                            }
-                        </div>
-                    </td>
-                    
-                    <!-- Projects Column -->
-                    <td class="text-center py-3">
-                        <div class="d-flex flex-wrap gap-2 justify-content-center">
-                            @{
-                                var allProjectTags = _projects.Select(p => p.Tag).Distinct().ToList();
-                                var assignedProjectTags = _projects
-                                    .Where(p => p.ProjUsers != null && 
-                                                JsonSerializer.Deserialize<List<string>>(p.ProjUsers)
-                                                    ?.Contains(user.UserName!) == true)
-                                    .Select(p => p.Tag)
-                                    .Distinct()
-                                    .ToList();
-
-                                var notAssignedProjectTags = allProjectTags.Except(assignedProjectTags).ToList();
-                            }
-
-                            <!-- Assigned Projects -->
-                            @foreach (var tag in assignedProjectTags)
-                            {
-                                var hoverKey = GetHoverKey(currentUserId, tag);
-    
-                                <button type="button"
-                                        class="btn btn-outline-info btn-sm position-relative"
-                                        style="min-width: 110px;"
-                                        @onmouseover="() => SetHover(currentUserId, tag, true)"
-                                        @onmouseout="() => SetHover(currentUserId, tag, false)"
-                                        @onclick="async () => await RemoveProjectAsync(currentUserId, tag)">
-        
-                                    <span class="@(IsHovered(currentUserId, tag) ? "text-danger fw-bold" : "")">
-                                        @tag
-                                    </span>
-        
-                                    @if (IsHovered(currentUserId, tag))
-                                    {
-                                        <small class="ms-1 text-danger fw-bold">×</small>
+                                        <div class="border rounded p-2 bg-light">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div class="flex-grow-1">
+                                                    <strong class="text-primary">@project.Tag</strong>
+                                                    <small class="text-muted d-block">@project.TagDescription</small>
+                                                    
+                                                    <div class="mt-1">
+                                                        @if (assignment.IsProjectAdmin)
+                                                        {
+                                                            <span class="badge bg-success me-1">
+                                                                <i class="bi bi-shield-check"></i> Admin
+                                                            </span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="badge bg-secondary me-1">
+                                                                <i class="bi bi-person"></i> Member
+                                                            </span>
+                                                        }
+                                                        
+                                                        @* Show user's custom roles in this project *@
+                                                        @{
+                                                            var userRoles = _projectUserRoles
+                                                                .Where(pur => pur.UserId == currentUserId && 
+                                                                             pur.ProjectId == project.UID && 
+                                                                             pur.IsActive)
+                                                                .Select(pur => pur.CustomRoleName)
+                                                                .ToList();
+                                                        }
+                                                        
+                                                        @foreach (var role in userRoles)
+                                                        {
+                                                            <span class="badge bg-info">@role</span>
+                                                        }
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="btn-group-vertical btn-group-sm ms-2">
+                                                    <button class="btn btn-sm @(assignment.IsProjectAdmin ? "btn-warning" : "btn-outline-warning")" 
+                                                            @onclick="async () => await ToggleProjectAdminAsync(currentUserId, project.UID)"
+                                                            title="@(assignment.IsProjectAdmin ? "Remove Admin" : "Make Admin")">
+                                                        <i class="bi @(assignment.IsProjectAdmin ? "bi-shield-fill-check" : "bi-shield")"></i>
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-danger" 
+                                                            @onclick="async () => await RemoveFromProjectAsync(currentUserId, project.UID)"
+                                                            title="Remove from project">
+                                                        <i class="bi bi-x-lg"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     }
-                                </button>
+                                }
+                            </div>
+                        }
+                        
+                        <!-- Add to Project Button -->
+                        <div class="mt-2">
+                            @{
+                                var unassignedProjects = _projects
+                                    .Where(p => !userAssignments.Any(ua => ua.ProjectId == p.UID))
+                                    .ToList();
                             }
-
-                            <!-- Add Project Button -->
-                            @if (notAssignedProjectTags.Count > 0)
+                            
+                            @if (unassignedProjects.Any())
                             {
-                                <button type="button"
-                                        class="btn btn-success btn-sm"
-                                        style="min-width: 110px;"
-                                        @onclick="() => showProjectDropdown[currentUserId] = !showProjectDropdown.GetValueOrDefault(currentUserId)">
-                                    <i class="bi bi-plus"></i> Add Project
+                                var dropdownKey = $"project_{currentUserId}";
+                                var isOpen = _openDropdowns.GetValueOrDefault(dropdownKey);
+                                
+                                <button class="btn btn-sm btn-outline-success" 
+                                        @onclick="() => ToggleDropdown(dropdownKey)">
+                                    <i class="bi bi-plus"></i> Assign to Project
                                 </button>
-
-                                @if (showProjectDropdown.GetValueOrDefault(currentUserId))
+                                
+                                @if (isOpen)
                                 {
                                     <div class="mt-2">
-                                        <select class="form-select form-select-sm"
-                                                @onchange="async e => await AddProjectSelected(e, currentUserId)">
-                                            <option value="" disabled selected>Select project...</option>
-                                            @foreach (var tag in notAssignedProjectTags)
+                                        <select class="form-select form-select-sm mb-2" 
+                                                @onchange="async (e) => await AssignToProjectAsync(currentUserId, e.Value?.ToString())">
+                                            <option value="">Select project...</option>
+                                            @foreach (var proj in unassignedProjects.OrderBy(p => p.Tag))
                                             {
-                                                var p = _projects.Find(x => x.Tag == tag);
-                                                <option value="@tag">@tag | @(p?.TagDescription ?? "")</option>
+                                                <option value="@proj.UID">@proj.Tag - @proj.TagDescription</option>
                                             }
                                         </select>
-                                        <button class="btn btn-secondary btn-sm mt-1"
-                                                @onclick="() => showProjectDropdown[currentUserId] = false">
+                                        <button class="btn btn-sm btn-secondary" 
+                                                @onclick="() => ToggleDropdown(dropdownKey)">
                                             Cancel
                                         </button>
                                     </div>
@@ -199,89 +220,70 @@ else
                         </div>
                     </td>
                     
-                    <!-- Actions -->
-                    <td class="text-center">
-                        <button type="button" class="btn btn-danger btn-sm" 
-                                @onclick="() => ConfirmDeleteUser(user)">
-                            <i class="bi bi-trash"></i> Remove
-                        </button>
+                    <!-- Actions Column -->
+                    <td>
+                        <div class="btn-group-vertical btn-group-sm">
+                            <button class="btn btn-sm btn-outline-danger" 
+                                    @onclick="async () => await ConfirmDeleteUser(user)">
+                                <i class="bi bi-trash"></i> Delete
+                            </button>
+                        </div>
                     </td>
                 </tr>
             }
             </tbody>
         </table>
     </div>
-    
-    <!-- Add User Button -->
-    <div class="mt-4 text-center">
-        <button class="btn btn-primary btn-lg" @onclick="ShowAddUserModal">
-            <i class="bi bi-person-plus"></i> Add New User
-        </button>
-    </div>
-    
-    <!-- Add User Modal -->
-    @if (showAddUserModal)
-    {
-        <ElementPropertyModal T="ApplicationUser"
-                              Title="Create New User"
-                              Item="_newUser"
-                              Fields="_userFields"
-                              OnClose="HandleAddUserClose" />
-    }
-    
-    <!-- Add Project Modal -->
-    @if (_showProjectModal)
-    {
-        <ElementPropertyModal T="Project" 
-                              Title="Add New Project" 
-                              Item="@_newProject" 
-                              Fields="_projectFields"
-                              OnClose="@HandleProjectModalClose" />
-    }
-    
-    <!-- Role Mapping Management Modal -->
-    @if (_showRoleMappingModal)
-    {
-        <Rolemappingmodal OnClose="HandleRoleMappingModalClose" />
-    }
 }
 
+<!-- Modals -->
+@if (_showProjectModal && _newProject != null)
+{
+    <ProjectModal 
+        Item="@_newProject" 
+        OnClose="HandleProjectModalClose"/>
+}
+
+@* @if (_showRoleMappingModal)
+{
+    <RoleMappingModal OnClose="HandleRoleMappingModalClose"/>
+} *@
+
 @code {
-    private bool _isLoading = true;
-    private List<RoleMapping> _allRoleMappings = new();
-    private List<RoleMapping> _activeCustomRoles = new();
-    private List<Project> _projects = new();
     private List<UserRoleViewModel> usersWithRoles = new();
+    private List<Project> _projects = new();
+    private List<ProjectUserAssignment> _projectAssignments = new();
+    private List<ProjectUserRole> _projectUserRoles = new();
+    private List<RoleMapping> _activeCustomRoles = new();
+    
+    private bool _isLoading = true;
     private string? ErrorMessage;
+    private string? _currentUserId;
     
-    private readonly Dictionary<string, bool> showProjectDropdown = new();
-    private readonly HashSet<string> hoveredProjects = new();
+    // Filters
+    private string _selectedProjectFilter = "";
+    private string _userSearchFilter = "";
     
-    private bool showAddUserModal = false;
-    private ApplicationUser _newUser = new();
-    private readonly string[] _userFields = ["UserName", "Email"];
+    // UI State
+    private Dictionary<string, bool> _openDropdowns = new();
     
+    // Modals
     private bool _showProjectModal = false;
-    private Project _newProject = new();
-    private readonly string[] _projectFields = new[]
-    {
-        "Tag", "TagDescription", "ProjAlt", "ProjClient", "ProjPartners",
-        "ProjLocation", "ProjUsers", "Display", "XEW", "GlobalE", "GlobalN"
-    };
-    
     private bool _showRoleMappingModal = false;
-    
+    private Project? _newProject;
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            await LoadRoleMappings();
-            await LoadUsersAndRoles();
-            await LoadProjects();
+            var authState = await AuthState.GetAuthenticationStateAsync();
+            _currentUserId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            
+            await LoadAllData();
         }
         catch (Exception ex)
         {
-            ErrorMessage = "Error loading data: " + ex.Message;
+            ErrorMessage = $"Error loading data: {ex.Message}";
             System.Diagnostics.Debug.WriteLine($"OnInitializedAsync Error: {ex}");
         }
         finally
@@ -290,53 +292,12 @@ else
         }
     }
 
-    private async Task LoadRoleMappings()
+    private async Task LoadAllData()
     {
-        try
-        {
-            _allRoleMappings = await RoleAuthService.GetAllRoleMappings();
-            _activeCustomRoles = _allRoleMappings.Where(m => m.IsActive).ToList();
-            
-            // Ensure all custom roles exist in Identity
-            foreach (var mapping in _activeCustomRoles)
-            {
-                if (!await RoleManager.RoleExistsAsync(mapping.CustomRoleName))
-                {
-                    await RoleManager.CreateAsync(new IdentityRole(mapping.CustomRoleName));
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"LoadRoleMappings Error: {ex.Message}");
-            throw;
-        }
-    }
-
-    private async Task LoadUsersAndRoles()
-    {
-        try
-        {
-            usersWithRoles.Clear();
-            var users = await UserManager.Users.OrderBy(u => u.Email).ToListAsync();
-
-            foreach (var user in users)
-            {
-                var roles = await UserManager.GetRolesAsync(user);
-                usersWithRoles.Add(new UserRoleViewModel
-                {
-                    User = user,
-                    Roles = roles.ToList(), // These are custom roles
-                    IsToggling = false,
-                    TogglingRoleName = null
-                });
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"LoadUsersAndRoles Error: {ex.Message}");
-            throw;
-        }
+        await LoadProjects();
+        await LoadProjectAssignments();
+        await LoadProjectUserRoles();
+        await LoadUsersAndRoles();
     }
 
     private async Task LoadProjects()
@@ -344,249 +305,244 @@ else
         try
         {
             var result = await DataService.ReadFromCacheOrDb(new Project());
-            _projects = result.Item1;
+            _projects = result.Item1.Where(p => p.Display).OrderBy(p => p.Tag).ToList();
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"LoadProjects Error: {ex.Message}");
-            throw;
+            System.Diagnostics.Debug.WriteLine($"LoadProjects Error: {ex}");
+            _projects = new();
         }
     }
 
-    private List<string> GetUserHardRoles(List<string> userCustomRoles)
+    private async Task LoadProjectAssignments()
     {
-        var hardRoles = new HashSet<string>();
-        
-        foreach (var customRole in userCustomRoles)
+        try
         {
-            var mapping = _allRoleMappings.FirstOrDefault(m => 
-                m.CustomRoleName.Equals(customRole, StringComparison.OrdinalIgnoreCase) && m.IsActive);
+            var result = await DataService.ReadFromCacheOrDb(new ProjectUserAssignment());
+            _projectAssignments = result.Item1;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"LoadProjectAssignments Error: {ex}");
+            _projectAssignments = new();
+        }
+    }
+
+    private async Task LoadProjectUserRoles()
+    {
+        try
+        {
+            var result = await DataService.ReadFromCacheOrDb(new ProjectUserRole());
+            _projectUserRoles = result.Item1;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"LoadProjectUserRoles Error: {ex}");
+            _projectUserRoles = new();
+        }
+    }
+
+    private async Task LoadUsersAndRoles()
+    {
+        try
+        {
+            var allUsers = await UserManager.Users.ToListAsync();
+            usersWithRoles = new List<UserRoleViewModel>();
+
+            foreach (var user in allUsers)
+            {
+                var roles = await UserManager.GetRolesAsync(user);
+                usersWithRoles.Add(new UserRoleViewModel
+                {
+                    User = user,
+                    Roles = roles.ToList()
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"LoadUsersAndRoles Error: {ex}");
+            usersWithRoles = new();
+        }
+    }
+
+    private IEnumerable<UserRoleViewModel> GetFilteredUsers()
+    {
+        var filtered = usersWithRoles.AsEnumerable();
+
+        // Filter by project
+        if (!string.IsNullOrEmpty(_selectedProjectFilter) && Guid.TryParse(_selectedProjectFilter, out var projectId))
+        {
+            var usersInProject = _projectAssignments
+                .Where(pa => pa.ProjectId == projectId && pa.IsActive)
+                .Select(pa => pa.UserId)
+                .ToHashSet();
             
-            if (mapping != null)
-            {
-                try
-                {
-                    var mappedRoles = JsonSerializer.Deserialize<List<string>>(mapping.MappedHardRoles);
-                    if (mappedRoles != null)
-                    {
-                        foreach (var role in mappedRoles)
-                        {
-                            hardRoles.Add(role);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error deserializing roles for {customRole}: {ex.Message}");
-                }
-            }
+            filtered = filtered.Where(u => usersInProject.Contains(u.User.Id));
         }
-        
-        return hardRoles.OrderBy(r => r).ToList();
+
+        // Filter by search text
+        if (!string.IsNullOrEmpty(_userSearchFilter))
+        {
+            var search = _userSearchFilter.ToLower();
+            filtered = filtered.Where(u => 
+                (u.User.UserName?.ToLower().Contains(search) ?? false) ||
+                (u.User.Email?.ToLower().Contains(search) ?? false));
+        }
+
+        return filtered.OrderBy(u => u.User.UserName);
     }
 
-    private async Task ToggleCustomRoleAsync(string userId, string customRoleName)
+    private async Task AssignToProjectAsync(string userId, string? projectIdStr)
     {
-        var userViewModel = usersWithRoles.FirstOrDefault(x => x.User.Id == userId);
-        if (userViewModel == null) return;
-        
-        userViewModel.IsToggling = true;
-        userViewModel.TogglingRoleName = customRoleName;
-        StateHasChanged();
-
-        try
+        if (string.IsNullOrEmpty(projectIdStr) || !Guid.TryParse(projectIdStr, out var projectId))
         {
-            var user = userViewModel.User;
-            bool isInRole = userViewModel.Roles.Contains(customRoleName);
-
-            IdentityResult result;
-            if (isInRole)
-            {
-                result = await UserManager.RemoveFromRoleAsync(user, customRoleName);
-                if (result.Succeeded)
-                {
-                    userViewModel.Roles.Remove(customRoleName);
-                }
-            }
-            else
-            {
-                result = await UserManager.AddToRoleAsync(user, customRoleName);
-                if (result.Succeeded)
-                {
-                    userViewModel.Roles.Add(customRoleName);
-                }
-            }
-
-            if (!result.Succeeded)
-            {
-                var errors = string.Join("; ", result.Errors.Select(e => e.Description));
-                await JS.InvokeVoidAsync("alert", $"Failed to toggle role: {errors}");
-            }
-        }
-        catch (Exception ex)
-        {
-            await JS.InvokeVoidAsync("alert", $"Error toggling role: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"ToggleCustomRoleAsync Error: {ex}");
-        }
-        finally
-        {
-            userViewModel.IsToggling = false;
-            StateHasChanged();
-        }
-    }
-
-    // Project Management Methods
-    private string GetHoverKey(string userId, string projectTag) => $"{userId}|{projectTag}";
-    
-    private void SetHover(string userId, string projectTag, bool isHovered)
-    {
-        var key = GetHoverKey(userId, projectTag);
-        if (isHovered)
-            hoveredProjects.Add(key);
-        else
-            hoveredProjects.Remove(key);
-        StateHasChanged();
-    }
-    
-    private bool IsHovered(string userId, string projectTag) => 
-        hoveredProjects.Contains(GetHoverKey(userId, projectTag));
-
-    private async Task AddProjectSelected(ChangeEventArgs e, string userId)
-    {
-        var selectedTag = e.Value?.ToString();
-        if (string.IsNullOrEmpty(selectedTag)) return;
-
-        await AddProjectAsync(userId, selectedTag);
-        showProjectDropdown[userId] = false;
-        StateHasChanged();
-    }
-
-    private async Task AddProjectAsync(string userId, string projectTag)
-    {
-        if (string.IsNullOrEmpty(projectTag)) return;
-
-        try
-        {
-            var project = _projects.FirstOrDefault(p => p.Tag == projectTag);
-            if (project == null) return;
-
-            var user = usersWithRoles.FirstOrDefault(u => u.User.Id == userId)?.User;
-            if (user == null || string.IsNullOrEmpty(user.UserName)) return;
-
-            var userList = string.IsNullOrEmpty(project.ProjUsers)
-                ? new List<string>()
-                : JsonSerializer.Deserialize<List<string>>(project.ProjUsers) ?? new List<string>();
-
-            if (!userList.Contains(user.UserName))
-            {
-                userList.Add(user.UserName);
-                project.ProjUsers = JsonSerializer.Serialize(userList);
-                await MyTable.UpdateParameter(project, project.UID, ["ProjUsers"]);
-            }
-
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            await JS.InvokeVoidAsync("alert", $"Error adding project: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"AddProjectAsync Error: {ex}");
-        }
-    }
-
-    private async Task RemoveProjectAsync(string userId, string selectedProjectName)
-    {
-        try
-        {
-            var selectedProject = _projects.Find(p => p.Tag == selectedProjectName);
-            if (selectedProject == null) return;
-
-            var userList = string.IsNullOrEmpty(selectedProject.ProjUsers)
-                ? new List<string>()
-                : JsonSerializer.Deserialize<List<string>>(selectedProject.ProjUsers) ?? new List<string>();
-
-            var user = usersWithRoles.First(u => u.User.Id == userId).User;
-            userList.RemoveAll(u => u == user.UserName);
-
-            selectedProject.ProjUsers = JsonSerializer.Serialize(userList);
-            await MyTable.UpdateParameter(selectedProject, selectedProject.UID, ["ProjUsers"]);
-
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            await JS.InvokeVoidAsync("alert", $"Error removing project: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"RemoveProjectAsync Error: {ex}");
-        }
-    }
-
-    // User Management
-    private void ShowAddUserModal()
-    {
-        _newUser = new ApplicationUser();
-        showAddUserModal = true;
-    }
-
-    private async Task HandleAddUserClose((string ItemJson, string Type, string OriginalTag, string CurrentTag, string Action) result)
-    {
-        showAddUserModal = false;
-        if (result.Action != "Ok" || string.IsNullOrWhiteSpace(result.ItemJson))
-        {
-            StateHasChanged();
+            _openDropdowns.Clear();
             return;
         }
 
         try
         {
-            var options = new JsonSerializerOptions { IncludeFields = true };
-            var user = JsonSerializer.Deserialize<ApplicationUser>(result.ItemJson, options);
+            // Check if already assigned
+            var existing = _projectAssignments
+                .FirstOrDefault(pa => pa.UserId == userId && pa.ProjectId == projectId && pa.IsActive);
             
-            if (user?.UserName == null || user.Email == null)
+            if (existing != null)
             {
-                await JS.InvokeVoidAsync("alert", "Username and Email are required");
+                await JS.InvokeVoidAsync("alert", "User is already assigned to this project");
+                _openDropdowns.Clear();
+                StateHasChanged();
                 return;
             }
 
-            var createResult = await UserManager.CreateAsync(user, "MyPwd@123"); // Consider making password configurable
-            
-            if (createResult.Succeeded)
+            var assignment = new ProjectUserAssignment
             {
-                await LoadUsersAndRoles();
-                await JS.InvokeVoidAsync("alert", "User created successfully!");
+                UID = Guid.NewGuid(),
+                ProjectId = projectId,
+                UserId = userId,
+                IsProjectAdmin = false,
+                IsActive = true,
+                AssignedBy = _currentUserId ?? "system",
+                AssignedOn = DateTime.Now
+            };
+
+            int rows = await MyTable.InsertItemAsync(assignment);
+            
+            if (rows > 0)
+            {
+                // Refresh cache to get latest data
+                await DataService.RefreshCache();
+                
+                // Reload assignments
+                await LoadProjectAssignments();
+                
+                // Close all dropdowns
+                _openDropdowns.Clear();
+                
+                // Force UI update
+                await InvokeAsync(StateHasChanged);
             }
             else
             {
-                ErrorMessage = string.Join("; ", createResult.Errors.Select(e => e.Description));
-                await JS.InvokeVoidAsync("alert", $"Error creating user: {ErrorMessage}");
+                await JS.InvokeVoidAsync("alert", "Failed to assign user to project");
             }
         }
         catch (Exception ex)
         {
             await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"HandleAddUserClose Error: {ex}");
+            System.Diagnostics.Debug.WriteLine($"AssignToProjectAsync Error: {ex}");
         }
-
-        StateHasChanged();
     }
 
-    private async Task ConfirmDeleteUser(ApplicationUser user)
+    private async Task RemoveFromProjectAsync(string userId, Guid projectId)
     {
+        var project = _projects.FirstOrDefault(p => p.UID == projectId);
         var confirmed = await JS.InvokeAsync<bool>("confirm", 
-            $"Are you sure you want to delete user '{user.UserName}'?");
+            $"Remove this user from project '{project?.Tag}'? This will also remove their custom roles.");
         
-        if (confirmed)
+        if (!confirmed) return;
+
+        try
         {
-            try
+            var assignment = _projectAssignments
+                .FirstOrDefault(pa => pa.UserId == userId && pa.ProjectId == projectId && pa.IsActive);
+            
+            if (assignment == null) return;
+
+            assignment.IsActive = false;
+            assignment.RemovedBy = _currentUserId;
+            assignment.RemovedOn = DateTime.Now;
+
+            await MyTable.UpdateParameter(assignment, assignment.UID,
+                [nameof(assignment.IsActive), nameof(assignment.RemovedBy), nameof(assignment.RemovedOn)]);
+
+            // Also deactivate user's roles in this project
+            var userRoles = _projectUserRoles
+                .Where(pur => pur.UserId == userId && pur.ProjectId == projectId && pur.IsActive)
+                .ToList();
+            
+            foreach (var role in userRoles)
             {
-                await UserManager.DeleteAsync(user);
-                await LoadUsersAndRoles();
-                StateHasChanged();
+                role.IsActive = false;
+                role.RemovedBy = _currentUserId;
+                role.RemovedOn = DateTime.Now;
+                await MyTable.UpdateParameter(role, role.UID,
+                    [nameof(role.IsActive), nameof(role.RemovedBy), nameof(role.RemovedOn)]);
             }
-            catch (Exception ex)
-            {
-                await JS.InvokeVoidAsync("alert", $"Error deleting user: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"ConfirmDeleteUser Error: {ex}");
-            }
+
+            // Refresh cache
+            await DataService.RefreshCache();
+            
+            // Reload data
+            await LoadProjectAssignments();
+            await LoadProjectUserRoles();
+            
+            // Force UI update
+            await InvokeAsync(StateHasChanged);
         }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"RemoveFromProjectAsync Error: {ex}");
+        }
+    }
+
+    private async Task ToggleProjectAdminAsync(string userId, Guid projectId)
+    {
+        try
+        {
+            var assignment = _projectAssignments
+                .FirstOrDefault(pa => pa.UserId == userId && pa.ProjectId == projectId && pa.IsActive);
+            
+            if (assignment == null) return;
+
+            assignment.IsProjectAdmin = !assignment.IsProjectAdmin;
+
+            await MyTable.UpdateParameter(assignment, assignment.UID,
+                [nameof(assignment.IsProjectAdmin)]);
+
+            // Refresh cache
+            await DataService.RefreshCache();
+            
+            // Reload assignments
+            await LoadProjectAssignments();
+            
+            // Force UI update
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"ToggleProjectAdminAsync Error: {ex}");
+        }
+    }
+
+    private void ToggleDropdown(string key)
+    {
+        if (_openDropdowns.ContainsKey(key))
+            _openDropdowns[key] = !_openDropdowns[key];
+        else
+            _openDropdowns[key] = true;
     }
 
     // Project Management
@@ -645,6 +601,9 @@ else
             {
                 await JS.InvokeVoidAsync("alert", "Project created successfully!");
                 await LoadProjects();
+                
+                // TODO: Seed standard roles for this project
+                await SeedStandardRolesForProject(project.UID);
             }
             else
             {
@@ -660,24 +619,71 @@ else
         StateHasChanged();
     }
 
-    // Role Mapping Management
-    private void ShowRoleMappingModal()
+    private async Task SeedStandardRolesForProject(Guid projectId)
     {
-        _showRoleMappingModal = true;
+        try
+        {
+            var standardRoles = new[]
+            {
+                new RoleMapping { UID = Guid.NewGuid(), ProjectId = projectId, CustomRoleName = "Admin", Description = "Project Administrator", MappedHardRoles = "[\"Admin\"]", IsEditable = false, IsActive = true, CreatedBy = "System", CreatedOn = DateTime.Now },
+                new RoleMapping { UID = Guid.NewGuid(), ProjectId = projectId, CustomRoleName = "Manager", Description = "Project Manager", MappedHardRoles = "[\"Admin\",\"User\"]", IsEditable = true, IsActive = true, CreatedBy = "System", CreatedOn = DateTime.Now },
+                new RoleMapping { UID = Guid.NewGuid(), ProjectId = projectId, CustomRoleName = "Engineer", Description = "Engineering staff", MappedHardRoles = "[\"User\"]", IsEditable = true, IsActive = true, CreatedBy = "System", CreatedOn = DateTime.Now },
+                new RoleMapping { UID = Guid.NewGuid(), ProjectId = projectId, CustomRoleName = "Designer", Description = "Design team member", MappedHardRoles = "[\"User\"]", IsEditable = true, IsActive = true, CreatedBy = "System", CreatedOn = DateTime.Now },
+                new RoleMapping { UID = Guid.NewGuid(), ProjectId = projectId, CustomRoleName = "Trainee", Description = "Trainee with limited access", MappedHardRoles = "[\"Guest\"]", IsEditable = true, IsActive = true, CreatedBy = "System", CreatedOn = DateTime.Now }
+            };
+
+            foreach (var role in standardRoles)
+            {
+                await MyTable.InsertItemAsync(role);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"SeedStandardRolesForProject Error: {ex}");
+        }
     }
 
-    private async Task HandleRoleMappingModalClose()
+    private async Task ConfirmDeleteUser(ApplicationUser user)
     {
-        _showRoleMappingModal = false;
-        await LoadRoleMappings(); // Reload mappings in case they changed
-        StateHasChanged();
+        var confirmed = await JS.InvokeAsync<bool>("confirm", 
+            $"Are you sure you want to delete user '{user.UserName}'? This will remove all their project assignments.");
+        
+        if (confirmed)
+        {
+            try
+            {
+                // Deactivate all project assignments first
+                var userAssignments = _projectAssignments
+                    .Where(pa => pa.UserId == user.Id && pa.IsActive)
+                    .ToList();
+                
+                foreach (var assignment in userAssignments)
+                {
+                    assignment.IsActive = false;
+                    assignment.RemovedBy = _currentUserId;
+                    assignment.RemovedOn = DateTime.Now;
+                    await MyTable.UpdateParameter(assignment, assignment.UID,
+                        [nameof(assignment.IsActive), nameof(assignment.RemovedBy), nameof(assignment.RemovedOn)]);
+                }
+
+                await UserManager.DeleteAsync(user);
+                await LoadUsersAndRoles();
+                await LoadProjectAssignments();
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                await JS.InvokeVoidAsync("alert", $"Error deleting user: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"ConfirmDeleteUser Error: {ex}");
+            }
+        }
     }
 
     // Helper class
     public class UserRoleViewModel
     {
         public required ApplicationUser User { get; set; }
-        public List<string> Roles { get; set; } = new(); // Custom roles
+        public List<string> Roles { get; set; } = new();
         public bool IsToggling { get; set; }
         public string? TogglingRoleName { get; set; }
     }

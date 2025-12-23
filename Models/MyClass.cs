@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ElDesignApp.Models;
 
@@ -19,17 +21,117 @@ public class MyClass
     
 }
 
+/// <summary>
+/// Updated RoleMapping model - now project-specific
+/// </summary>
 public class RoleMapping
 {
+    [Key]
     public Guid UID { get; set; }
-    public string CustomRoleName { get; set; } = string.Empty;      // "Manager", "Engineer"
+    
+    /// <summary>
+    /// Links role to specific project. Required for project-specific roles.
+    /// </summary>
+    [Required]
+    public Guid ProjectId { get; set; }
+    
+    [Required]
+    [StringLength(100)]
+    public string CustomRoleName { get; set; } = string.Empty;
+    
+    [StringLength(500)]
     public string Description { get; set; } = string.Empty;
-    public string MappedHardRoles { get; set; } = "[]";             // JSON: ["Admin", "User"]
+    
+    /// <summary>
+    /// JSON array of hard-coded role names: ["Admin", "User"]
+    /// </summary>
+    [Required]
+    public string MappedHardRoles { get; set; } = "[]";
+    
+    /// <summary>
+    /// If false, role cannot be edited or deleted (e.g., "Admin" role)
+    /// </summary>
+    public bool IsEditable { get; set; } = true;
+    
     public bool IsActive { get; set; } = true;
+    
     public DateTime CreatedOn { get; set; } = DateTime.Now;
+    
+    [StringLength(100)]
     public string CreatedBy { get; set; } = string.Empty;
+    
+    // Navigation properties
+    [ForeignKey("ProjectId")]
+    public virtual Project? Project { get; set; }
 }
 
+
+[Table("UserRoleAssignment")]
+public class UserRoleAssignment
+{
+    [Key]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    
+    public string ProjectId { get; set; } = string.Empty;
+    
+    public string UserId { get; set; } = string.Empty;
+    
+    public string UserName { get; set; } = string.Empty;
+    
+    public string RoleId { get; set; } = string.Empty;
+    
+    public string RoleName { get; set; } = string.Empty;
+    
+    public DateTime? CreatedDate { get; set; }
+    
+    public string CreatedBy { get; set; } = string.Empty;
+    
+    public bool IsActive { get; set; } = true;
+}
+
+/// <summary>
+/// NEW: Maps users to custom roles within a project
+/// Admin assigns these after SuperAdmin does soft assignment
+/// </summary>
+public class ProjectUserRole
+{
+    [Key]
+    public Guid UID { get; set; }
+    
+    [Required]
+    public Guid ProjectId { get; set; }
+    
+    [Required]
+    [StringLength(450)]
+    public string UserId { get; set; } = string.Empty;
+    
+    [Required]
+    [StringLength(100)]
+    public string CustomRoleName { get; set; } = string.Empty;
+    
+    [Required]
+    [StringLength(450)]
+    public string AssignedBy { get; set; } = string.Empty;
+    
+    public DateTime AssignedOn { get; set; } = DateTime.Now;
+    
+    public bool IsActive { get; set; } = true;
+    
+    [StringLength(450)]
+    public string? RemovedBy { get; set; }
+    
+    public DateTime? RemovedOn { get; set; }
+    
+    // Navigation properties
+    [ForeignKey("ProjectId")]
+    public virtual Project? Project { get; set; }
+    
+    [ForeignKey("UserId")]
+    public virtual ApplicationUser? User { get; set; }
+    
+    [ForeignKey("CustomRoleName,ProjectId")]
+    public virtual RoleMapping? RoleMapping { get; set; }
+}
 
 
 public class DBMaster: BaseInfo
@@ -51,17 +153,46 @@ public class DBMaster: BaseInfo
 
 public class ProjectUserAssignment
 {
+    [Key]
     public Guid UID { get; set; }
-    public Guid ProjectId { get; set; }              // FK to Project
-    public string UserId { get; set; }               // FK to AspNetUsers
-    public string ProjectRoles { get; set; }         // JSON: ["User", "Report"]
-    public bool IsActive { get; set; }
-    public string AssignedBy { get; set; }           // Who assigned this user
-    public DateTime AssignedOn { get; set; }
+    
+    [Required]
+    public Guid ProjectId { get; set; }
+    
+    [Required]
+    [StringLength(450)]
+    public string UserId { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Indicates if this user is an Admin for this project
+    /// SuperAdmin assigns this. If true, user can manage roles in this project.
+    /// </summary>
+    public bool IsProjectAdmin { get; set; }
+    
+    public bool IsActive { get; set; } = true;
+    
+    [Required]
+    [StringLength(450)]
+    public string AssignedBy { get; set; } = string.Empty;
+    
+    public DateTime AssignedOn { get; set; } = DateTime.Now;
+    
+    [StringLength(450)]
     public string? RemovedBy { get; set; }
+    
     public DateTime? RemovedOn { get; set; }
+    
+    // Navigation properties
+    [ForeignKey("ProjectId")]
+    public virtual Project? Project { get; set; }
+    
+    [ForeignKey("UserId")]
+    public virtual ApplicationUser? User { get; set; }
 }
 
+/// <summary>
+/// Updated Project model - removed redundant JSON columns
+/// </summary>
 public class Project
 {
     public Project()
@@ -71,15 +202,15 @@ public class Project
         TagDescription = "";
         ProjAlt = "base";
         ProjClient = "";
-        ProjPartners = "[\"self\"]";  // JSON array as string
+        ProjPartners = "[\"self\"]";
         ProjLocation = "";
-        ProjUsers = "[]";            // Start empty!
         Order = 0;
         Display = true;
         XEW = true;
         GlobalE = 0f;
         GlobalN = 0f;
     }
+
     [Key]
     public Guid UID { get; set; }
 
@@ -87,26 +218,24 @@ public class Project
     [StringLength(20, MinimumLength = 3, ErrorMessage = "Project Code must be 3–20 characters")]
     [RegularExpression(@"^[a-zA-Z0-9\s._-]+$", ErrorMessage = "Only letters, numbers, space, dot, underscore, hyphen allowed")]
     [Display(Name = "Project Code", Order = 2)]
-    public string Tag { get; init; }
+    public string Tag { get; set; }
 
     [Required(ErrorMessage = "Description is required")]
     [StringLength(100, MinimumLength = 3)]
     [Display(Name = "Project Description", Order = 3)]
-    public string TagDescription { get; init; }
+    public string TagDescription { get; set; }
 
-    [Display(Name = "Alternative Name", Order = 4)] public string ProjAlt { get; set; } = "base";
+    [Display(Name = "Alternative Name", Order = 4)] 
+    public string ProjAlt { get; set; } = "base";
 
-    [Display(Name = "Client", Order = 5)] public string ProjClient { get; init; }
+    [Display(Name = "Client", Order = 5)] 
+    public string ProjClient { get; set; }
 
     [Display(Name = "Partners (JSON)", Order = 6)]
-    public string ProjPartners { get; init; }
+    public string ProjPartners { get; set; }
+    
     [Display(Name = "Location", Order = 7)]
     public string ProjLocation { get; set; }
-
-    [Display(Name = "Assigned Users (JSON)", Order = 8)]
-    public string ProjUsers { get; set; } = "[]";  // Important: start empty
-    public string ProjectAdmins { get; set; } = "[]"; 
-    public string SoftAssignedUsers { get; set; } = "[]";
 
     [Display(Name = "Display in List", Order = 9)]
     public bool Display { get; set; } = true;
@@ -119,11 +248,14 @@ public class Project
 
     [Display(Name = "Global Northing (Y=0)", Order = 12)]
     public float GlobalN { get; set; } = 0f;
+    
     public int Order { get; set; }
     
-    
+    // Navigation properties
+    public virtual ICollection<ProjectUserAssignment> UserAssignments { get; set; } = new List<ProjectUserAssignment>();
+    public virtual ICollection<RoleMapping> RoleMappings { get; set; } = new List<RoleMapping>();
+    public virtual ICollection<ProjectUserRole> UserRoles { get; set; } = new List<ProjectUserRole>();
 }
-
 
 // Base class with the Basic Info to be inherited by ALL classes
 public class BaseInfo

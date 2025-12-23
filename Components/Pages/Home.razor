@@ -1,14 +1,169 @@
 ﻿@page "/"
 
 @using ElDesignApp.Components
+@using Microsoft.AspNetCore.Authorization
+
+<PageTitle>Home - ElDesignApp</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container-fluid mt-3">
+            <div class="row">
+                <div class="col-12">
+                    <h2 class="mb-3">
+                        <i class="bi bi-house-door me-2"></i>
+                        Welcome, @context.User.Identity?.Name!
+                    </h2>
+                    
+                    <!-- Project Selection Component -->
+                    <Work />
+                    
+                    
+                    <div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-gear-fill"></i> Admin Setup</h2>
+            <p class="text-muted">Project: <strong>@SelectedProjectName</strong></p>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <!-- Role Mapping Management Card -->
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-diagram-3"></i> Role Mapping Management</h5>
+                </div>
+                <div class="card-body">
+                    <p>Define custom roles and map them to system roles (SuperAdmin, Admin, User, etc.)</p>
+                    <ul class="mb-3">
+                        <li>Create custom role names</li>
+                        <li>Map to hard-coded system roles</li>
+                        <li>Control authorization levels</li>
+                    </ul>
+                    <button class="btn btn-primary w-100" @onclick="OpenRoleMappingModal">
+                        <i class="bi bi-gear"></i> Manage Role Mappings
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Role Assignment Card -->
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-person-check"></i> User Role Assignment</h5>
+                </div>
+                <div class="card-body">
+                    <p>Assign custom roles to users for this project</p>
+                    <ul class="mb-3">
+                        <li>Assign roles to project users</li>
+                        <li>Manage user permissions</li>
+                        <li>View current assignments</li>
+                    </ul>
+                    <button class="btn btn-success w-100" @onclick="OpenUserRoleAssignmentModal">
+                        <i class="bi bi-person-plus"></i> Assign Roles to Users
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+@if (_showRoleMappingModal)
+{
+    <Rolemappingmodal OnClose="CloseRoleMappingModal" />
+}
+
+@if (_showUserRoleAssignmentModal)
+{
+    <UserRoleAssignmentModal 
+        ProjectId="@SelectedProject"
+        ProjectName="@SelectedProjectName"
+        OnClose="CloseUserRoleAssignmentModal"
+        OnAssignmentChanged="OnAssignmentChanged" />
+}
+
+
+                   
+
+                    
+                    <!-- Quick Links (Optional) -->
+                    <div class="row mt-4">
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">
+                                        <i class="bi bi-diagram-3 text-primary me-2"></i>
+                                        Quick Actions
+                                    </h5>
+                                    <div class="list-group list-group-flush">
+                                        <a href="/segment" class="list-group-item list-group-item-action">
+                                            <i class="bi bi-plus-square me-2"></i> Segment
+                                        </a>
+                                        <a href="/loadList" class="list-group-item list-group-item-action">
+                                            <i class="bi bi-envelope me-2"></i> Load List
+                                        </a>
+                                        <a href="/sld" class="list-group-item list-group-item-action">
+                                            <i class="bi bi-diagram-3 me-2"></i> SLD
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="container mt-5">
+            <div class="alert alert-info">
+                <h4 class="alert-heading">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Welcome to ElDesignApp
+                </h4>
+                <p>Please <a href="/Account/Login" class="alert-link">log in</a> to access your projects and start working.</p>
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
 
 
 
-<PageTitle>Home</PageTitle>
+@code {
+    [Parameter] public string SelectedProject { get; set; } = string.Empty;
+    [Parameter] public string SelectedProjectName { get; set; } = string.Empty;
 
-<h1>Hello, world!</h1>
+    private bool _showRoleMappingModal = false;
+    private bool _showUserRoleAssignmentModal = false;
 
-Welcome to your new app.
+    private void OpenRoleMappingModal()
+    {
+        _showRoleMappingModal = true;
+    }
 
+    private void CloseRoleMappingModal()
+    {
+        _showRoleMappingModal = false;
+        StateHasChanged();
+    }
 
-<Work></Work>
+    private void OpenUserRoleAssignmentModal()
+    {
+        _showUserRoleAssignmentModal = true;
+    }
+
+    private void CloseUserRoleAssignmentModal()
+    {
+        _showUserRoleAssignmentModal = false;
+        StateHasChanged();
+    }
+
+    private async Task OnAssignmentChanged()
+    {
+        // Refresh any data that depends on role assignments
+        StateHasChanged();
+    }
+}

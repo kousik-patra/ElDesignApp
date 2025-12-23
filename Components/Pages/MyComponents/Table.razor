@@ -634,11 +634,11 @@
                                                                                          })" type="button"
                 class="btn btn-outline-primary btn-sm mr-2">❭
         </button>
-        <button disabled="@(_displayPageNo < _maxDisplayPage - 1 ? false : false)" @onclick="@(e =>
+        <button disabled="@(_displayPageNo < _maxDisplayPage - 1 ? false : false)" @onclick="@(new Action<object>(e =>
                                                                                              {
                                                                                                  _displayPageNo = _maxDisplayPage;
                                                                                                  DoPagination();
-                                                                                             })" type="button"
+                                                                                             }))" type="button"
                 class="btn btn-outline-primary btn-sm mr-2"> ❱
         </button>
 

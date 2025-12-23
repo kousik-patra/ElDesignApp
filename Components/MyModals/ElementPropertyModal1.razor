@@ -73,7 +73,7 @@
                                                @onclick="()=>PropertyUpdate(property)"
                                                @oninput="e=>ValueAndValidationUpdate(e, property, val)"
                                                @onblur="@OnBlur"
-                                               @onkeydown="@((e) => HandleInputKeyDown(e, property))">
+                                               @onkeydown="@((KeyboardEventArgs e) => HandleInputKeyDown(e, property))">
                                     }
                                     else if (property.PropertyType.Name == "Single")
                                     {

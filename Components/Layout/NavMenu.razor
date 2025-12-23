@@ -6,6 +6,8 @@
 @inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject UserManager<ApplicationUser> UserManager
+@inject IProjectContextService ProjectContext
+
 
 <div class="top-row ps-3 navbar navbar-brand">
     <div class="container-fluid">
@@ -33,6 +35,60 @@
                 @if (!IconOnly) { <span>Auth Required</span> }
             </NavLink>
         </div>
+        
+        
+        
+        @* Debug Section - Add this temporarily at the top of your NavBar *@
+        <AuthorizeView>
+            <Authorized>
+                <div class="alert alert-warning m-2">
+                    <strong>Auth Debug:</strong><br/>
+                    User: @context.User.Identity?.Name<br/>
+                    Is SuperAdmin: @context.User.IsInRole("SuperAdmin")<br/>
+                    Is Admin: @context.User.IsInRole("Admin")<br/>
+                    Is Authenticated: @context.User.Identity?.IsAuthenticated<br/>
+                    Computed _isAdmin: @_isAdmin<br/>
+                    Has Checked: @_hasChecked
+                </div>
+            </Authorized>
+        </AuthorizeView>
+        @* ADMIN SECTION *@
+        <AuthorizeView>
+            <Authorized>
+                @if (_isAdmin)
+                {
+                    <CollapsibleNavGroup Title="Administration"
+                                         Icon="bi bi-gear-fill"
+                                         StartExpanded="false"
+                                         IconOnly="@IconOnly">
+                
+                        <div class="nav-item px-3 py-1">
+                            <NavLink class="nav-link py-2" href="admin/setup">
+                                <i class="bi bi-lightning-charge-fill me-2"></i>
+                                @if (!IconOnly) { <span>Role Management</span> }
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3 py-1">
+                            <NavLink class="nav-link py-2" href="cableData">
+                                <i class="bi bi-lightning-charge-fill me-2"></i>
+                                @if (!IconOnly) { <span>Cable Data</span> }
+                            </NavLink>
+                        </div>
+                        <div class="nav-item px-3 py-1">
+                            <NavLink class="nav-link py-2" href="motorData">
+                                <i class="bi bi-fan me-2"></i>
+                                @if (!IconOnly) { <span>Motor Data</span> }
+                            </NavLink>
+                        </div>
+                    </CollapsibleNavGroup>
+                }
+            </Authorized>
+        </AuthorizeView>
+
+        
+        
+        
+        
         
         <AuthorizeView>
             <Authorized>
@@ -98,12 +154,58 @@
         
         
         @* ADMIN SECTION - Uses Policy *@
+        
+        @* ADMIN SECTION *@
+<AuthorizeView>
+    <Authorized>
+        @if (_isAdmin)
+        {
+            <CollapsibleNavGroup Title="Administration"
+                                 Icon="bi bi-gear-fill"
+                                 StartExpanded="false"
+                                 IconOnly="@IconOnly">
+                
+                <div class="nav-item px-3 py-1">
+                    <NavLink class="nav-link py-2" href="admin/setup">
+                        <i class="bi bi-lightning-charge-fill me-2"></i>
+                        @if (!IconOnly) { <span>Role Management</span> }
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3 py-1">
+                    <NavLink class="nav-link py-2" href="cableData">
+                        <i class="bi bi-lightning-charge-fill me-2"></i>
+                        @if (!IconOnly) { <span>Cable Data</span> }
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3 py-1">
+                    <NavLink class="nav-link py-2" href="motorData">
+                        <i class="bi bi-fan me-2"></i>
+                        @if (!IconOnly) { <span>Motor Data</span> }
+                    </NavLink>
+                </div>
+            </CollapsibleNavGroup>
+        }
+    </Authorized>
+</AuthorizeView>
+
+
+        
+        
+        
         <AuthorizeView Policy="RequireAdmin">
             <Authorized>
                 <CollapsibleNavGroup Title="Administration"
                                      Icon="bi bi-gear-fill"
                                      StartExpanded="false"
                                      IconOnly="@IconOnly">
+                    
+                    
+                    <div class="nav-item px-3 py-1">
+                        <NavLink class="nav-link py-2" href="admin\setup">
+                            <i class="bi bi-lightning-charge-fill me-2"></i>
+                            @if (!IconOnly) { <span>Role Management</span> }
+                        </NavLink>
+                    </div>
                     <div class="nav-item px-3 py-1">
                         <NavLink class="nav-link py-2" href="cableData">
                             <i class="bi bi-lightning-charge-fill me-2"></i>
@@ -111,9 +213,21 @@
                         </NavLink>
                     </div>
                     <div class="nav-item px-3 py-1">
+                        <NavLink class="nav-link py-2" href="cableData">
+                            <i class="bi bi-lightning-charge-fill me-2"></i>
+                            @if (!IconOnly)
+                            {
+                                <span>Cable Data</span>
+                            }
+                        </NavLink>
+                    </div>
+                    <div class="nav-item px-3 py-1">
                         <NavLink class="nav-link py-2" href="motorData">
                             <i class="bi bi-fan me-2"></i>
-                            @if (!IconOnly) { <span>Motor Data</span> }
+                            @if (!IconOnly)
+                            {
+                                <span>Motor Data</span>
+                            }
                         </NavLink>
                     </div>
                 </CollapsibleNavGroup>
@@ -218,4 +332,122 @@
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
     }
+    
+    
+    
+
+
+    
+
+  
+
+    
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+    
+    private bool _isAdmin = false;
+    private bool _hasChecked = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_hasChecked && AuthenticationStateTask != null)
+        {
+            _hasChecked = true;
+            await CheckAdminStatus();
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckAdminStatus()
+{
+    try
+    {
+        var authState = await AuthenticationStateTask!;
+        var user = authState.User;
+        
+        Console.WriteLine($"CheckAdminStatus - User authenticated: {user.Identity?.IsAuthenticated}");
+        
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            Console.WriteLine($"CheckAdminStatus - UserId: {userId}");
+            
+            if (!string.IsNullOrEmpty(userId))
+            {
+                // IMPORTANT: Ensure project is loaded first
+                var currentProject = await ProjectContext.GetCurrentProjectAsync();
+                Console.WriteLine($"CheckAdminStatus - Current Project: {currentProject?.Tag ?? "NULL"}");
+                
+                if (currentProject == null)
+                {
+                    // Load first available project
+                    var projects = await ProjectContext.GetUserProjectsAsync(userId);
+                    Console.WriteLine($"CheckAdminStatus - User has {projects.Count} projects");
+                    
+                    if (projects.Any())
+                    {
+                        await ProjectContext.SetCurrentProjectAsync(projects.First().UID);
+                        currentProject = projects.First();
+                        Console.WriteLine($"CheckAdminStatus - Set current project to: {currentProject.Tag}");
+                    }
+                }
+                
+                // Check 1: SuperAdmin or Admin role
+                var isSuperAdmin = user.IsInRole("SuperAdmin");
+                var isAdmin = user.IsInRole("Admin");
+                
+                Console.WriteLine($"CheckAdminStatus - IsSuperAdmin: {isSuperAdmin}, IsAdmin: {isAdmin}");
+                
+                if (isSuperAdmin || isAdmin)
+                {
+                    _isAdmin = true;
+                    Console.WriteLine("CheckAdminStatus - User is SuperAdmin or Admin");
+                    return;
+                }
+
+                // Check 2: Project Admin (with explicit project ID)
+                Console.WriteLine("CheckAdminStatus - Checking IsProjectAdmin...");
+                
+                if (currentProject != null)
+                {
+                    // Direct check with explicit project ID
+                    var isProjectAdmin = await ProjectContext.IsUserAdminInProjectAsync(userId, currentProject.UID);
+                    Console.WriteLine($"CheckAdminStatus - IsProjectAdmin (explicit): {isProjectAdmin}");
+                    
+                    if (isProjectAdmin)
+                    {
+                        _isAdmin = true;
+                        Console.WriteLine("CheckAdminStatus - User is Project Admin");
+                        return;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("CheckAdminStatus - No current project, cannot check IsProjectAdmin");
+                }
+
+                // Check 3: Custom role with Admin hard role
+                Console.WriteLine("CheckAdminStatus - Checking custom roles...");
+                var hardRoles = await ProjectContext.GetUserHardRolesInCurrentProjectAsync(userId);
+                Console.WriteLine($"CheckAdminStatus - Hard roles: {string.Join(", ", hardRoles)}");
+                
+                if (hardRoles.Contains("Admin", StringComparer.OrdinalIgnoreCase))
+                {
+                    _isAdmin = true;
+                    Console.WriteLine("CheckAdminStatus - User has Admin hard role");
+                    return;
+                }
+                
+                Console.WriteLine("CheckAdminStatus - User is NOT admin");
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error checking admin status: {ex.Message}");
+        Console.WriteLine($"Stack trace: {ex.StackTrace}");
+    }
+}
+    
+    
 }

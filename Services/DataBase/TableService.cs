@@ -572,9 +572,12 @@ public interface ITableService
         // Tables that don't need project filtering
         var excludedTables = new[] 
         { 
-            "RoleMapping",      // New: Role mappings are global
-            "DBMaster",         // Existing
-            "Project"           // Existing
+            "RoleMapping",      
+            "DBMaster",         
+            "Project",
+            "ProjectUserAssignment",
+            "ProjectUserRole"
+            
         };
         
         var containsData = tableName.Contains("Data");
@@ -583,7 +586,7 @@ public interface ITableService
         // Project filter not applicable for catalogue data, Project tables, or excluded tables
         if (!containsData && !isExcluded) 
         {
-            sql += $" WHERE ProjectId = '{selectedProject}'";
+            sql += " WHERE ProjectId = @ProjectId";
         }
     
         if (tableName == "DBMaster") 
@@ -593,10 +596,10 @@ public interface ITableService
     
         if (tableName == "LoadMaster")
         {
-            sql = $"select * from dbo.MasterLoadList WHERE ProjectId = '{selectedProject}'";
+            sql = "select * from dbo.MasterLoadList WHERE ProjectId = @ProjectId";
         }
         
-        return await LoadDataAsync<T, dynamic>(sql, new { }) ?? [];
+        return await LoadDataAsync<T, dynamic>(sql, new { ProjectId = selectedProject}) ?? [];
     }
     
     

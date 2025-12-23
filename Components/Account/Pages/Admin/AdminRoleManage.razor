@@ -1,0 +1,273 @@
+@page "/admin/setup"
+@inject IProjectContextService ProjectContext
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Admin Setup - @SelectedProjectName</PageTitle>
+
+@if (_isLoading)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Loading project information...</p>
+        <p class="text-muted">Debug: firstRender = @_hasRendered</p>
+    </div>
+}
+else
+{
+    <div class="container-fluid py-4">
+        <div class="row mb-4">
+            <div class="col">
+                <h2><i class="bi bi-gear-fill"></i> Admin Setup</h2>
+                <p class="text-muted">Project: <strong>@SelectedProjectName</strong></p>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <!-- Role Mapping Management Card -->
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-diagram-3"></i> Role Mapping Management</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Define custom roles and map them to system roles (SuperAdmin, Admin, User, etc.)</p>
+                        <ul class="mb-3">
+                            <li>Create custom role names</li>
+                            <li>Map to hard-coded system roles</li>
+                            <li>Control authorization levels</li>
+                        </ul>
+                        <button class="btn btn-primary w-100" @onclick="OpenRoleMappingModal">
+                            <i class="bi bi-gear"></i> Manage Role Mappings
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Role Assignment Card -->
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-person-check"></i> User Role Assignment</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>Assign custom roles to users for this project</p>
+                        <ul class="mb-3">
+                            <li>Assign roles to project users</li>
+                            <li>Manage user permissions</li>
+                            <li>View current assignments</li>
+                        </ul>
+                        <button class="btn btn-success w-100" @onclick="OpenUserRoleAssignmentModal">
+                            <i class="bi bi-person-plus"></i> Assign Roles to Users
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Debug Info -->
+        <div class="row mt-3">
+            <div class="col">
+                <div class="alert alert-info">
+                    <strong>Debug Info:</strong><br/>
+                    Role Mapping Modal: @_showRoleMappingModal<br/>
+                    User Assignment Modal: @_showUserRoleAssignmentModal<br/>
+                    Project ID: @SelectedProject<br/>
+                    Project Name: @SelectedProjectName<br/>
+                    Is Loading: @_isLoading<br/>
+                    Has Rendered: @_hasRendered
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modals -->
+@if (_showRoleMappingModal)
+{
+    <Rolemappingmodal OnClose="CloseRoleMappingModal" />
+}
+
+@if (_showUserRoleAssignmentModal)
+{
+    <UserRoleAssignmentModal 
+        ProjectId="@SelectedProject"
+        ProjectName="@SelectedProjectName"
+        OnClose="CloseUserRoleAssignmentModal"
+        OnAssignmentChanged="OnAssignmentChanged" />
+}
+
+@code {
+    private string SelectedProject = string.Empty;
+    private string SelectedProjectName = string.Empty;
+
+    private bool _showRoleMappingModal = false;
+    private bool _showUserRoleAssignmentModal = false;
+    private bool _isLoading = true;
+    private bool _hasRendered = false;
+    private bool _dataLoaded = false; // NEW FLAG
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Console.WriteLine("=== OnInitializedAsync START ===");
+        
+        try
+        {
+            await LoadCurrentProject();
+            _dataLoaded = true; // Mark data as loaded
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Exception in OnInitializedAsync: {ex.Message}");
+        }
+        
+        Console.WriteLine("=== OnInitializedAsync END ===");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        Console.WriteLine($"=== OnAfterRenderAsync - firstRender: {firstRender}, _hasRendered: {_hasRendered}, _dataLoaded: {_dataLoaded} ===");
+        
+        if (firstRender && !_hasRendered)
+        {
+            _hasRendered = true;
+            
+            // If data was loaded in OnInitializedAsync, just update UI
+            if (_dataLoaded)
+            {
+                Console.WriteLine("Data already loaded, updating UI");
+                _isLoading = false;
+                await InvokeAsync(StateHasChanged);
+            }
+            else
+            {
+                // Fallback: load data here if OnInitializedAsync failed
+                Console.WriteLine("Running fallback data load in OnAfterRenderAsync");
+                try
+                {
+                    await LoadCurrentProject();
+                }
+                finally
+                {
+                    _isLoading = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+    }
+
+    private async Task LoadCurrentProject()
+    {
+        Console.WriteLine("=== LoadCurrentProject START ===");
+        try
+        {
+            Console.WriteLine("Step 1: Getting current project from context");
+            var currentProject = await ProjectContext.GetCurrentProjectAsync();
+            Console.WriteLine($"Step 1 Complete: Current project = {currentProject?.Tag ?? "NULL"}");
+            
+            if (currentProject != null)
+            {
+                SelectedProject = currentProject.UID.ToString();
+                SelectedProjectName = currentProject.Tag ?? "Unknown Project";
+                Console.WriteLine($"✓ Loaded project: {SelectedProjectName} ({SelectedProject})");
+                return;
+            }
+            
+            Console.WriteLine("Step 2: No current project, loading user's projects");
+            
+            if (AuthenticationStateTask == null)
+            {
+                Console.WriteLine("ERROR: AuthenticationStateTask is null");
+                SelectedProject = Guid.Empty.ToString();
+                SelectedProjectName = "Authentication Error";
+                return;
+            }
+            
+            var authState = await AuthenticationStateTask;
+            Console.WriteLine($"Step 2a: Got auth state, user = {authState.User.Identity?.Name}");
+            
+            var userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            Console.WriteLine($"Step 2b: UserId = {userId}");
+            
+            if (!string.IsNullOrEmpty(userId))
+            {
+                Console.WriteLine("Step 3: Getting user projects");
+                var userProjects = await ProjectContext.GetUserProjectsAsync(userId);
+                Console.WriteLine($"Step 3 Complete: User has {userProjects.Count} projects");
+                
+                var firstProject = userProjects.FirstOrDefault();
+                
+                if (firstProject != null)
+                {
+                    Console.WriteLine($"Step 4: Setting first project: {firstProject.Tag}");
+                    SelectedProject = firstProject.UID.ToString();
+                    SelectedProjectName = firstProject.Tag ?? "Unknown Project";
+                    
+                    await ProjectContext.SetCurrentProjectAsync(firstProject.UID);
+                    Console.WriteLine($"✓ Set first available project: {SelectedProjectName} ({SelectedProject})");
+                }
+                else
+                {
+                    Console.WriteLine("⚠ No projects found for user");
+                    SelectedProject = Guid.Empty.ToString();
+                    SelectedProjectName = "No Project Selected";
+                }
+            }
+            else
+            {
+                Console.WriteLine("ERROR: UserId is null or empty");
+                SelectedProject = Guid.Empty.ToString();
+                SelectedProjectName = "User ID Error";
+            }
+            
+            Console.WriteLine("=== LoadCurrentProject END (Success) ===");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"=== LoadCurrentProject ERROR ===");
+            Console.WriteLine($"Error: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            SelectedProject = Guid.Empty.ToString();
+            SelectedProjectName = "Error Loading Project";
+        }
+    }
+
+    private void OpenRoleMappingModal()
+    {
+        Console.WriteLine("Opening Role Mapping Modal");
+        _showRoleMappingModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseRoleMappingModal()
+    {
+        Console.WriteLine("Closing Role Mapping Modal");
+        _showRoleMappingModal = false;
+        StateHasChanged();
+    }
+
+    private void OpenUserRoleAssignmentModal()
+    {
+        Console.WriteLine("Opening User Role Assignment Modal");
+        _showUserRoleAssignmentModal = true;
+        StateHasChanged();
+    }
+
+    private void CloseUserRoleAssignmentModal()
+    {
+        Console.WriteLine("Closing User Role Assignment Modal");
+        _showUserRoleAssignmentModal = false;
+        StateHasChanged();
+    }
+
+    private void OnAssignmentChanged()
+    {
+        Console.WriteLine("Assignment changed");
+        StateHasChanged();
+    }
+}
