@@ -4,6 +4,7 @@
 @inject RoleManager<IdentityRole> RoleManager
 @inject IJSRuntime JS
 @inject Services.IMyTableService MyTable
+@inject IDataRetrievalService DataRetrievalService
 
 <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.6);" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -193,10 +194,11 @@
 
 @code {
     [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public string ProjectId { get; set; } = string.Empty;
     
     private bool _isLoading = true;
     private List<RoleMapping> _roleMappings = new();
-    private List<string> _availableHardRoles = new() { "SuperAdmin", "Admin", "User", "Report","Guest" };
+    private List<string> _availableHardRoles = new() { "Admin", "User", "Report","Guest" };
     
     private bool _showEditModal = false;
     private RoleMapping? _editingMapping;
@@ -215,7 +217,19 @@
     {
         try
         {
-            _roleMappings = await RoleAuthService.GetAllRoleMappings();
+            var allMappings = await RoleAuthService.GetAllRoleMappings();
+            // Filter by project if ProjectId is provided
+            if (!string.IsNullOrEmpty(ProjectId))
+            {
+                _roleMappings = allMappings
+                    .Where(r => r.IsActive && r.ProjectId.ToString() == ProjectId)
+                    .ToList();
+            }
+            else
+            {
+                _roleMappings = allMappings.Where(r => r.IsActive).ToList();
+            }
+
         }
         catch (Exception ex)
         {
@@ -299,6 +313,13 @@
             _validationError = "At least one hard role must be selected";
             return;
         }
+        
+        // CHECK: ProjectId must be provided
+        if (string.IsNullOrEmpty(ProjectId))
+        {
+            _validationError = "Project ID is required. Please ensure you're in a project context.";
+            return;
+        }
 
         try
         {
@@ -307,7 +328,9 @@
                 // CHECK FOR DUPLICATE BEFORE CREATING
                 var existingRole = _roleMappings.FirstOrDefault(r => 
                     r.CustomRoleName.Equals(_customRoleName.Trim(), StringComparison.OrdinalIgnoreCase) && 
-                    r.IsActive);
+                    r.IsActive &&
+                    r.ProjectId.ToString() == ProjectId); // Check within same project
+
             
                 if (existingRole != null)
                 {
@@ -318,6 +341,7 @@
                 var newMapping = new RoleMapping
                 {
                     UID = Guid.NewGuid(),
+                    ProjectId = Guid.Parse(ProjectId), 
                     CustomRoleName = _customRoleName.Trim(),
                     Description = _description?.Trim() ?? string.Empty,
                     MappedHardRoles = JsonSerializer.Serialize(_selectedHardRoles),
@@ -327,11 +351,23 @@
                 };
         
                 await MyTable.InsertItemAsync(newMapping);
+
+                await LoadMappings();
         
                 // Create role in Identity
                 if (!await RoleManager.RoleExistsAsync(newMapping.CustomRoleName))
                 {
                     await RoleManager.CreateAsync(new IdentityRole(newMapping.CustomRoleName));
+                }
+
+                // Clear cache
+                try
+                {
+                    await DataRetrievalService.InvalidateCacheAsync("RoleMapping");
+                }
+                catch
+                {
+                    // ignored
                 }
             }
             else
@@ -339,8 +375,8 @@
                 _editingMapping.Description = _description?.Trim() ?? string.Empty;
                 _editingMapping.MappedHardRoles = JsonSerializer.Serialize(_selectedHardRoles);
         
-                await MyTable.UpdateParameter(_editingMapping, _editingMapping.UID, 
-                    new List<string>() { "Description", "MappedHardRoles" });
+                await MyTable.UpdateParameter(_editingMapping, _editingMapping.UID,
+                    ["Description", "MappedHardRoles"]);
             }
 
             await LoadMappings();
@@ -366,7 +402,9 @@
             // Soft delete by setting IsActive to false
             mapping.IsActive = false;
             await MyTable.UpdateParameter(mapping, mapping.UID, new List<string>() { "IsActive" });
-            
+            // Clear cache
+            await DataRetrievalService.InvalidateCacheAsync("RoleMapping");
+
             await LoadMappings();
             StateHasChanged();
         }
@@ -386,5 +424,19 @@
     private async Task Close()
     {
         await OnClose.InvokeAsync();
+    }
+    
+    private async Task ClearCacheForTable(string tableName)
+    {
+        try
+        {
+            // Force cache invalidation
+            await DataRetrievalService.InvalidateCacheAsync(tableName);
+            Console.WriteLine($"Cache cleared for {tableName}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error clearing cache: {ex.Message}");
+        }
     }
 }

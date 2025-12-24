@@ -17,6 +17,7 @@ public interface IDataRetrievalService
     Task<(List<T>, string, string, string)> ReadFromCacheOrDb<T>(T item, bool forceDb = false);
     Task<(List<T>, string, string, string)> RefreshCacheAndReadFromDb<T>(T item);
     Task<(string, string, string)> RefreshCache();
+    Task InvalidateCacheAsync(string tableName);
 }
 
 public class DataRetrievalService : IDataRetrievalService
@@ -205,6 +206,26 @@ public async Task<(List<T>, string, string, string)> RefreshCacheAndReadFromDb<T
 
     return (freshData, logInfo, logWarning, logError);
 }
+
+public async Task InvalidateCacheAsync(string tableName)
+{
+    try
+    {
+        //TODO: Redis implementation in VM docker for development and add-docker in production
+        //if (_useRedis && _cache != null)
+        if (_cache != null)
+        {
+            var cacheKey = $"{tableName}_cache";
+            await _cache.RemoveAsync(cacheKey);
+            _logger.LogInformation($"Cache invalidated for {tableName}");
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, $"Error invalidating cache for {tableName}");
+    }
+}
+
 
 public async Task<(string, string, string)> RefreshCache()
 {

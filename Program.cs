@@ -92,6 +92,7 @@ builder.Services.AddDistributedMemoryCache();
     builder.Services.AddScoped<IRoleAuthorizationService, RoleAuthorizationService>();
     builder.Services.AddScoped<IProjectContextService, ProjectContextService>();
     builder.Services.AddScoped<IAuthorizationHandler, HardRoleHandler>();
+    builder.Services.AddScoped<IDefaultRoleSeederService, DefaultRoleSeederService>();
 
     builder.Services.AddScoped<IDbConnection>(sp => 
         new SqlConnection(sp.GetRequiredService<IConfiguration>()

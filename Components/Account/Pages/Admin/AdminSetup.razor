@@ -87,7 +87,9 @@ else
 <!-- Modals -->
 @if (_showRoleMappingModal)
 {
-    <Rolemappingmodal OnClose="CloseRoleMappingModal" />
+    <Rolemappingmodal 
+        ProjectId="@SelectedProject"
+        OnClose="@CloseRoleMappingModal" />
 }
 
 @if (_showUserRoleAssignmentModal)
@@ -98,6 +100,9 @@ else
         OnClose="CloseUserRoleAssignmentModal"
         OnAssignmentChanged="OnAssignmentChanged" />
 }
+
+
+
 
 @code {
     private string SelectedProject = string.Empty;
