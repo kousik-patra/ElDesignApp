@@ -10,14 +10,14 @@ public interface IDefaultRoleSeederService
 
 public class DefaultRoleSeederService : IDefaultRoleSeederService
 {
-    private readonly ITableService _tableService;
+    private readonly ITableService _table;
     private readonly ILogger<DefaultRoleSeederService> _logger;
 
     public DefaultRoleSeederService(
-        ITableService tableService,
+        ITableService table,
         ILogger<DefaultRoleSeederService> logger)
     {
-        _tableService = tableService;
+        _table = table;
         _logger = logger;
     }
 
@@ -28,7 +28,7 @@ public class DefaultRoleSeederService : IDefaultRoleSeederService
             _logger.LogInformation($"Seeding default roles for project {projectId}");
 
             // Check if roles already exist for this project
-            var existingRoles = await _tableService.GetListAsync(new RoleMapping(), projectId.ToString()) ?? new();
+            var existingRoles = await _table.GetListAsync<RoleMapping>(projectId.ToString()) ?? [];
             var existingRoleNames = existingRoles
                 .Where(r => r.ProjectId == projectId && r.IsActive)
                 .Select(r => r.CustomRoleName)
@@ -67,7 +67,7 @@ public class DefaultRoleSeederService : IDefaultRoleSeederService
                     CreatedBy = "System"
                 };
 
-                await _tableService.InsertItemAsync(newRole);
+                await _table.InsertAsync(newRole);
                 rolesCreated++;
                 _logger.LogInformation($"Created default role '{name}' for project {projectId}");
             }

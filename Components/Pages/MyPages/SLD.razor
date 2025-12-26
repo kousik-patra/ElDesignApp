@@ -1,4 +1,5 @@
 ﻿@page "/sld"
+@attribute [Authorize(Policy = "RequireUser")]
 
 @rendermode InteractiveServer
 
@@ -8,7 +9,6 @@
 
 
 @inject IDataRetrievalService DataService
-@inject IMyTableService MyTable 
 @inject ITableService Table
 @inject ICacheService CacheService
 @inject IGlobalDataService GlobalData
@@ -19,6 +19,7 @@
 
 @using Switch = ElDesignApp.Models.Switch
 @using ElDesignApp.Services
+@using Microsoft.AspNetCore.Authorization
 
 <style>
     /*https://www.jointjs.com/demos/shapes-drawing*/
@@ -600,18 +601,18 @@ else
             if (GlobalData.CableData != null && GlobalData.CableData.Count == 0)
             {
                 (GlobalData.CableData, _, _, _) 
-                    = await DataService.ReadFromCacheOrDb(new Models.CableData()) ;
+                    = await DataService.ReadFromCacheOrDb<Models.CableData>() ;
             }
             if (GlobalData.MotorData != null && GlobalData.MotorData.Count == 0)
             {
                 (GlobalData.MotorData, _, _, _) 
-                    = await DataService.ReadFromCacheOrDb(new Models.MotorData()) ;
+                    = await DataService.ReadFromCacheOrDb<Models.MotorData>() ;
             }
             
             // read Buses at the outset
             //Buses = await ReadFromCacheOrDB(new Bus());
             (Buses, string logInfo, string logWarning, string logError) 
-                = await DataService.ReadFromCacheOrDb(new Bus()) ;
+                = await DataService.ReadFromCacheOrDb<Bus>() ;
 
             var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
             Debug.WriteLine(displayText);
@@ -628,7 +629,7 @@ else
             // read the transformers
 
             (Transformers, logInfo, logWarning, logError) 
-                = await DataService.ReadFromCacheOrDb(new Transformer()) ;
+                = await DataService.ReadFromCacheOrDb<Transformer>() ;
 
             displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
             Debug.WriteLine(displayText);
@@ -645,7 +646,7 @@ else
             // read Cable Branch
 
             (CableBranches, logInfo, logWarning, logError) 
-                = await DataService.ReadFromCacheOrDb(new CableBranch()) ;
+                = await DataService.ReadFromCacheOrDb<CableBranch>() ;
 
             displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
             Debug.WriteLine(displayText);
@@ -662,7 +663,7 @@ else
             // read bus duct
 
             (BusDucts, logInfo, logWarning, logError) 
-                = await DataService.ReadFromCacheOrDb(new BusDuct()) ;
+                = await DataService.ReadFromCacheOrDb<BusDuct>() ;
 
             displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
             Debug.WriteLine(displayText);
@@ -679,7 +680,7 @@ else
             // read Loads
 
             (Loads, logInfo, logWarning, logError) 
-                = await DataService.ReadFromCacheOrDb(new Load()) ;
+                = await DataService.ReadFromCacheOrDb<Load>() ;
 
             displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
             Debug.WriteLine(displayText);
@@ -695,7 +696,7 @@ else
             // read the Switches
             
             (Switches, logInfo, logWarning, logError) 
-                = await DataService.ReadFromCacheOrDb(new Switch()) ;
+                = await DataService.ReadFromCacheOrDb<Switch>() ;
 
             displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
             Debug.WriteLine(displayText);
@@ -710,7 +711,7 @@ else
             // read existing Bus System Study Results
 
             (BusStudyResults, logInfo, logWarning, logError) 
-                = await DataService.ReadFromCacheOrDb(new BusStudyResult()) ;
+                = await DataService.ReadFromCacheOrDb<BusStudyResult>() ;
 
             displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
             Debug.WriteLine(displayText);
@@ -720,7 +721,7 @@ else
             // read cordinates customised by the users for elements in the SLDs
 
             (SLDXYs, logInfo, logWarning, logError) 
-                = await DataService.ReadFromCacheOrDb(new SLDXY()) ;
+                = await DataService.ReadFromCacheOrDb<SLDXY>() ;
 
             displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
             Debug.WriteLine(displayText);
@@ -728,7 +729,7 @@ else
             
             //SLDComponents = await ReadFromCacheOrDB(new SLDComponent());
             // read SLD components afresh from the database to avoid missing change due to old cache data
-            SLDComponents = await MyTable.GetList(new SLDComponent(), GlobalData.SelectedProject.Tag);
+            SLDComponents = await Table.GetListAsync<SLDComponent>(GlobalData.SelectedProject.Tag);
             //
             // as all the Tables are now updated, assign the same to Global Tables
             
@@ -907,9 +908,9 @@ else
             List<T> origialItemslist = args.Item3;
             //
             //await MyTable.Update(itemslist, origialItemslist);
-            var reult = await Table.UpdateAsync(itemslist, origialItemslist, loginUser);
-            _logger = reult.logger;
-            _logger.LogInformation($"Records Added: {reult.AddedRows}, Modified: {reult.modifiedRows} and Deleted: {reult.DeletedRows}.");
+            var result = await Table.SyncListAsync(itemslist, origialItemslist, loginUser);
+            _logger.LogError( result.Errors.ToString());
+            _logger.LogInformation($"Records Added: {result.Added}, Modified: {result.Modified} and Deleted: {result.Deleted}.");
             // clear cache invoking the parent page
             tableSuccessMessage = "Data updated to the Database";
             tableActionMessage = tableSuccessMessage;
@@ -1061,7 +1062,7 @@ else
         ygridSize = busesResult.Max(bus => bus.CordY) + 150;
         xyString = "";
         // read SLD data afresh directly from teh DB and not from cache
-        SLDComponents = await MyTable.GetList(new SLDComponent(), GlobalData.SelectedProject.Tag);
+        SLDComponents = await Table.GetListAsync<SLDComponent>(GlobalData.SelectedProject.Tag);
         sldComponents = JsonSerializer.Serialize(SLDComponents, jsonSerializerOptions);
 
         // create switchboard strings
@@ -1163,7 +1164,7 @@ else
             busStudyResult.UpdatedOn = DateTime.Now;
             busStudyResult.Save2DB = true;
         });
-        await MyTable.Update(BusStudyResults, GlobalData.BusStudyResults);
+        await Table.SyncListAsync(BusStudyResults, GlobalData.BusStudyResults);
 
 
         // clear cache invoking the parent page
@@ -1404,8 +1405,8 @@ else
         Debug.WriteLine("Server Side:SLDComponentUpdate......");
 
         // read data from the database afresh, not from cache
-        GlobalData.SLDComponents = await MyTable.GetList(new SLDComponent(), GlobalData.SelectedProject.Tag);
-        SLDComponents = await MyTable.GetList(new SLDComponent(), GlobalData.SelectedProject.Tag);
+        GlobalData.SLDComponents = await Table.GetListAsync<SLDComponent>(GlobalData.SelectedProject.Tag);
+        SLDComponents = await Table.GetListAsync<SLDComponent>(GlobalData.SelectedProject.Tag);
 
         try
         {
@@ -1427,7 +1428,7 @@ else
                     // update the JSON Property
                     sld.PropertyJSON = sldJS.PropertyJSON;
                     // update existing record
-                    await MyTable.UpdateItem(sld, sld.UID);
+                    await Table.UpdateAsync(sld);
                 }
                 else
                 {
@@ -1443,7 +1444,7 @@ else
                     sld.UpdatedBy = "KP";
                     sld.Save2DB = true;
                     // add the new item
-                    await MyTable.InsertItem(sld);
+                    await Table.InsertAsync(sld);
                 }
             }
         }

@@ -1,6 +1,11 @@
+using System.Security.Claims;
 using ElDesignApp.Data;
 using ElDesignApp.Models;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
+using Microsoft.JSInterop;
+
+
 
 namespace ElDesignApp.Services;
 
@@ -54,12 +59,18 @@ public interface IProjectContextService
     /// Gets user's hard roles in the current project (via custom role mappings)
     /// </summary>
     Task<List<string>> GetUserHardRolesInCurrentProjectAsync(string userId);
+    
+    /// <summary>
+    /// Gets user's hard roles in a specific project (via custom role mappings)
+    /// </summary>
+    Task<List<string>> GetUserHardRolesInProjectAsync(string userId, Guid projectId);
 }
 
 public class ProjectContextService : IProjectContextService
 {
     private readonly ProtectedSessionStorage _sessionStorage;
     private readonly IDataRetrievalService _dataService;
+    private readonly AuthenticationStateProvider _authenticationStateProvider;
     private readonly ILogger<ProjectContextService> _logger;
     private const string PROJECT_KEY = "CurrentProjectId";
     
@@ -70,33 +81,127 @@ public class ProjectContextService : IProjectContextService
     public ProjectContextService(
         ProtectedSessionStorage sessionStorage,
         IDataRetrievalService dataService,
+        AuthenticationStateProvider authenticationStateProvider,
         ILogger<ProjectContextService> logger)
     {
         _sessionStorage = sessionStorage;
         _dataService = dataService;
+        _authenticationStateProvider = authenticationStateProvider;
         _logger = logger;
     }
+    
+    
+
 
     public Guid? CurrentProjectId => _currentProjectId;
 
-    public async Task<Project?> GetCurrentProjectAsync()
-    {
-        await EnsureLoadedAsync();
-        
-        if (_currentProjectId == null)
-            return null;
+    // public async Task<Project?> GetCurrentProjectAsync()
+    // {
+    //     await EnsureLoadedAsync();
+    //     
+    //     if (_currentProjectId == null)
+    //         return null;
+    //
+    //     try
+    //     {
+    //         var result = await _dataService.ReadFromCacheOrDb(new Project());
+    //         return result.Item1.FirstOrDefault(p => p.UID == _currentProjectId);
+    //     }
+    //     catch (Exception ex)
+    //     {
+    //         _logger.LogError(ex, "Error getting current project");
+    //         return null;
+    //     }
+    // }
+    
+    
+  public async Task<Project?> GetCurrentProjectAsync()
+{
+    await EnsureLoadedAsync();
+    
+    if (_currentProjectId == null)
+        return null;
 
-        try
+    try
+    {
+        // Get the cached/stored project
+        var result = await _dataService.ReadFromCacheOrDb<Project>();
+        var cachedProject = result.Item1.FirstOrDefault(p => p.UID == _currentProjectId);
+        
+        if (cachedProject == null)
         {
-            var result = await _dataService.ReadFromCacheOrDb(new Project());
-            return result.Item1.FirstOrDefault(p => p.UID == _currentProjectId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting current project");
+            _logger.LogWarning($"Project {_currentProjectId} not found in database. Clearing cache.");
+            await ClearCurrentProjectAsync();
             return null;
         }
+        
+        // VALIDATE: Check if user actually has access to this project
+        var authState = await _authenticationStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        
+        if (!string.IsNullOrEmpty(userId))
+        {
+            var userProjects = await GetUserProjectsAsync(userId);
+            var hasAccess = userProjects.Any(p => p.UID == _currentProjectId);
+            
+            if (!hasAccess)
+            {
+                _logger.LogWarning($"User {userId} does not have access to cached project {cachedProject.Tag} ({_currentProjectId}). Clearing and reassigning.");
+                
+                // Clear the invalid cached project
+                await ClearCurrentProjectAsync();
+                
+                // Set to user's first available project
+                if (userProjects.Any())
+                {
+                    // Prioritize projects where user is ProjectAdmin
+                    var assignmentsResult = await _dataService.ReadFromCacheOrDb<ProjectUserAssignment>();
+                    var userAssignments = assignmentsResult.Item1
+                        .Where(pa => pa.UserId == userId && pa.IsActive)
+                        .ToList();
+                    
+                    Project? defaultProject = null;
+                    
+                    // Try to find a project where user is admin
+                    foreach (var project in userProjects)
+                    {
+                        var assignment = userAssignments.FirstOrDefault(pa => pa.ProjectId == project.UID);
+                        if (assignment?.IsProjectAdmin == true)
+                        {
+                            defaultProject = project;
+                            _logger.LogInformation($"Found admin project for user: {project.Tag}");
+                            break;
+                        }
+                    }
+                    
+                    // If no admin project, use first project alphabetically
+                    if (defaultProject == null)
+                    {
+                        defaultProject = userProjects.OrderBy(p => p.Tag).First();
+                        _logger.LogInformation($"No admin project found, using first project: {defaultProject.Tag}");
+                    }
+                    
+                    await SetCurrentProjectAsync(defaultProject.UID);
+                    _logger.LogInformation($"Auto-assigned user {userId} to project: {defaultProject.Tag}");
+                    return defaultProject;
+                }
+                
+                _logger.LogWarning($"User {userId} has no project assignments");
+                return null;
+            }
+            
+            _logger.LogInformation($"User {userId} validated access to project {cachedProject.Tag}");
+        }
+        
+        return cachedProject;
     }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Error getting current project");
+        return null;
+    }
+}
+    
 
     public async Task SetCurrentProjectAsync(Guid projectId)
     {
@@ -148,7 +253,7 @@ public class ProjectContextService : IProjectContextService
         try
         {
             // Get all project assignments for this user
-            var assignments = await _dataService.ReadFromCacheOrDb(new ProjectUserAssignment());
+            var assignments = await _dataService.ReadFromCacheOrDb<ProjectUserAssignment>();
             var userAssignments = assignments.Item1
                 .Where(a => a.UserId == userId && a.IsActive)
                 .ToList();
@@ -157,7 +262,7 @@ public class ProjectContextService : IProjectContextService
                 return new List<Project>();
 
             // Get all projects
-            var projects = await _dataService.ReadFromCacheOrDb(new Project());
+            var projects = await _dataService.ReadFromCacheOrDb<Project>();
             
             // Filter to user's assigned projects
             var userProjectIds = userAssignments.Select(a => a.ProjectId).Distinct();
@@ -209,7 +314,7 @@ public class ProjectContextService : IProjectContextService
     {
         try
         {
-            var assignments = await _dataService.ReadFromCacheOrDb(new ProjectUserAssignment());
+            var assignments = await _dataService.ReadFromCacheOrDb<ProjectUserAssignment>();
         
             _logger.LogInformation($"IsUserAdminInProjectAsync - Total assignments: {assignments.Item1.Count}");
             _logger.LogInformation($"IsUserAdminInProjectAsync - Looking for UserId: {userId}, ProjectId: {projectId}");
@@ -249,7 +354,7 @@ public class ProjectContextService : IProjectContextService
 
         try
         {
-            var userRoles = await _dataService.ReadFromCacheOrDb(new ProjectUserRole());
+            var userRoles = await _dataService.ReadFromCacheOrDb<ProjectUserRole>();
             return userRoles.Item1
                 .Where(r => r.UserId == userId && 
                            r.ProjectId == _currentProjectId && 
@@ -267,62 +372,116 @@ public class ProjectContextService : IProjectContextService
 
     public async Task<List<string>> GetUserHardRolesInCurrentProjectAsync(string userId)
     {
-        await EnsureLoadedAsync();
-        
-        if (_currentProjectId == null)
-            return new List<string>();
-
         try
         {
-            // Get user's custom roles in this project
-            var customRoles = await GetUserCustomRolesInCurrentProjectAsync(userId);
-            
-            if (!customRoles.Any())
-                return new List<string>();
-
-            // Get role mappings for this project
-            var roleMappings = await _dataService.ReadFromCacheOrDb(new RoleMapping());
-            var projectMappings = roleMappings.Item1
-                .Where(rm => rm.ProjectId == _currentProjectId && rm.IsActive)
-                .ToList();
-
-            // Find mapped hard roles
-            var hardRoles = new HashSet<string>();
-            foreach (var customRole in customRoles)
+            var currentProjectId = _currentProjectId;
+        
+            // Try to load project if not loaded
+            if (currentProjectId == null)
             {
-                var mapping = projectMappings.FirstOrDefault(m => 
-                    m.CustomRoleName.Equals(customRole, StringComparison.OrdinalIgnoreCase));
-                
-                if (mapping != null)
-                {
-                    try
-                    {
-                        var mappedRoles = System.Text.Json.JsonSerializer
-                            .Deserialize<List<string>>(mapping.MappedHardRoles);
-                        
-                        if (mappedRoles != null)
-                        {
-                            foreach (var role in mappedRoles)
-                            {
-                                hardRoles.Add(role);
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, $"Error deserializing roles for {customRole}");
-                    }
-                }
+                await EnsureLoadedAsync();
+                currentProjectId = _currentProjectId;
+            }
+        
+            if (currentProjectId == null)
+            {
+                _logger.LogWarning($"GetUserHardRoles: No current project for user {userId}");
+                return new List<string>();
             }
 
-            return hardRoles.ToList();
+            return await GetUserHardRolesInProjectAsync(userId, currentProjectId.Value);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting user hard roles");
+            _logger.LogError(ex, $"Error getting hard roles for user {userId}");
             return new List<string>();
         }
     }
+    
+public async Task<List<string>> GetUserHardRolesInProjectAsync(string userId, Guid projectId)
+{
+    try
+    {
+        _logger.LogInformation($"GetUserHardRolesInProject - UserId: {userId}, ProjectId: {projectId}");
+        
+        // Get user's role assignments from ProjectUserRole table
+        var userRoleAssignments = await _dataService.ReadFromCacheOrDb<ProjectUserRole>();
+        
+        _logger.LogInformation($"GetUserHardRoles: Total ProjectUserRole records: {userRoleAssignments.Item1.Count}");
+        
+        var assignments = userRoleAssignments.Item1
+            .Where(a => a.UserId == userId && 
+                       a.ProjectId == projectId &&
+                       a.IsActive)
+            .ToList();
+
+        _logger.LogInformation($"GetUserHardRoles: Found {assignments.Count} role assignments for user {userId} in project {projectId}");
+
+        if (!assignments.Any())
+        {
+            _logger.LogWarning($"GetUserHardRoles: No role assignments found");
+            return new List<string>();
+        }
+
+        // Get the role mappings for this project
+        var roleMappings = await _dataService.ReadFromCacheOrDb<RoleMapping>();
+        
+        var projectMappings = roleMappings.Item1
+            .Where(rm => rm.ProjectId == projectId && rm.IsActive)
+            .ToList();
+        
+        _logger.LogInformation($"GetUserHardRoles: Found {projectMappings.Count} role mappings for project");
+        
+        var hardRoles = new HashSet<string>();
+        
+        foreach (var assignment in assignments)
+        {
+            _logger.LogInformation($"GetUserHardRoles: Processing CustomRoleName: {assignment.CustomRoleName}");
+            
+            // MATCH BY CUSTOM ROLE NAME
+            var roleMapping = projectMappings.FirstOrDefault(rm => 
+                rm.CustomRoleName.Equals(assignment.CustomRoleName, StringComparison.OrdinalIgnoreCase));
+            
+            if (roleMapping != null && !string.IsNullOrEmpty(roleMapping.MappedHardRoles))
+            {
+                try
+                {
+                    var mapped = System.Text.Json.JsonSerializer.Deserialize<List<string>>(roleMapping.MappedHardRoles);
+                    
+                    if (mapped != null && mapped.Any())
+                    {
+                        foreach (var role in mapped)
+                        {
+                            hardRoles.Add(role);
+                        }
+                        
+                        _logger.LogInformation($"GetUserHardRoles: Role '{assignment.CustomRoleName}' adds hard roles: {string.Join(", ", mapped)}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Error deserializing roles for {assignment.CustomRoleName}");
+                }
+            }
+            else
+            {
+                _logger.LogWarning($"GetUserHardRoles: No role mapping found for CustomRoleName: {assignment.CustomRoleName}");
+            }
+        }
+
+        var distinctRoles = hardRoles.ToList();
+        _logger.LogInformation($"GetUserHardRoles: Final hard roles: {string.Join(", ", distinctRoles)}");
+        
+        return distinctRoles;
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, $"Error getting hard roles for user {userId} in project {projectId}");
+        return new List<string>();
+    }
+}
+    
+    
 
     private async Task EnsureLoadedAsync()
     {

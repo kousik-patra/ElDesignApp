@@ -13,11 +13,12 @@
 @inject RoleManager<IdentityRole> RoleManager
 @inject IDataRetrievalService DataService
 @inject IJSRuntime JS
-@inject Services.IMyTableService MyTable
+@inject ITableService Table
 @inject IRoleAuthorizationService RoleAuthService
 @inject IProjectContextService ProjectContext
 @inject AuthenticationStateProvider AuthState
 @inject IDefaultRoleSeederService RoleSeeder
+@inject IDataRetrievalService DataRetrievalService
 
 <PageTitle>User Management</PageTitle>
 
@@ -295,7 +296,7 @@ else
     {
         try
         {
-            var result = await DataService.ReadFromCacheOrDb(new Project());
+            var result = await DataService.ReadFromCacheOrDb<Project>( );
             _projects = result.Item1.Where(p => p.Display).OrderBy(p => p.Tag).ToList();
         }
         catch (Exception ex)
@@ -330,7 +331,7 @@ else
     {
         try
         {
-            var result = await DataService.ReadFromCacheOrDb(new ProjectUserAssignment());
+            var result = await DataService.ReadFromCacheOrDb<ProjectUserAssignment>();
             _projectAssignments = result.Item1;
         }
         catch (Exception ex)
@@ -343,7 +344,7 @@ else
     {
         try
         {
-            var result = await DataService.ReadFromCacheOrDb(new ProjectUserRole());
+            var result = await DataService.ReadFromCacheOrDb<ProjectUserRole>();
             _projectUserRoles = result.Item1;
         }
         catch (Exception ex)
@@ -394,7 +395,7 @@ else
                 AssignedOn = DateTime.Now
             };
 
-            await MyTable.InsertItemAsync(assignment);
+            await Table.InsertAsync(assignment);
             
             // Refresh cache
             await DataService.RefreshCache();
@@ -428,7 +429,7 @@ else
             assignment.RemovedBy = _currentUserId;
             assignment.RemovedOn = DateTime.Now;
 
-            await MyTable.UpdateParameter(assignment, assignment.UID,
+            await Table.UpdateFieldsByUidAsync(assignment, assignment.UID,
                 [nameof(assignment.IsActive), nameof(assignment.RemovedBy), nameof(assignment.RemovedOn)]);
 
             // Refresh cache
@@ -455,7 +456,7 @@ else
 
             assignment.IsProjectAdmin = !assignment.IsProjectAdmin;
 
-            await MyTable.UpdateParameter(assignment, assignment.UID,
+            await Table.UpdateFieldsByUidAsync(assignment, assignment.UID,
                 [nameof(assignment.IsProjectAdmin)]);
 
             // Refresh cache
@@ -538,7 +539,7 @@ else
             project.UID = Guid.NewGuid();
             project.Order = _projects.Count;
             
-            int rows = await MyTable.InsertItemAsync(project);
+            int rows = await Table.InsertAsync(project);
             
             if (rows > 0)
             {
@@ -608,42 +609,103 @@ else
         }
     }
 
-    private async Task ConfirmDeleteUser(ApplicationUser user)
-    {
-        var confirmed = await JS.InvokeAsync<bool>("confirm", 
-            $"Are you sure you want to delete user '{user.UserName}'? This will remove all their project assignments.");
-        
-        if (confirmed)
-        {
-            try
-            {
-                // Deactivate all project assignments first
-                var userAssignments = _projectAssignments
-                    .Where(pa => pa.UserId == user.Id && pa.IsActive)
-                    .ToList();
-                
-                foreach (var assignment in userAssignments)
-                {
-                    assignment.IsActive = false;
-                    assignment.RemovedBy = _currentUserId;
-                    assignment.RemovedOn = DateTime.Now;
-                    await MyTable.UpdateParameter(assignment, assignment.UID,
-                        [nameof(assignment.IsActive), nameof(assignment.RemovedBy), nameof(assignment.RemovedOn)]);
-                }
+private async Task ConfirmDeleteUser(ApplicationUser user)
+{
+    var confirmed = await JS.InvokeAsync<bool>("confirm", 
+        $"⚠️ WARNING: Delete user '{user.UserName}'?\n\n" +
+        $"This will PERMANENTLY remove:\n" +
+        $"• User account\n" +
+        $"• All project assignments\n" +
+        $"• All role mappings\n\n" +
+        $"This action CANNOT be undone!");
+    
+    if (!confirmed) return;
 
-                await UserManager.DeleteAsync(user);
-                await LoadUsersAndRoles();
-                await LoadProjectAssignments();
-                StateHasChanged();
-            }
-            catch (Exception ex)
-            {
-                await JS.InvokeVoidAsync("alert", $"Error deleting user: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"ConfirmDeleteUser Error: {ex}");
-            }
+    try
+    {
+        Console.WriteLine($"=== DELETING USER: {user.UserName} (ID: {user.Id}) ===");
+        
+        // Step 1: Get and delete ProjectUserRole records
+        var roleAssignmentsTable = await Table.GetListAsync<ProjectUserRole>( null);
+        var roleAssignments = roleAssignmentsTable
+            .Where(r => r.UserId == user.Id || r.AssignedBy == user.Id)
+            .ToList();
+        
+        Console.WriteLine($"Found {roleAssignments.Count} role assignments to delete");
+        
+        foreach ( var roleAssignment in roleAssignments)
+        {
+            var success = await Table.DeleteAsync(roleAssignment);
+            if (success == 0) Console.WriteLine($"Delete RoleAssignments unsuccessful.");
+        }
+        
+        // Step 2: Get and delete ProjectUserAssignment records
+        var projectAssignmentsTable = await Table.GetListAsync<ProjectUserAssignment>( null);
+        var userAssignments = projectAssignmentsTable
+            .Where(pa => pa.UserId == user.Id || pa.AssignedBy == user.Id)
+            .ToList();
+        
+        Console.WriteLine($"Found {userAssignments.Count} project assignments to delete");
+        
+        foreach (var assignment in userAssignments)
+        {
+            var success = await Table.DeleteAsync(assignment);
+            if (success == 0) Console.WriteLine($"Delete UserAssignments unsuccessful.");
+        }
+        
+        // Step 3: Delete the user from Identity
+        Console.WriteLine($"Deleting user from AspNetUsers...");
+        var result = await UserManager.DeleteAsync(user);
+        
+        if (!result.Succeeded)
+        {
+            var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+            throw new Exception($"Failed to delete user: {errors}");
+        }
+        
+        Console.WriteLine($"User {user.UserName} deleted successfully");
+        
+        // Step 4: Clear caches
+        await ClearCacheForTable("ProjectUserAssignment");
+        await ClearCacheForTable("ProjectUserRole");
+        
+        // Step 5: Reload UI data
+        await LoadUsersAndRoles();
+        await LoadProjectAssignments();
+        
+        StateHasChanged();
+        
+        await JS.InvokeVoidAsync("alert", $"User '{user.UserName}' deleted successfully!");
+        
+        Console.WriteLine("=== DELETE COMPLETE ===");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"!!! ERROR DELETING USER !!!");
+        Console.WriteLine($"Message: {ex.Message}");
+        Console.WriteLine($"Stack trace: {ex.StackTrace}");
+        await JS.InvokeVoidAsync("alert", $"Error deleting user: {ex.Message}");
+    }
+}
+
+private async Task ClearCacheForTable(string tableName)
+{
+    try
+    {
+        // If you have a DataRetrievalService for cache invalidation
+        if (DataRetrievalService != null)
+        {
+            await DataRetrievalService.InvalidateCacheAsync(tableName);
+            Console.WriteLine($"Cache cleared for {tableName}");
         }
     }
-
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error clearing cache for {tableName}: {ex.Message}");
+    }
+}
+    
+    
     // Helper class
     public class UserRoleViewModel
     {

@@ -11,7 +11,6 @@
 @inject IJSRuntime JsRuntime
 
 @inject IDataRetrievalService DataService
-@inject IMyTableService MyTable
 @inject ITableService Table
 @inject IGlobalDataService GlobalData
 @inject ILayoutFunctionService LayoutFunction
@@ -183,31 +182,31 @@ else
         if (firstRender)
         {
             (_dbItems, string logInfo, string logWarning, string logError) 
-                = await DataService.ReadFromCacheOrDb(new Cable()) ;
+                = await DataService.ReadFromCacheOrDb<Cable>() ;
 
             var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
             Debug.WriteLine(displayText);
             await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
             
             _dbItems.ForEach(item => item.Update());
-            _dbItems = MyTable.AssignSequenceToList(_dbItems);
+            _dbItems = Table.AssignSequence(_dbItems);
 
             // read Boards, Loads and Equipments so that the Origin and Destination of the Cables can be calculated in ProcessCables function
             //GlobalData.Boards = await ReadFromCacheOrDB(new Board());
-            (GlobalData.Boards, _, _, _) = await DataService.ReadFromCacheOrDb(new Board()) ;
+            (GlobalData.Boards, _, _, _) = await DataService.ReadFromCacheOrDb<Board>() ;
             GlobalData.Boards.ForEach(item => LayoutFunction.BoardUpdate(item));
-            GlobalData.Boards = MyTable.AssignSequenceToList(GlobalData.Boards);
+            GlobalData.Boards = Table.AssignSequence(GlobalData.Boards);
 
-            (GlobalData.Loads, _, _, _) = await DataService.ReadFromCacheOrDb(new Load()) ;
+            (GlobalData.Loads, _, _, _) = await DataService.ReadFromCacheOrDb<Load>() ;
             GlobalData.Loads.ForEach(item => LayoutFunction.LoadUpdate(item));
-            GlobalData.Loads = MyTable.AssignSequenceToList(GlobalData.Loads);
+            GlobalData.Loads = Table.AssignSequence(GlobalData.Loads);
 
             if (GlobalData.Equipments != null && GlobalData.Equipments.Count == 0)
             {
-                (GlobalData.Equipments, _, _, _) = await DataService.ReadFromCacheOrDb(new Equipment()) ;
+                (GlobalData.Equipments, _, _, _) = await DataService.ReadFromCacheOrDb<Equipment>() ;
                 
                 GlobalData.Equipments.ForEach(item => item.Update());
-                GlobalData.Equipments = MyTable.AssignSequenceToList(GlobalData.Equipments);
+                GlobalData.Equipments = Table.AssignSequence(GlobalData.Equipments);
             }
 
             _dbItems = ProcessCables(_dbItems);
@@ -290,9 +289,13 @@ else
         // Perform additional update logic here using the updatedList and the originalList before writing the final updated list to the Data Base
 
 
-        await MyTable.BulkCopyDataTableAsync(updatedList);
-        _tableItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(updatedList, JsonSerializerOption), JsonSerializerOption);
-        _changedItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(updatedList, JsonSerializerOption), JsonSerializerOption);
+        if (updatedList != null)
+        {
+            await Table.BulkCopyAsync<Cable>(updatedList, ""); //TODO ""
+            _tableItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(updatedList, JsonSerializerOption), JsonSerializerOption);
+            _changedItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(updatedList, JsonSerializerOption), JsonSerializerOption);
+        }
+
         ResetMassages();
         tableSuccessMessage = "Table is successfully updated to database.";
 
@@ -342,7 +345,7 @@ else
             cable.DestinationTagMatchSelect = match.Tag;
         }
 
-        await MyTable.UpdateParameter(cable, cable.UID, new List<string> { end + "TagMatchSelect" });
+        await Table.UpdateFieldsByUidAsync(cable, cable.UID, new List<string> { end + "TagMatchSelect" });
     }
 
 
@@ -599,7 +602,7 @@ else
         // reading existing Segments, bends, cross, nodes, sleeves, etc. from database if not read already
         if (GlobalData.SegmentResults.Count == 0)
         {
-            (GlobalData.SegmentResults, _, _, _) = await DataService.ReadFromCacheOrDb(new SegmentResult());
+            (GlobalData.SegmentResults, _, _, _) = await DataService.ReadFromCacheOrDb<SegmentResult>();
         }
 
         if (GlobalData.SegmentResults.Count > 0)
@@ -695,22 +698,22 @@ else
     private async Task ClearNoRouteFoundLog()
     {
         // clear Debug not found route list
-        var debug = await MyTable.GetList(new MyDebug(), GlobalData.SelectedProject.Tag);
+        var debug = await Table.GetListAsync<MyDebug>(GlobalData.SelectedProject.Tag);
         var listNoRouteCable = debug[0].NoRouteCablesS == null ? new List<string>() : JsonSerializer.Deserialize<List<string>?>(debug[0].NoRouteCablesS, JsonSerializerOption);
         Debug.WriteLine($"Clearing the 'route not found' lists for {listNoRouteCable.Count} cables.");
         debug[0].NoRouteCablesS = null;
-        await MyTable.UpdateItem(debug[0], debug[0].UID);
+        await Table.UpdateAsync(debug[0]);
         Debug.WriteLine($"Clearing the 'remarks' for {listNoRouteCable.Count} cables.");
         GlobalData.Cables.Where(c => listNoRouteCable.Contains(c.Tag)).ToList().ForEach(async cable =>
         {
             cable.Remark = null;
             //await MyTable.UpdateItem(cable, cable.UID);
-            await MyTable.UpdateParameter(cable, cable.UID, new List<string> { "Remark" });
+            await Table.UpdateFieldsByUidAsync(cable, cable.UID, new List<string> { "Remark" });
         });
 
         //
         // read existing Debug Info
-        _myDebug = await MyTable.GetList(new MyDebug(), GlobalData.SelectedProject.Tag);
+        _myDebug = await Table.GetListAsync<MyDebug>(GlobalData.SelectedProject.Tag);
     }
 
     private List<Cable> ProcessCables(List<Cable> cables)
@@ -949,7 +952,7 @@ else
                     //
                     Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Route found. Saving route data for {cable.Tag}:");
                     // saving the laid route data of the cable to DB
-                    await MyTable.UpdateItem(cable, cable.UID);
+                    await Table.UpdateAsync(cable);
                 }
             }
             else
@@ -957,7 +960,7 @@ else
                 Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : No route found for {cable.Tag}. ");
                 cable.Remark = tuple.Item3;
                 // saving the remark info of the cable to DB
-                await MyTable.UpdateItem(cable, cable.UID);
+                await Table.UpdateAsync(cable);
                 // add no route found info into the DB to not to try this tag next time
                 List<string> TempNoRouteFoundCableTags = new();
                 if (_myDebug.Count > 0)
@@ -970,7 +973,7 @@ else
                     //if (MyDebug[0].NoRouteCablesS != "") { TempNoRouteFoundCableTags = JsonConvert.DeserializeObject<List<string>>(MyDebug[0].NoRouteCablesS); }
                     TempNoRouteFoundCableTags.Add(cable.Tag);
                     _myDebug[0].NoRouteCablesS = JsonSerializer.Serialize(TempNoRouteFoundCableTags, jsonSerializerOption);
-                    await MyTable.UpdateItem(_myDebug[0], _myDebug[0].UID);
+                    await Table.UpdateAsync(_myDebug[0]);
                     Debug.Write($"'{cable.Tag}' added to NoRouteFoundCableTags in Debug in DB");
                 }
                 else

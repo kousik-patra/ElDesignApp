@@ -1,9 +1,11 @@
 @page "/admin/setup"
+@using Microsoft.AspNetCore.Authorization
 @inject IProjectContextService ProjectContext
 @inject NavigationManager Navigation
 @rendermode InteractiveServer
+@attribute [Authorize(Policy = "RequireAdmin")]
 
-<PageTitle>Admin Setup - @SelectedProjectName</PageTitle>
+<PageTitle>Admin Setup - @SelectedProjectName </PageTitle>
 
 @if (_isLoading)
 {
@@ -58,6 +60,7 @@ else
                             <li>Assign roles to project users</li>
                             <li>Manage user permissions</li>
                             <li>View current assignments</li>
+                            <li>Edit assignments</li>
                         </ul>
                         <button class="btn btn-success w-100" @onclick="OpenUserRoleAssignmentModal">
                             <i class="bi bi-person-plus"></i> Assign Roles to Users
@@ -67,20 +70,20 @@ else
             </div>
         </div>
 
-        <!-- Debug Info -->
-        <div class="row mt-3">
-            <div class="col">
-                <div class="alert alert-info">
-                    <strong>Debug Info:</strong><br/>
-                    Role Mapping Modal: @_showRoleMappingModal<br/>
-                    User Assignment Modal: @_showUserRoleAssignmentModal<br/>
-                    Project ID: @SelectedProject<br/>
-                    Project Name: @SelectedProjectName<br/>
-                    Is Loading: @_isLoading<br/>
-                    Has Rendered: @_hasRendered
-                </div>
-            </div>
-        </div>
+        @* <!-- Debug Info --> *@
+        @* <div class="row mt-3"> *@
+        @*     <div class="col"> *@
+        @*         <div class="alert alert-info"> *@
+        @*             <strong>Debug Info:</strong><br/> *@
+        @*             Role Mapping Modal: @_showRoleMappingModal<br/> *@
+        @*             User Assignment Modal: @_showUserRoleAssignmentModal<br/> *@
+        @*             Project ID: @SelectedProject<br/> *@
+        @*             Project Name: @SelectedProjectName<br/> *@
+        @*             Is Loading: @_isLoading<br/> *@
+        @*             Has Rendered: @_hasRendered *@
+        @*         </div> *@
+        @*     </div> *@
+        @* </div> *@
     </div>
 }
 
@@ -89,6 +92,7 @@ else
 {
     <Rolemappingmodal 
         ProjectId="@SelectedProject"
+        ProjectName="@SelectedProjectName"
         OnClose="@CloseRoleMappingModal" />
 }
 

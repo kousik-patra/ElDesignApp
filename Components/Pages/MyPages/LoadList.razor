@@ -1,5 +1,5 @@
 ﻿@page "/loadList"
-
+@attribute [Authorize(Policy = "RequireUser")]
 @rendermode InteractiveServer
 
 
@@ -9,6 +9,7 @@
 @using System.Reflection
 @using System.Text.Json
 @using ElDesignApp.Constants;
+@using Microsoft.AspNetCore.Authorization
 
 @using Microsoft.Extensions.Logging;
 
@@ -139,7 +140,7 @@
     {
         //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name}");
         (GlobalData.CableData, _logInfo, _logWarning, _logError)
-            = await DataService.ReadFromCacheOrDb(new Models.CableData());
+            = await DataService.ReadFromCacheOrDb<Models.CableData>();
         LogResult(_logInfo, _logWarning, _logError);
         try
         {
@@ -147,7 +148,7 @@
             StateHasChanged(); // Initial loading state
 
             (GlobalData.Loads, _logInfo, _logWarning, _logError)
-                = await DataService.ReadFromCacheOrDb(new Load());
+                = await DataService.ReadFromCacheOrDb<Load>();
             _logger.LogInformation(_logInfo);
 
             var displayText = MyFunction.LogMessage(_logInfo, _logWarning, _logError);
@@ -340,7 +341,9 @@
 
     private async Task Load(bool firstRender, bool isRefresh = false)
     {
-        (GlobalData.Loads, string logInfo, string logWarning, string logError) = isRefresh ? await DataService.RefreshCacheAndReadFromDb(new Load()) : await DataService.ReadFromCacheOrDb(new Load());
+        (GlobalData.Loads, string logInfo, string logWarning, string logError) = 
+            isRefresh ? await DataService.RefreshCacheAndReadFromDb<Load>() : 
+                await DataService.ReadFromCacheOrDb<Load>();
     
         GlobalData.Loads.ForEach(load => LayoutFunction.LoadUpdate(load));
         GlobalData.Loads = MyTable.AssignSequenceToList(GlobalData.Loads);

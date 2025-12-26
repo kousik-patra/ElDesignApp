@@ -124,7 +124,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
     {
         try
         {
-            var projects = await _dataService.ReadFromCacheOrDb(new Project());
+            var projects = await _dataService.ReadFromCacheOrDb<Project>();
             
             // SuperAdmin sees all projects
             if (await IsInHardRoleAsync(userId, HardRoles.SuperAdmin))
@@ -162,7 +162,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
             if (projectIdRecords != null && projectIdRecords.Any())
             {
                 var projectIds = projectIdRecords.Select(p => p.ProjectId).ToList();
-                var allProjects = await _dataService.ReadFromCacheOrDb(new Project());
+                var allProjects = await _dataService.ReadFromCacheOrDb<Project>();
                 return allProjects.Item1.Where(p => projectIds.Contains(p.UID) && p.Display).ToList();
             }
             

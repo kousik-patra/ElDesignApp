@@ -1,4 +1,7 @@
 ﻿@page "/segment"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "RequireUser")]
+
 @rendermode InteractiveServer
 
 @inject NavigationManager MyNavigationManager
@@ -6,7 +9,7 @@
 
 
 @inject IDataRetrievalService DataService
-@inject IMyTableService MyTable
+@inject ITableService Table
 @inject ICacheService CacheService
 @inject IGlobalDataService GlobalData
 @inject ILayoutFunctionService LayoutFunction
@@ -274,13 +277,13 @@ else
             
             // load existing plot plans for the selected project
             (GlobalData.PlotPlans, string logInfo, string logWarning, string logError)
-                = await DataService.ReadFromCacheOrDb(new PlotPlan());
+                = await DataService.ReadFromCacheOrDb<PlotPlan>();
             Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} " +
                             $"Info: {logInfo}, Warning: {logWarning}, Error: {logError}");
             // read raw segments
             //GlobalData.Segments = await ReadFromCacheOrDB(new Segment());
             (GlobalData.Segments, logInfo, logWarning, logError)
-                = await DataService.ReadFromCacheOrDb(new Segment());
+                = await DataService.ReadFromCacheOrDb<Segment>();
 
             var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
             Debug.WriteLine(displayText);
@@ -296,17 +299,17 @@ else
             GlobalData.Segments = LayoutFunction.AssignFaceForASegmentList(GlobalData.Segments);
 
             Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Face assigned for {GlobalData.Segments.Count}.");
-            GlobalData.Segments = MyTable.AssignSequenceToList(GlobalData.Segments);
+            GlobalData.Segments = Table.AssignSequence(GlobalData.Segments);
             Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Sequence assigned for total {GlobalData.Segments.Count} raw Segments");
             _isProcessing = false;
             StateHasChanged();
             // read sleeves
             //GlobalData.Sleeves = await ReadFromCacheOrDB(new Sleeve());
-            (GlobalData.Sleeves, _, _, _) = await DataService.ReadFromCacheOrDb(new Sleeve());
+            (GlobalData.Sleeves, _, _, _) = await DataService.ReadFromCacheOrDb<Sleeve>();
 
             // generate Points based on ENU PointS (point string in the DB)
             GlobalData.Sleeves.ForEach(sleeve => LayoutFunction.SleevePointsUpdate(sleeve));
-            GlobalData.Sleeves = MyTable.AssignSequenceToList(GlobalData.Sleeves);
+            GlobalData.Sleeves = Table.AssignSequence(GlobalData.Sleeves);
             Debug.WriteLine($"Total sleeves in the DB : {GlobalData.Sleeves.Count}");
 
             // read trenches
@@ -320,9 +323,9 @@ else
             // read Equipment
             //GlobalData.Equipments = await ReadFromCacheOrDB(new Equipment());
 
-            (GlobalData.Equipments, _, _, _) = await DataService.ReadFromCacheOrDb(new Equipment());
+            (GlobalData.Equipments, _, _, _) = await DataService.ReadFromCacheOrDb<Equipment>( );
 
-            GlobalData.Equipments = MyTable.AssignSequenceToList(GlobalData.Equipments);
+            GlobalData.Equipments = Table.AssignSequence(GlobalData.Equipments);
             Debug.WriteLine($"Total equipment in the DB : {GlobalData.Equipments.Count}");
 
             _loadChild = true;
@@ -423,10 +426,10 @@ else
         //var existingSegmentResult = await MyTable.GetList(new SegmentResult(), GlobalData.SelectedProject);
         //var existingSegmentResult = await ReadFromCacheOrDB(new SegmentResult());
 
-        (var existingSegmentResult, _, _, _) = await DataService.ReadFromCacheOrDb(new SegmentResult());
+        (var existingSegmentResult, _, _, _) = await DataService.ReadFromCacheOrDb<SegmentResult>();
         if (!String.IsNullOrEmpty(segmentResult.NodeListJSON) && existingSegmentResult.Count > 0)
         {
-            await MyTable.UpdateItem(segmentResult, existingSegmentResult[0].UID);
+            await Table.UpdateFieldsByUidAsync(segmentResult, existingSegmentResult[0].UID, []); // TODO: Field List
             System.Diagnostics.Debug.WriteLine("Record of straight segments, bends, tees, crosses and nodes updated.");
         }
         else

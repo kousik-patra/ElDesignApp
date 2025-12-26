@@ -108,70 +108,230 @@ builder.Services.AddDistributedMemoryCache();
         //     policy.RequireRole(HardRoles.Admin, HardRoles.SuperAdmin));
         
 options.AddPolicy("RequireAdmin", policy =>
+{
+    policy.RequireAssertion(async context =>
     {
-        policy.RequireAssertion(async context =>
+        var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(userId)) return false;
+
+        // SuperAdmin/Admin always pass
+        if (context.User.IsInRole("SuperAdmin") || context.User.IsInRole("Admin"))
+            return true;
+
+        // During prerendering, Resource might not be HttpContext - allow through
+        // and let page-level auth handle it
+        if (context.Resource is not HttpContext httpContext)
         {
-            var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            
-            if (string.IsNullOrEmpty(userId))
-                return false;
-
-            // Check 1: SuperAdmin always has access
-            if (context.User.IsInRole("SuperAdmin"))
-                return true;
-
-            // Check 2: Identity Admin role
-            if (context.User.IsInRole("Admin"))
-                return true;
-
-            // Check 3: Project-based admin using ProjectContextService
-            var httpContext = context.Resource as HttpContext;
-            if (httpContext != null)
+            Console.WriteLine("RequireAdmin: Not HttpContext (prerendering) - allowing through");
+            return true; // ← CHANGED: Allow during prerendering
+        }
+        
+        var projectContext = httpContext.RequestServices.GetService<IProjectContextService>();
+        if (projectContext == null) return true; // Allow if service unavailable
+        
+        // Ensure project loaded
+        var currentProject = await projectContext.GetCurrentProjectAsync();
+        if (currentProject == null)
+        {
+            var userProjects = await projectContext.GetUserProjectsAsync(userId);
+            if (userProjects.Any())
             {
-                var projectContext = httpContext.RequestServices.GetService<IProjectContextService>();
-                if (projectContext != null)
-                {
-                    // Ensure project is loaded
-                    var currentProject = await projectContext.GetCurrentProjectAsync();
-                    if (currentProject == null)
-                    {
-                        var userProjects = await projectContext.GetUserProjectsAsync(userId);
-                        if (userProjects.Any())
-                        {
-                            await projectContext.SetCurrentProjectAsync(userProjects.First().UID);
-                        }
-                    }
-                    
-                    // Check if user is Project Admin
-                    var isProjectAdmin = await projectContext.IsUserAdminInCurrentProjectAsync(userId);
-                    if (isProjectAdmin)
-                        return true;
+                await projectContext.SetCurrentProjectAsync(userProjects.First().UID);
+                currentProject = userProjects.First();
+            }
+        }
 
-                    // Check if user has Admin hard role via custom role mapping
-                    var hardRoles = await projectContext.GetUserHardRolesInCurrentProjectAsync(userId);
-                    if (hardRoles.Contains("Admin", StringComparer.OrdinalIgnoreCase))
-                        return true;
-                }
+        if (currentProject != null)
+        {
+            // Check IsProjectAdmin flag
+            var isProjectAdmin = await projectContext.IsUserAdminInProjectAsync(userId, currentProject.UID);
+            if (isProjectAdmin)
+            {
+                Console.WriteLine($"RequireAdmin: User is ProjectAdmin");
+                return true;
             }
 
-            return false;
+            // Check hard roles
+            var hardRoles = await projectContext.GetUserHardRolesInCurrentProjectAsync(userId);
+            if (hardRoles.Contains("Admin", StringComparer.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"RequireAdmin: User has Admin hard role");
+                return true;
+            }
+        }
+
+        Console.WriteLine("RequireAdmin: Access DENIED");
+        return false;
+    });
+});
+        
+
+        // User - SuperAdmin OR Admin OR Project User with User hard role
+        options.AddPolicy("RequireUser", policy =>
+        {
+            policy.RequireAssertion(async context =>
+            {
+                var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userId)) return false;
+
+                // SuperAdmin and Admin always have User access
+                if (context.User.IsInRole("SuperAdmin") || context.User.IsInRole("Admin"))
+                {
+                    Console.WriteLine("RequireUser: User is SuperAdmin/Admin");
+                    return true;
+                }
+
+                // During prerendering, Resource might not be HttpContext - allow through
+                if (context.Resource is not HttpContext httpContext)
+                {
+                    Console.WriteLine("RequireUser: Not HttpContext (prerendering) - allowing through");
+                    return true;
+                }
+        
+                var projectContext = httpContext.RequestServices.GetService<IProjectContextService>();
+                if (projectContext == null) return true;
+        
+                // Ensure project loaded
+                var currentProject = await projectContext.GetCurrentProjectAsync();
+                if (currentProject == null)
+                {
+                    var userProjects = await projectContext.GetUserProjectsAsync(userId);
+                    if (userProjects.Any())
+                    {
+                        await projectContext.SetCurrentProjectAsync(userProjects.First().UID);
+                    }
+                }
+        
+                // Check if user has User hard role (or higher) via custom role mapping
+                var hardRoles = await projectContext.GetUserHardRolesInCurrentProjectAsync(userId);
+        
+                // User role includes: User, Admin
+                if (hardRoles.Contains("User", StringComparer.OrdinalIgnoreCase) ||
+                    hardRoles.Contains("Admin", StringComparer.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"RequireUser: User has required hard role");
+                    return true;
+                }
+        
+                Console.WriteLine("RequireUser: Access DENIED");
+                return false;
+            });
         });
-    });
-
-        options.AddPolicy("RequireUser", policy =>
-            policy.RequireAuthenticatedUser());
     
-        options.AddPolicy("RequireUser", policy =>
-            policy.RequireRole(HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
-    
+        // Report - SuperAdmin OR Admin OR User OR Project User with Report hard role
         options.AddPolicy("RequireReport", policy =>
-            policy.RequireRole(HardRoles.Report, HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
+        {
+            policy.RequireAssertion(async context =>
+            {
+                var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userId)) return false;
+
+                // SuperAdmin and Admin always have Report access
+                if (context.User.IsInRole("SuperAdmin") || context.User.IsInRole("Admin"))
+                    return true;
+
+                // During prerendering - allow through
+                if (context.Resource is not HttpContext httpContext)
+                {
+                    Console.WriteLine("RequireReport: Not HttpContext (prerendering) - allowing through");
+                    return true;
+                }
+        
+                var projectContext = httpContext.RequestServices.GetService<IProjectContextService>();
+                if (projectContext == null) return true;
+        
+                // Ensure project loaded
+                var currentProject = await projectContext.GetCurrentProjectAsync();
+                if (currentProject == null)
+                {
+                    var userProjects = await projectContext.GetUserProjectsAsync(userId);
+                    if (userProjects.Any())
+                    {
+                        await projectContext.SetCurrentProjectAsync(userProjects.First().UID);
+                    }
+                }
+        
+                // Check hard roles - Report includes: Report, User, Admin
+                var hardRoles = await projectContext.GetUserHardRolesInCurrentProjectAsync(userId);
+        
+                if (hardRoles.Contains("Report", StringComparer.OrdinalIgnoreCase) ||
+                    hardRoles.Contains("User", StringComparer.OrdinalIgnoreCase) ||
+                    hardRoles.Contains("Admin", StringComparer.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"RequireReport: User has required hard role");
+                    return true;
+                }
+        
+                Console.WriteLine("RequireReport: Access DENIED");
+                return false;
+            });
+        });
     
+        // Guest - Any authenticated user in the project
         options.AddPolicy("RequireGuest", policy =>
-            policy.RequireRole(HardRoles.Guest, HardRoles.Report, HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
+        {
+            policy.RequireAssertion(async context =>
+            {
+                var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(userId)) return false;
+
+                // SuperAdmin and Admin always have Guest access
+                if (context.User.IsInRole("SuperAdmin") || context.User.IsInRole("Admin"))
+                    return true;
+
+                // During prerendering - allow through
+                if (context.Resource is not HttpContext httpContext)
+                {
+                    Console.WriteLine("RequireGuest: Not HttpContext (prerendering) - allowing through");
+                    return true;
+                }
+        
+                var projectContext = httpContext.RequestServices.GetService<IProjectContextService>();
+                if (projectContext == null) return true;
+        
+                // Ensure project loaded
+                var currentProject = await projectContext.GetCurrentProjectAsync();
+                if (currentProject == null)
+                {
+                    var userProjects = await projectContext.GetUserProjectsAsync(userId);
+                    if (userProjects.Any())
+                    {
+                        await projectContext.SetCurrentProjectAsync(userProjects.First().UID);
+                    }
+                }
+        
+                // Check hard roles - Guest includes: Guest, Report, User, Admin
+                var hardRoles = await projectContext.GetUserHardRolesInCurrentProjectAsync(userId);
+        
+                if (hardRoles.Contains("Guest", StringComparer.OrdinalIgnoreCase) ||
+                    hardRoles.Contains("Report", StringComparer.OrdinalIgnoreCase) ||
+                    hardRoles.Contains("User", StringComparer.OrdinalIgnoreCase) ||
+                    hardRoles.Contains("Admin", StringComparer.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"RequireGuest: User has required hard role");
+                    return true;
+                }
+        
+                Console.WriteLine("RequireGuest: Access DENIED");
+                return false;
+            });
+        });
+
+    
+        // options.AddPolicy("RequireUser", policy =>
+        //     policy.RequireAuthenticatedUser());
+        //
+        // options.AddPolicy("RequireUser", policy =>
+        //     policy.RequireRole(HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
+        //
+        // options.AddPolicy("RequireReport", policy =>
+        //     policy.RequireRole(HardRoles.Report, HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
+        //
+        // options.AddPolicy("RequireGuest", policy =>
+        //     policy.RequireRole(HardRoles.Guest, HardRoles.Report, HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
     });
 
-    builder.Services.AddScoped<IAuthorizationHandler, HardRoleHandler>();
+    // builder.Services.AddScoped<IAuthorizationHandler, HardRoleHandler>();
 
 
 

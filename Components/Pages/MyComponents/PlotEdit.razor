@@ -12,7 +12,6 @@
 
 
 @inject IDataRetrievalService DataService
-@inject IMyTableService MyTable
 @inject ITableService Table
 @inject IGlobalDataService GlobalData
 @inject IMyFunctionService MyFunction
@@ -238,7 +237,7 @@
         //
         // load existing plot plans for the selected project
         (GlobalData.PlotPlans, string logInfo, string logWarning, string logError)
-            = await DataService.ReadFromCacheOrDb(new PlotPlan());
+            = await DataService.ReadFromCacheOrDb<PlotPlan>();
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} " +
                         $"Info: {logInfo}, Warning: {logWarning}, Error: {logError}");
         _plotPlans = GlobalData.PlotPlans;
@@ -278,7 +277,7 @@
         {
             _plotPlans.Remove(plotPlanToRemove);
             
-            await MyTable.DeleteItem(plotPlanToRemove, plotPlanToRemove.UID);
+            await Table.DeleteAsync(plotPlanToRemove);
             
             await RefreshAndReadPlotPlanFromDB();
 
@@ -429,7 +428,7 @@
             GlobalData.SelectedProject.GlobalN = newImage.GlobalN;
             try
             {
-                await MyTable.UpdateItem(GlobalData.SelectedProject, GlobalData.SelectedProject.UID);
+                await Table.UpdateAsync(GlobalData.SelectedProject);
             }
             catch (Exception e)
             {
@@ -439,7 +438,7 @@
 
         try
         {
-            await MyTable.InsertItem(newImage);
+            await Table.InsertAsync(newImage);
             Console.WriteLine($"Saved image (plot plan) data to database Key plan successfully.");
             
         }            
@@ -460,7 +459,7 @@
     {
         // read plot plans afresh
         (GlobalData.PlotPlans, string logInfo, string logWarning, string logError)
-            = await DataService.RefreshCacheAndReadFromDb(new PlotPlan());
+            = await DataService.RefreshCacheAndReadFromDb<PlotPlan>();
         _plotPlans = GlobalData.PlotPlans; 
     }
     

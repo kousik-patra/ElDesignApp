@@ -14,8 +14,8 @@ using Microsoft.Extensions.Logging;
 
 public interface IDataRetrievalService
 {
-    Task<(List<T>, string, string, string)> ReadFromCacheOrDb<T>(T item, bool forceDb = false);
-    Task<(List<T>, string, string, string)> RefreshCacheAndReadFromDb<T>(T item);
+    Task<(List<T>, string, string, string)> ReadFromCacheOrDb<T>(bool forceDb = false) where T : class, new();
+    Task<(List<T>, string, string, string)> RefreshCacheAndReadFromDb<T>() where T : class, new();
     Task<(string, string, string)> RefreshCache();
     Task InvalidateCacheAsync(string tableName);
 }
@@ -23,25 +23,24 @@ public interface IDataRetrievalService
 public class DataRetrievalService : IDataRetrievalService
 {
     private readonly Cache.ICacheService _cache;
-    //private readonly IMyTableService _myTable;
-    private readonly ITableService _myTable;
+    //private readonly IMyTableService _table;
+    private readonly ITableService _table;
     private readonly Global.IGlobalDataService _globalData;
     //private readonly IGlobalDataService _globalData;
     private readonly ILogger<DataRetrievalService> _logger;
 
-    public DataRetrievalService(Cache.ICacheService cache, ITableService myTable, 
+    public DataRetrievalService(Cache.ICacheService cache, ITableService table, 
         Global.IGlobalDataService globalData, ILogger<DataRetrievalService> logger)
     {
         _cache = cache;
-        _myTable = myTable;
+        _table = table;
         _globalData = globalData;
         _logger = logger;
     }
     
     
     public async Task<(List<T>, string, string, string)> ReadFromCacheOrDb<T>(
-    T item,
-    bool forceDb = false)
+    bool forceDb = false) where T : class, new()
 {
     string loadLocation = "";
     string logInfo = "";
@@ -84,7 +83,7 @@ public class DataRetrievalService : IDataRetrievalService
         try
         {
             string selectedProjectTag = _globalData?.SelectedProject?.Tag ?? string.Empty;
-            listT = await _myTable.GetListAsync(item, selectedProjectTag) ?? [];
+            listT = await _table.GetListAsync<T>(selectedProjectTag) ?? [];
 
             loadLocation = listT.Any() ? "SQL Database" : "SQL Database (empty)";
             
@@ -139,12 +138,12 @@ public class DataRetrievalService : IDataRetrievalService
     stopwatch.Stop();
 
     // Apply sequencing
-    listT = _myTable.AssignSequenceToList(listT);
+    listT = _table.AssignSequence<T>(listT);
 
     return (listT, logInfo, logWarning, logError);
 }
 
-public async Task<(List<T>, string, string, string)> RefreshCacheAndReadFromDb<T>(T item)
+public async Task<(List<T>, string, string, string)> RefreshCacheAndReadFromDb<T>() where T : class, new()
 {
     var dbName = typeof(T).Name;
     var recordKey = "NavMenu_"  + "_" + _globalData.SelectedProject.Tag + "_" + dbName + "_" + DateTime.Now.ToString("yyyyMMdd_HH");
@@ -177,7 +176,7 @@ public async Task<(List<T>, string, string, string)> RefreshCacheAndReadFromDb<T
     }
 
     // Step 2: Force fresh read from DB (bypasses cache completely)
-    var (freshData, readInfo, readWarn, readErr) = await ReadFromCacheOrDb(item, forceDb: true);
+    var (freshData, readInfo, readWarn, readErr) = await ReadFromCacheOrDb<T>(forceDb: true);
 
     // Step 3: Repopulate Redis cache
     if (freshData.Any() && redisWasActive)

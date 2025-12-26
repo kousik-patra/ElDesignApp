@@ -2,8 +2,12 @@
 
 @rendermode InteractiveServer
 
+@using Microsoft.AspNetCore.Authorization
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
 @inject IDataRetrievalService DataService
-@inject IMyTableService MyTable 
+@inject ITableService Table 
 @inject IMyFunctionService MyFunction
 @inject ILayoutFunctionService LayoutFunction
 @inject IDistributedCache Cache;
@@ -70,6 +74,7 @@
     private string _tableInfoMessage = "";
     private string _tableWarningMessage = "";
     private string _tableErrorMessage = "";
+    private string _userName = "";
 
     private string _resultMessage = "";
 
@@ -77,7 +82,21 @@
     private List<Models.CableData>? _list = [];
     
     
-    
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Get current user
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            _userName = user.Identity?.Name;
+        }
+        catch (Exception e)
+        {
+            // ignored
+        }
+    }
+
     
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -96,8 +115,8 @@
     private async Task Load(bool firstRender, bool isRefresh = false)
     {
         (Global.CableData, string logInfo, string logWarning, string logError) = isRefresh?
-            await DataService.RefreshCacheAndReadFromDb(new Models.CableData()):
-            await DataService.ReadFromCacheOrDb(new Models.CableData());
+            await DataService.RefreshCacheAndReadFromDb<Models.CableData>():
+            await DataService.ReadFromCacheOrDb<Models.CableData>();
 
         UpdateDbLocalVariable(Global.CableData);
         
@@ -140,22 +159,24 @@
         // any specific Auto check at parent side
     }
 
-    private async Task UpdateTableChange<T>((T item, List<T>? list, List<T> originalList, string success, string info, string warning, string error) parameters)
+    private async Task UpdateTableChange<T>((T item, List<T>? list, List<T> originalList, string success, string info, string warning, string error) parameters)where T : class
     {
         System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
                         $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Updating data to the database...");
         var updatedList = parameters.list;
+        var originalList= parameters.originalList;
         _tableSuccessMessage = parameters.success;
         _tableInfoMessage = parameters.info;
         _tableWarningMessage = parameters.warning;
         _tableErrorMessage = parameters.error;
                 
         UpdateDbLocalVariable(updatedList);
-        
+
         Global.CableData = System.Text.Json.JsonSerializer.Deserialize<List<Models.CableData>>
             (System.Text.Json.JsonSerializer.Serialize(updatedList, jsonSerializerOption), jsonSerializerOption);
 
-        await MyTable.BulkCopyDataTableAsync(updatedList);
+        await Table.SyncListAsync(updatedList,originalList);
+
         
         ResetMassages();
         _tableSuccessMessage = "Changed Table is successfully updated to database.";

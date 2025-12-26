@@ -11,10 +11,10 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
-                    <i class="bi bi-gear-fill"></i> Role Mapping Management
+                    <i class="bi bi-gear-fill"></i> Role Mapping Management  - @ProjectName
                 </h5>
                 <button type="button" class="btn-close" @onclick="Close"></button>
-            </div>
+                                                                               </div>
             
             <div class="modal-body">
                 @if (_isLoading)
@@ -29,7 +29,7 @@
                 {
                     <div class="mb-3">
                         <button class="btn btn-primary" @onclick="ShowAddEditModal">
-                            <i class="bi bi-plus-circle"></i> Add New Custom Role
+                                                                                          <i class="bi bi-plus-circle"></i> Add New Custom Role
                         </button>
                     </div>
 
@@ -94,11 +94,11 @@
                                         </td>
                                         <td>
                                             <button class="btn btn-sm btn-outline-primary me-1" 
-                                                    @onclick="() => EditMapping(mapping)">
-                                                <i class="bi bi-pencil"></i>
+                                                    @onclick="@(() => EditMapping(mapping))">
+                                                                                          <i class="bi bi-pencil"></i>
                                             </button>
                                             <button class="btn btn-sm btn-outline-danger" 
-                                                    @onclick="() => DeleteMapping(mapping)">
+                                                    @onclick="@(() => DeleteMapping(mapping))">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         </td>
@@ -113,7 +113,7 @@
             
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" @onclick="Close">Close</button>
-            </div>
+                                                                                       </div>
         </div>
     </div>
 </div>
@@ -129,7 +129,7 @@
                         @(_editingMapping == null ? "Add New" : "Edit") Custom Role
                     </h5>
                     <button type="button" class="btn-close" @onclick="CloseEditModal"></button>
-                </div>
+                                                                                            </div>
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Custom Role Name <span class="text-danger">*</span></label>
@@ -183,7 +183,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @onclick="CloseEditModal">Cancel</button>
-                    <button type="button" class="btn btn-primary" @onclick="SaveMapping">
+                                                                                                    <button type="button" class="btn btn-primary" @onclick="SaveMapping">
                         <i class="bi bi-save"></i> Save
                     </button>
                 </div>
@@ -193,6 +193,7 @@
 }
 
 @code {
+    [Parameter] public string ProjectName { get; set; } = string.Empty;
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public string ProjectId { get; set; } = string.Empty;
     

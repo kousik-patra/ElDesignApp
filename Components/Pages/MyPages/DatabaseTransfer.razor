@@ -1,18 +1,20 @@
 @page "/database-transfer"
+@attribute [Authorize(Policy = "RequireSuperAdmin")]
 
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
 @using Microsoft.Extensions.Options
 @rendermode InteractiveServer
 @inject IOptions<ConnectionStrings> ConnectionStringsOptions
 
 @inject NavigationManager MyNavigationManager
 
-
-
 @inject IDataRetrievalService DataService
 @inject IMyTableService MyTable 
 @inject IGlobalDataService GlobalData
 @inject IMyFunctionService MyFunction
 @inject ILayoutFunctionService LayoutFunction
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 
 <h3>Database Transfer</h3>
@@ -167,6 +169,7 @@
     private string _tableInfoMessage = "";
     private string _tableWarningMessage = "";
     private string _tableErrorMessage = "";
+    private string? _userName = "";
 
     private string _resultMessage = "";
     private int SelectedTableCount => selectedTables.Count(kvp => kvp.Value);
@@ -178,8 +181,15 @@
     {
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
         //
+        
+        // Get current user
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        _userName = user.Identity?.Name;
+        
+        
         (_listDb, string logInfo, string logWarning, string logError)
-            = await DataService.RefreshCacheAndReadFromDb(new DBMaster());
+            = await DataService.RefreshCacheAndReadFromDb<DBMaster>();
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} " +
                         $"Info: {logInfo}, Warning: {logWarning}, Error: {logError}");
 
@@ -242,8 +252,8 @@
     private async Task Load(bool firstRender, bool isRefresh = false)
     {
         (GlobalData.DBMasters, string logInfo, string logWarning, string logError) = isRefresh?
-            await DataService.RefreshCacheAndReadFromDb(new DBMaster()):
-            await DataService.ReadFromCacheOrDb(new DBMaster());
+            await DataService.RefreshCacheAndReadFromDb<DBMaster>():
+            await DataService.ReadFromCacheOrDb<DBMaster>();
 
         UpdateDbLocalVariable(GlobalData.DBMasters);
         

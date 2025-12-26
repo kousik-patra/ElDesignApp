@@ -1,12 +1,11 @@
-@* UserRoleAssignmentModal.razor *@
+@* UserRoleAssignmentModal.razor - FULLY CORRECTED *@
 @using System.Text.Json
-@inject ITableService TableService
-@inject IJSRuntime JS
-
 @using Microsoft.AspNetCore.Identity
-@using System.Text.Json
+@inject ITableService Table
+@inject IJSRuntime JS
 @inject UserManager<ApplicationUser> UserManager
 @inject IDataRetrievalService DataRetrievalService
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 @rendermode InteractiveServer
 
@@ -17,7 +16,7 @@
                 <h5 class="modal-title">
                     <i class="bi bi-person-check-fill"></i> User Role Assignment - @ProjectName
                 </h5>
-                <button type="button" class="btn-close" @onclick="Close"></button>
+                <button type="button" class="btn-close" @onclick="@(() => Close())"></button>
             </div>
             
             <div class="modal-body">
@@ -37,8 +36,6 @@
                             <h6 class="mb-0"><i class="bi bi-plus-circle"></i> Assign Role to User</h6>
                         </div>
                         <div class="card-body">
-                            
-                            
                             <div class="row g-3">
                                 <div class="col-md-4">
                                     <label class="form-label">Select User <span class="text-danger">*</span></label>
@@ -49,9 +46,9 @@
                                             <option value="@user.UserId">@GetUserDisplayName(user)</option>
                                         }
                                     </select>
-                                    @if (_isEditing)
+                                    @if (_isEditing && _editingAssignment != null)
                                     {
-                                        <small class="text-muted">Editing: @GetUserNameById(_editingAssignment!.UserId)</small>
+                                        <small class="text-muted">Editing: @GetUserNameById(_editingAssignment.UserId)</small>
                                     }
                                 </div>
     
@@ -69,66 +66,25 @@
                                 <div class="col-md-4 d-flex align-items-end gap-2">
                                     @if (_isEditing)
                                     {
-                                        <button class="btn btn-success flex-fill" @onclick="SaveEdit">
-                                            <i class="bi bi-check-circle"></i> Update
+                                        <button class="btn btn-success flex-fill" 
+                                                @onclick="@(() => SaveEdit())">
+                                                <i class="bi bi-check-circle"></i> Update
                                         </button>
-                                        <button class="btn btn-secondary flex-fill" @onclick="CancelEdit">
+                                        <button class="btn btn-secondary flex-fill"
+                                                @onclick="@(() => CancelEdit())">
                                             <i class="bi bi-x-circle"></i> Cancel
                                         </button>
                                     }
                                     else
                                     {
                                         <button class="btn btn-success w-100" 
-                                                @onclick="AssignRole"
+                                                @onclick="@(() => AssignRole())"
                                                 disabled="@(string.IsNullOrEmpty(_selectedUserId) || string.IsNullOrEmpty(_selectedRoleId))">
                                             <i class="bi bi-check-circle"></i> Assign Role
                                         </button>
                                     }
                                 </div>
                             </div>
-                            
-                            
-                            
-                            
-                            
-                            
-                            
-                            @* <div class="row g-3">
-                                <div class="col-md-4">
-                                    <label class="form-label">Select User <span class="text-danger">*</span></label>
-
-                                    <select class="form-select" @bind="_selectedUserId">
-                                        <option value="">-- Choose User --</option>
-                                        @foreach (var user in _projectUsers)
-                                        {
-                                            <option value="@user.UserId">@GetUserDisplayName(user)</option>
-                                        }
-                                    </select>
-
-
-                                </div>
-
-                                <div class="col-md-4">
-                                    <label class="form-label">Select Role <span class="text-danger">*</span></label>
-                                    <select class="form-select" @bind="_selectedRoleId" disabled="@string.IsNullOrEmpty(_selectedUserId)">
-                                        <option value="">-- Choose Role --</option>
-                                        @foreach (var role in _availableRoles)
-                                        {
-                                            <option value="@role.UID.ToString()">@role.CustomRoleName</option>
-                                        }
-                                    </select>
-                                </div>
-
-                                <div class="col-md-4 d-flex align-items-end">
-                                    <button class="btn btn-success w-100"
-                                            @onclick="AssignRole"
-                                            disabled="@(string.IsNullOrEmpty(_selectedUserId) || string.IsNullOrEmpty(_selectedRoleId))">
-                                        <i class="bi bi-check-circle"></i> Assign Role
-                                    </button>
-                                </div>
-                            </div>*@
-                            
-                            
 
                             @if (!string.IsNullOrEmpty(_assignmentMessage))
                             {
@@ -160,58 +116,58 @@
                                                 <th>User Name</th>
                                                 <th>Custom Role</th>
                                                 <th>Hard Roles</th>
-                                                <th>Assigned Date</th>
+                                                <th>Assigned On</th>
                                                 <th>Assigned By</th>
-                                                <th style="width: 100px;">Actions</th>
+                                                <th style="width: 150px;">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                        @foreach (var assignment in _userRoleAssignments.OrderBy(a => a.UserName))
-                                        {
-                                            var roleMapping = _availableRoles.FirstOrDefault(r => r.UID.ToString() == assignment.RoleId);
-                                            <tr>
-                                                <td>
-                                                    <strong>@GetUserNameById(assignment.UserId)</strong>
-                                                </td>
-                                                <td>
-                                                    <span class="badge bg-primary">@assignment.RoleName</span>
-                                                </td>
-                                                <td>
-                                                    @if (roleMapping != null)
-                                                    {
-                                                        var hardRoles = GetHardRoles(roleMapping);
-                                                        foreach (var hardRole in hardRoles)
+                                            @foreach (ProjectUserRole assignment in _userRoleAssignments.OrderBy(a => GetUserNameById(a.UserId)))
+                                            {
+                                                var roleMapping = _availableRoles.FirstOrDefault(r => r.CustomRoleName == assignment.CustomRoleName);
+        
+                                                <tr>
+                                                    <td>
+                                                        <strong>@GetUserNameById(assignment.UserId)</strong>
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge bg-primary">@assignment.CustomRoleName</span>
+                                                    </td>
+                                                    <td>
+                                                        @if (roleMapping != null)
                                                         {
-                                                            var badgeClass = hardRole switch
+                                                            var hardRoles = GetHardRoles(roleMapping);
+                                                            @foreach (var hardRole in hardRoles)
                                                             {
-                                                                "SuperAdmin" => "bg-danger",
-                                                                "Admin" => "bg-warning text-dark",
-                                                                "User" => "bg-info",
-                                                                "Report" => "bg-secondary",
-                                                                "Guest" => "bg-light text-dark",
-                                                                _ => "bg-secondary"
-                                                            };
-                                                            <span class="badge @badgeClass me-1">@hardRole</span>
+                                                                var badgeClass = hardRole switch
+                                                                {
+                                                                    "SuperAdmin" => "bg-danger",
+                                                                    "Admin" => "bg-warning text-dark",
+                                                                    "User" => "bg-info",
+                                                                    "Report" => "bg-secondary",
+                                                                    "Guest" => "bg-light text-dark",
+                                                                    _ => "bg-secondary"
+                                                                };
+                                                                <span class="badge @badgeClass me-1">@hardRole</span>
+                                                            }
                                                         }
-                                                    }
-                                                </td>
-                                                <td>
-                                                    @assignment.CreatedDate?.ToString("dd-MMM-yyyy HH:mm")
-                                                </td>
-                                                <td>@assignment.CreatedBy</td>
-                                                <td>
-                                                    <button class="btn btn-sm btn-outline-primary me-1" 
-                                                            @onclick="() => EditAssignment(assignment)"
-                                                            title="Edit Role">
-                                                        <i class="bi bi-pencil"></i>
-                                                    </button>
-                                                    <button class="btn btn-sm btn-outline-danger"
-                                                            @onclick="() => RemoveAssignment(assignment)">
-                                                        <i class="bi bi-trash"></i>
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        }
+                                                    </td>
+                                                    <td>
+                                                        @assignment.AssignedOn.ToString("dd-MMM-yyyy HH:mm")
+                                                    </td>
+                                                    <td>@GetUserNameById(assignment.AssignedBy)</td>
+                                                    <td>
+                                                        <button class="btn btn-sm btn-outline-primary me-1" 
+                                                                @onclick="@(() => EditAssignment(assignment))">
+                                                            <i class="bi bi-pencil"></i>
+                                                        </button>
+                                                        <button class="btn btn-sm btn-outline-danger" 
+                                                                @onclick="@(() => RemoveAssignment(assignment))">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
                                         </tbody>
                                     </table>
                                 </div>
@@ -220,9 +176,9 @@
                     </div>
                 }
             </div>
-            
+
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" @onclick="Close">
+                <button type="button" class="btn btn-secondary" @onclick="@(() => Close())">
                     <i class="bi bi-x-circle"></i> Close
                 </button>
             </div>
@@ -235,32 +191,37 @@
     [Parameter] public string ProjectName { get; set; } = string.Empty;
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnAssignmentChanged { get; set; }
-    
+
     private bool _isLoading = true;
-    private List<ProjectUserAssignment> _projectUsers = new();
-    private List<RoleMapping> _availableRoles = new();
-    private List<UserRoleAssignment> _userRoleAssignments = new();
-    private Dictionary<string, string> _userNamesCache = new();
-    private UserRoleAssignment? _editingAssignment = null;
+    private bool _isEditing = false;
+    private ProjectUserRole? _editingAssignment = null;
     
+    private string _currentUserId = string.Empty;
     private string _selectedUserId = string.Empty;
     private string _selectedRoleId = string.Empty;
     private string _assignmentMessage = string.Empty;
     private bool _assignmentSuccess = false;
-    private bool _isEditing = false;
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private List<ProjectUserAssignment> _projectUsers = new();
+    private List<RoleMapping> _availableRoles = new();
+    private List<ProjectUserRole> _userRoleAssignments = new();
+    private Dictionary<string, string> _userNames = new();
+
+    protected override async Task OnInitializedAsync()
     {
-        if (firstRender && !_hasRendered)
+        try
         {
-            _hasRendered = true;
+            // Get current user ID
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            _currentUserId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+            
             await LoadData();
+        }
+        finally
+        {
             _isLoading = false;
-            await InvokeAsync(StateHasChanged);
         }
     }
-
-    private bool _hasRendered = false;
 
 private async Task LoadData()
 {
@@ -268,44 +229,115 @@ private async Task LoadData()
     {
         Console.WriteLine($"=== LoadData START for ProjectId: {ProjectId} ===");
         
+        Guid projectGuid = Guid.Parse(ProjectId);
+        
         // Load users assigned to this project
-        var allUsers = await TableService.GetListAsync(new ProjectUserAssignment(), ProjectId) ?? new();
-        _projectUsers = allUsers
-            .Where(u => u.ProjectId.ToString() == ProjectId && u.IsActive)
+        var allUsers = await Table.GetListAsync<ProjectUserAssignment>(ProjectId) ?? new();
+        var projectUserAssignments = allUsers
+            .Where(u => u.ProjectId == projectGuid && u.IsActive)
             .ToList();
         
-        Console.WriteLine($"Found {_projectUsers.Count} users in project");
+        Console.WriteLine($"Found {projectUserAssignments.Count} user assignments in project");
 
-        // Load user names using UserManager
-        await LoadUserNamesFromIdentity();
+        // Collect users to exclude
+        var excludedUserIds = new HashSet<string>();
+        
+        // 1. Exclude current user (can't assign roles to themselves)
+        if (!string.IsNullOrEmpty(_currentUserId))
+        {
+            excludedUserIds.Add(_currentUserId);
+            Console.WriteLine($"Excluding current user: {_currentUserId}");
+        }
+        
+        // 2. Exclude users who are ProjectAdmin in this project
+        var projectAdminUserIds = projectUserAssignments
+            .Where(pa => pa.IsProjectAdmin)
+            .Select(pa => pa.UserId)
+            .ToList();
+        
+        foreach (var adminUserId in projectAdminUserIds)
+        {
+            excludedUserIds.Add(adminUserId);
+            Console.WriteLine($"Excluding ProjectAdmin: {adminUserId}");
+        }
+        
+        // Load user details and filter SuperAdmins + excluded users
+        var userIdsInProject = projectUserAssignments.Select(u => u.UserId).Distinct().ToList();
+        _userNames.Clear();
+        
+        foreach (var userId in userIdsInProject)
+        {
+            if (excludedUserIds.Contains(userId))
+            {
+                // Skip this user, but still load their name for display in "Assigned By" column
+                var excludedUser = await UserManager.FindByIdAsync(userId);
+                if (excludedUser != null)
+                {
+                    _userNames[userId] = excludedUser.UserName ?? excludedUser.Email ?? "Unknown";
+                }
+                continue;
+            }
+            
+            var user = await UserManager.FindByIdAsync(userId);
+            if (user != null)
+            {
+                var roles = await UserManager.GetRolesAsync(user);
+                
+                // 3. Exclude SuperAdmin (identity role)
+                if (roles.Contains("SuperAdmin", StringComparer.OrdinalIgnoreCase))
+                {
+                    excludedUserIds.Add(userId);
+                    _userNames[userId] = user.UserName ?? user.Email ?? "Unknown"; // Keep name for display
+                    Console.WriteLine($"Excluding SuperAdmin: {user.UserName}");
+                }
+                else
+                {
+                    // This user is eligible for role assignment
+                    _userNames[userId] = user.UserName ?? user.Email ?? "Unknown";
+                }
+            }
+        }
+        
+        // Filter out all excluded users from project users list
+        _projectUsers = projectUserAssignments
+            .Where(u => !excludedUserIds.Contains(u.UserId))
+            .ToList();
+        
+        Console.WriteLine($"After exclusions: {_projectUsers.Count} users available for assignment");
 
-        // Load active role mappings FILTERED BY PROJECT
-        var allRoleMappings = await TableService.GetListAsync(new RoleMapping(), ProjectId) ?? new();
+        // Load role mappings
+        var allRoleMappings = await Table.GetListAsync<RoleMapping>(ProjectId) ?? new();
         _availableRoles = allRoleMappings
-            .Where(r => r.IsActive && r.ProjectId.ToString() == ProjectId)
+            .Where(r => r.IsActive && r.ProjectId == projectGuid)
             .ToList();
         
-        Console.WriteLine($"Found {_availableRoles.Count} roles for project {ProjectId}");
-        
-        // Log role names for debugging
-        foreach (var role in _availableRoles)
-        {
-            Console.WriteLine($"  - {role.CustomRoleName} (ProjectId: {role.ProjectId})");
-        }
+        Console.WriteLine($"Found {_availableRoles.Count} roles for project");
 
-        // If no roles exist, show a warning
-        if (!_availableRoles.Any())
-        {
-            Console.WriteLine($"WARNING: No roles found for project {ProjectId}. Admin should create roles first.");
-        }
-
-        // Load current user role assignments
-        var allAssignments = await TableService.GetListAsync(new UserRoleAssignment(), ProjectId) ?? new();
+        // Load role assignments (excluding all excluded users)
+        var allAssignments = await Table.GetListAsync<ProjectUserRole>(ProjectId) ?? new();
         _userRoleAssignments = allAssignments
-            .Where(a => a.ProjectId == ProjectId && a.IsActive)
+            .Where(a => a.ProjectId == projectGuid && 
+                       a.IsActive && 
+                       !excludedUserIds.Contains(a.UserId))
             .ToList();
         
-        Console.WriteLine($"Found {_userRoleAssignments.Count} role assignments");
+        Console.WriteLine($"Found {_userRoleAssignments.Count} role assignments (excluding admins)");
+
+        // Load names for users in AssignedBy column (if not already loaded)
+        var additionalUserIds = _userRoleAssignments
+            .Select(a => a.AssignedBy)
+            .Distinct()
+            .Where(id => !_userNames.ContainsKey(id))
+            .ToList();
+        
+        foreach (var userId in additionalUserIds)
+        {
+            var user = await UserManager.FindByIdAsync(userId);
+            if (user != null)
+            {
+                _userNames[userId] = user.UserName ?? user.Email ?? "Unknown";
+            }
+        }
 
         // Filter out users who already have role assignments
         var assignedUserIds = _userRoleAssignments.Select(a => a.UserId).Distinct().ToList();
@@ -313,7 +345,7 @@ private async Task LoadData()
             .Where(u => !assignedUserIds.Contains(u.UserId))
             .ToList();
         
-        Console.WriteLine($"After filtering, {_projectUsers.Count} users available for assignment");
+        Console.WriteLine($"Final available users for assignment: {_projectUsers.Count}");
         Console.WriteLine("=== LoadData END ===");
     }
     catch (Exception ex)
@@ -325,137 +357,155 @@ private async Task LoadData()
 
     private async Task LoadUserNamesFromIdentity()
     {
-        try
+        _userNames.Clear();
+        
+        var allUserIds = _projectUsers.Select(u => u.UserId)
+            .Concat(_userRoleAssignments.Select(a => a.UserId))
+            .Concat(_userRoleAssignments.Select(a => a.AssignedBy))
+            .Distinct()
+            .ToList();
+
+        foreach (var userId in allUserIds)
         {
-            _userNamesCache.Clear();
-            
-            foreach (var assignment in _projectUsers)
+            if (!string.IsNullOrEmpty(userId))
             {
-                var user = await UserManager.FindByIdAsync(assignment.UserId);
+                var user = await UserManager.FindByIdAsync(userId);
                 if (user != null)
                 {
-                    _userNamesCache[assignment.UserId] = user.UserName ?? user.Email ?? assignment.UserId;
-                }
-                else
-                {
-                    _userNamesCache[assignment.UserId] = assignment.UserId;
+                    _userNames[userId] = user.UserName ?? user.Email ?? "Unknown";
                 }
             }
-            
-            Console.WriteLine($"Loaded {_userNamesCache.Count} user names");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading user names: {ex.Message}");
         }
     }
 
     private string GetUserDisplayName(ProjectUserAssignment userAssignment)
     {
-        if (_userNamesCache.TryGetValue(userAssignment.UserId, out var userName))
-        {
-            return userName;
-        }
-        
-        return userAssignment.UserId; // Fallback
+        return GetUserNameById(userAssignment.UserId);
     }
 
     private string GetUserNameById(string userId)
     {
-        if (_userNamesCache.TryGetValue(userId, out var userName))
-        {
-            return userName;
-        }
-        
-        return userId; // Fallback
+        return _userNames.TryGetValue(userId, out var name) ? name : "Unknown User";
     }
 
-    private List<string> GetHardRoles(RoleMapping mapping)
+    private List<string> GetHardRoles(RoleMapping roleMapping)
     {
         try
         {
-            return JsonSerializer.Deserialize<List<string>>(mapping.MappedHardRoles) ?? new List<string>();
+            if (string.IsNullOrEmpty(roleMapping.MappedHardRoles))
+                return new List<string>();
+                
+            var roles = System.Text.Json.JsonSerializer.Deserialize<List<string>>(roleMapping.MappedHardRoles);
+            return roles ?? new List<string>();
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"Error deserializing hard roles: {ex.Message}");
             return new List<string>();
         }
     }
 
     private async Task AssignRole()
     {
-        _assignmentMessage = string.Empty;
-        _assignmentSuccess = false;
-
-        if (string.IsNullOrEmpty(_selectedUserId) || string.IsNullOrEmpty(_selectedRoleId))
-        {
-            _assignmentMessage = "Please select both user and role";
-            return;
-        }
-
-        // Check if assignment already exists
-        if (_userRoleAssignments.Any(a => a.UserId == _selectedUserId && a.RoleId == _selectedRoleId))
-        {
-            _assignmentMessage = "This user already has this role assigned";
-            return;
-        }
-
         try
         {
-            var selectedUser = _projectUsers.FirstOrDefault(u => u.UserId == _selectedUserId);
-            var selectedRole = _availableRoles.FirstOrDefault(r => r.UID.ToString() == _selectedRoleId);
-
-            if (selectedUser == null || selectedRole == null)
+            if (string.IsNullOrEmpty(_selectedUserId) || string.IsNullOrEmpty(_selectedRoleId))
             {
-                _assignmentMessage = "Invalid user or role selection";
+                await JS.InvokeVoidAsync("alert", "Please select both user and role");
                 return;
             }
 
-            var newAssignment = new UserRoleAssignment
+            var selectedRole = _availableRoles.FirstOrDefault(r => r.UID.ToString() == _selectedRoleId);
+            if (selectedRole == null)
             {
-                Id = Guid.NewGuid().ToString(),
-                ProjectId = ProjectId,
+                await JS.InvokeVoidAsync("alert", "Invalid role selected");
+                return;
+            }
+
+            // Check for duplicates
+            var exists = _userRoleAssignments.Any(a => 
+                a.UserId == _selectedUserId && 
+                a.CustomRoleName == selectedRole.CustomRoleName &&
+                a.IsActive);
+            
+            if (exists)
+            {
+                await JS.InvokeVoidAsync("alert", "User already has this role!");
+                return;
+            }
+
+            // CREATE THE ASSIGNMENT
+            var newAssignment = new ProjectUserRole
+            {
+                UID = Guid.NewGuid(),
+                ProjectId = Guid.Parse(ProjectId),
                 UserId = _selectedUserId,
-                UserName = GetUserDisplayName(selectedUser),
-                RoleId = _selectedRoleId,
-                RoleName = selectedRole.CustomRoleName,
-                CreatedDate = DateTime.Now,
-                CreatedBy = "Admin", // TODO: Replace with actual logged-in user
+                CustomRoleName = selectedRole.CustomRoleName,
+                AssignedBy = _currentUserId,
+                AssignedOn = DateTime.Now,
                 IsActive = true
             };
 
-            await TableService.InsertItemAsync(newAssignment);
-            // Clear cache
-            await ClearCacheForTable("UserRoleAssignment");
-            await ClearCacheForTable("ProjectUserAssignment");
-
-            _assignmentMessage = $"Role '{selectedRole.CustomRoleName}' successfully assigned to user '{GetUserDisplayName(selectedUser)}'";
-            _assignmentSuccess = true;
-
-            // Reset selections
-            _selectedUserId = string.Empty;
-            _selectedRoleId = string.Empty;
-
-            // Reload assignments
-            await LoadData();
+            Console.WriteLine($"=== SAVING ROLE ASSIGNMENT ===");
+            Console.WriteLine($"UserId: {newAssignment.UserId}");
+            Console.WriteLine($"ProjectId: {newAssignment.ProjectId}");
+            Console.WriteLine($"CustomRoleName: {newAssignment.CustomRoleName}");
+            Console.WriteLine($"AssignedBy: {newAssignment.AssignedBy}");
             
-            // Notify parent
-            await OnAssignmentChanged.InvokeAsync();
+            int rowsAffected = await Table.InsertAsync(newAssignment);
             
-            await InvokeAsync(StateHasChanged);
+            Console.WriteLine($"Rows affected: {rowsAffected}");
+            Console.WriteLine($"=== END SAVE ===");
+            
+            if (rowsAffected > 0)
+            {
+                _assignmentMessage = $"Role '{selectedRole.CustomRoleName}' assigned successfully!";
+                _assignmentSuccess = true;
+                
+                // Clear cache
+                await ClearCacheForTable("ProjectUserRole");
+                
+                // Reset selections
+                _selectedUserId = string.Empty;
+                _selectedRoleId = string.Empty;
+                
+                // Reload data
+                await LoadData();
+                
+                // Notify parent
+                if (OnAssignmentChanged.HasDelegate)
+                {
+                    await OnAssignmentChanged.InvokeAsync();
+                }
+                
+                StateHasChanged();
+                
+                // Clear message after 3 seconds
+                await Task.Delay(3000);
+                _assignmentMessage = string.Empty;
+            }
+            else
+            {
+                _assignmentMessage = "Failed to assign role - no rows affected";
+                _assignmentSuccess = false;
+            }
         }
         catch (Exception ex)
         {
-            _assignmentMessage = $"Error assigning role: {ex.Message}";
+            Console.WriteLine($"!!! ERROR assigning role !!!");
+            Console.WriteLine($"Message: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            _assignmentMessage = $"Error: {ex.Message}";
             _assignmentSuccess = false;
-            Console.WriteLine($"AssignRole Error: {ex}");
         }
     }
 
-    private async Task RemoveAssignment(UserRoleAssignment assignment)
+    private async Task RemoveAssignment(ProjectUserRole assignment)
     {
+        var userName = GetUserNameById(assignment.UserId);
+        
         var confirmed = await JS.InvokeAsync<bool>("confirm", 
-            $"Are you sure you want to remove role '{assignment.RoleName}' from user '{assignment.UserName}'?\n\n" +
+            $"Are you sure you want to remove role '{assignment.CustomRoleName}' from user '{userName}'?\n\n" +
             $"This will affect their access permissions.");
         
         if (!confirmed) return;
@@ -464,21 +514,30 @@ private async Task LoadData()
         {
             // Soft delete by setting IsActive to false
             assignment.IsActive = false;
+            assignment.RemovedBy = _currentUserId;
+            assignment.RemovedOn = DateTime.Now;
             
-            // Use UpdateParameterAsync with field name
-            await TableService.UpdateParameterAsync(assignment, "IsActive");
+            // Update with all changed fields
+            await Table.UpdateFieldsAsync(
+                assignment, 
+                "IsActive", 
+                "RemovedBy", 
+                "RemovedOn");
             
             // Clear cache
-            await ClearCacheForTable("UserRoleAssignment");
+            await ClearCacheForTable("ProjectUserRole");
 
-            _assignmentMessage = $"Role removed successfully from user '{assignment.UserName}'";
+            _assignmentMessage = $"Role '{assignment.CustomRoleName}' removed successfully from user '{userName}'";
             _assignmentSuccess = true;
 
             // Reload assignments
             await LoadData();
             
             // Notify parent
-            await OnAssignmentChanged.InvokeAsync();
+            if (OnAssignmentChanged.HasDelegate)
+            {
+                await OnAssignmentChanged.InvokeAsync();
+            }
             
             await InvokeAsync(StateHasChanged);
             
@@ -494,17 +553,16 @@ private async Task LoadData()
         }
     }
 
-    private async Task Close()
-    {
-        await OnClose.InvokeAsync();
-    }
-    
-    private void EditAssignment(UserRoleAssignment assignment)
+    private void EditAssignment(ProjectUserRole assignment)
     {
         _isEditing = true;
         _editingAssignment = assignment;
         _selectedUserId = assignment.UserId;
-        _selectedRoleId = assignment.RoleId;
+        
+        // Find the role by CustomRoleName
+        var role = _availableRoles.FirstOrDefault(r => r.CustomRoleName == assignment.CustomRoleName);
+        _selectedRoleId = role?.UID.ToString() ?? string.Empty;
+        
         StateHasChanged();
     }
 
@@ -539,28 +597,49 @@ private async Task LoadData()
                 return;
             }
 
-            // Update the assignment
-            _editingAssignment.RoleId = _selectedRoleId;
-            _editingAssignment.RoleName = selectedRole.CustomRoleName;
+            // Check if role changed
+            if (_editingAssignment.CustomRoleName == selectedRole.CustomRoleName)
+            {
+                _assignmentMessage = "No changes detected";
+                CancelEdit();
+                return;
+            }
 
-            await TableService.UpdateParameterAsync(_editingAssignment, "RoleId", "RoleName");
+            // Update the assignment
+            _editingAssignment.CustomRoleName = selectedRole.CustomRoleName;
+
+            await Table.UpdateFieldsAsync(_editingAssignment, "CustomRoleName");
 
             _assignmentMessage = $"Role updated successfully to '{selectedRole.CustomRoleName}'";
             _assignmentSuccess = true;
 
             // Clear cache to ensure fresh data
-            await ClearCacheForTable("UserRoleAssignment");
+            await ClearCacheForTable("ProjectUserRole");
 
             CancelEdit();
             await LoadData();
-            await OnAssignmentChanged.InvokeAsync();
+            
+            if (OnAssignmentChanged.HasDelegate)
+            {
+                await OnAssignmentChanged.InvokeAsync();
+            }
+            
             await InvokeAsync(StateHasChanged);
+            
+            // Clear message after 3 seconds
+            await Task.Delay(3000);
+            _assignmentMessage = string.Empty;
         }
         catch (Exception ex)
         {
             _assignmentMessage = $"Error updating role: {ex.Message}";
             _assignmentSuccess = false;
         }
+    }
+
+    private async Task Close()
+    {
+        await OnClose.InvokeAsync();
     }
     
     private async Task ClearCacheForTable(string tableName)
@@ -576,5 +655,4 @@ private async Task LoadData()
             Console.WriteLine($"Error clearing cache: {ex.Message}");
         }
     }
-    
 }

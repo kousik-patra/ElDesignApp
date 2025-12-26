@@ -118,7 +118,7 @@ public class RoleAuthorizationService : IRoleAuthorizationService
         try
         {
             // Use DataRetrievalService which uses Dapper
-            var result = await _dataService.ReadFromCacheOrDb(new RoleMapping());
+            var result = await _dataService.ReadFromCacheOrDb<RoleMapping>();
             _cachedMappings = result.Item1;
             _cacheExpiry = DateTime.Now.Add(_cacheLifetime);
             

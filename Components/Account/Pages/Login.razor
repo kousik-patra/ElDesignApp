@@ -16,6 +16,7 @@
 @inject IdentityRedirectManager RedirectManager
 @inject IGlobalDataService GlobalData
 @inject IMiscService MiscService
+@inject IJSRuntime JS
 
 <PageTitle>Log in</PageTitle>
 
@@ -130,6 +131,18 @@
         if (result.Succeeded)
         {
             Logger.LogInformation("User logged in.");
+            
+            // CLEAR SESSION STORAGE - Force project reload
+            try
+            {
+                await JS.InvokeVoidAsync("sessionStorage.removeItem", "CurrentProjectId");
+                Console.WriteLine("Cleared CurrentProjectId from session storage");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error clearing session storage: {ex.Message}");
+            }
+            
             RedirectManager.RedirectTo(ReturnUrl);
         }
         else if (result.RequiresTwoFactor)
