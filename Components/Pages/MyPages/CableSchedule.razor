@@ -291,7 +291,7 @@ else
 
         if (updatedList != null)
         {
-            await Table.BulkCopyAsync<Cable>(updatedList, ""); //TODO ""
+            await Table.BulkCopyAsync(updatedList);
             _tableItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(updatedList, JsonSerializerOption), JsonSerializerOption);
             _changedItems = JsonSerializer.Deserialize<List<Cable>>(JsonSerializer.Serialize(updatedList, JsonSerializerOption), JsonSerializerOption);
         }

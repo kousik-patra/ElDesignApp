@@ -37,7 +37,6 @@ public interface IMyFunctionService
 
     string LogMessage(string logInfo, string logWarning, string logError);
 
-    Task<PlotPlan> LoadImage(InputFileChangeEventArgs e);
 
 }
 
@@ -245,84 +244,7 @@ public Tuple<T, List<string>> ValidateGeneralInput<T>(T itemChanged, PropertyInf
     }
     
     
-    public async Task<PlotPlan> LoadImage(InputFileChangeEventArgs e)
-{
-    try
-    {
-        PlotPlan newImage = new()
-        {
-            UID = Guid.NewGuid()
-        };
-        const int maxFileMBSize = 80;
-        const long maxFileSize = maxFileMBSize * 1024 * 1024; // 80MB max file size
-        const int maxOriginalWidth = 192000; // Reasonable max width for original
-        const int maxOriginalHeight = 108000; // Reasonable max height for original
-        const int thumbnailWidth = 400;
-        const int thumbnailHeight = 250;
 
-        // Validate file type
-        string format = e.File.ContentType.ToLower() switch
-        {
-            "image/png" => "image/png",
-            "image/jpeg" => "image/jpeg",
-            _ => throw new InvalidOperationException("Only PNG and JPEG files are supported.")
-        };
-
-        // Check file size
-        if (e.File.Size > maxFileSize)
-        {
-            throw new InvalidOperationException($"File size exceeds {maxFileMBSize}MB limit.");
-        }
-
-        // Get image dimensions
-        int originalWidth, originalHeight;
-        using (var tempStream = new MemoryStream())
-        {
-            // Copy the file stream to a temporary stream to read metadata
-            await e.File.OpenReadStream(maxFileSize).CopyToAsync(tempStream);
-            tempStream.Position = 0; // Reset stream position for reading
-
-            // Use ImageSharp to get image dimensions
-            using (var image = await Image.LoadAsync(tempStream))
-            {
-                originalWidth = image.Width;
-                originalHeight = image.Height;
-            }
-        }
-
-        // Validate dimensions
-        if (originalWidth > maxOriginalWidth || originalHeight > maxOriginalHeight)
-        {
-            throw new InvalidOperationException($"Image dimensions ({originalWidth}x{originalHeight}) exceed maximum allowed ({maxOriginalWidth}x{maxOriginalHeight}).");
-        }
-
-        // Process original image
-        var originalImageStream = await e.File.RequestImageFileAsync(format, originalWidth, originalHeight);
-        using var memoryStream = new MemoryStream();
-        await originalImageStream.OpenReadStream(maxFileSize).CopyToAsync(memoryStream);
-        byte[] bufferOriginalFile = memoryStream.ToArray();
-        newImage.ImgString = $"data:{format};base64,{Convert.ToBase64String(bufferOriginalFile)}";
-
-        // Process thumbnail
-        var resizedImageStream = await e.File.RequestImageFileAsync(format, thumbnailWidth, thumbnailHeight);
-        using var thumbnailMemoryStream = new MemoryStream();
-        await resizedImageStream.OpenReadStream(maxFileSize).CopyToAsync(thumbnailMemoryStream);
-        byte[] bufferThumbnail = thumbnailMemoryStream.ToArray();
-        newImage.ImgThumbString = $"data:{format};base64,{Convert.ToBase64String(bufferThumbnail)}";
-
-        // Optionally store dimensions in PlotPlan
-        newImage.Width = originalWidth;
-        newImage.Height = originalHeight;
-
-        return newImage;
-    }
-    catch (Exception ex)
-    {
-        // Log the error (use your preferred logging mechanism)
-        Console.WriteLine($"Error processing image: {ex.Message}");
-        throw; // Rethrow or handle as needed
-    }
-}
     
     
     

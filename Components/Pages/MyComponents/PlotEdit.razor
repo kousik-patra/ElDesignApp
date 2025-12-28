@@ -1,507 +1,704 @@
 @rendermode InteractiveServer
-
-
 @attribute [StreamRendering]
-@inject IJSRuntime JsRuntime;
-@inject NavigationManager MyNavigationManager;
+
 @using System.Diagnostics
 @using System.Reflection
-@using System.Runtime
 @using ElDesignApp.Data
 @using ElDesignApp.Models
+@using ElDesignApp.Services
+@using ElDesignApp.Services.DataBase
+@using Microsoft.JSInterop
 
-
+@inject IJSRuntime JsRuntime
+@inject NavigationManager MyNavigationManager
 @inject IDataRetrievalService DataService
 @inject ITableService Table
 @inject IGlobalDataService GlobalData
-@inject IMyFunctionService MyFunction
-@inject ILayoutFunctionService LayoutFunction
+@inject IPlotPlanService PlotPlanService
 
-@if (_plotPlans.Count > 0)
+@* ============ Messages Section ============ *@
+@if (!string.IsNullOrEmpty(_errorMessage))
 {
-    <div class="table-responsive">
-        <table class="table table-striped table-hover table-sm">
-            <thead>
-            <tr>
-                <th> </th>
-                @foreach (var t in displayFields)
-                {
-                    <th>@t</th>
-                }
-            </tr>
-            </thead>
-            <tbody>
-            @foreach (var plotPlan in _plotPlans)
-            {
-                <tr>
-                    <td>
-                        <button class="btn btn-danger" @onclick="() => DeletePlotPlan(plotPlan.Tag)">🗑️</button>
-                    </td>
-                    @for (int j = 0; j < displayFields.Count; j++)
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <strong>Error:</strong> @_errorMessage
+        <button type="button" class="btn-close" @onclick="() => _errorMessage = null"></button>
+    </div>
+}
+@if (!string.IsNullOrEmpty(_successMessage))
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @_successMessage
+        <button type="button" class="btn-close" @onclick="() => _successMessage = null"></button>
+    </div>
+}
+
+@* ============ Plot Plans Section with Loading State ============ *@
+
+@* ============ Loading State ============ *@
+@if (_isLoadingPlans)
+{
+    <div class="loading-container">
+        <div class="loading-header">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <span class="loading-text">Loading plot plans...</span>
+        </div>
+        
+        @* Skeleton Table *@
+        <div class="table-responsive">
+            <table class="table table-striped table-sm skeleton-table">
+                <thead>
+                    <tr>
+                        <th style="width: 80px"><span class="skeleton-box" style="width: 50px"></span></th>
+                        <th><span class="skeleton-box" style="width: 40px"></span></th>
+                        <th><span class="skeleton-box" style="width: 80px"></span></th>
+                        <th><span class="skeleton-box" style="width: 60px"></span></th>
+                        <th><span class="skeleton-box" style="width: 40px"></span></th>
+                        <th><span class="skeleton-box" style="width: 40px"></span></th>
+                        <th><span class="skeleton-box" style="width: 40px"></span></th>
+                        <th><span class="skeleton-box" style="width: 40px"></span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < 3; i++)
                     {
-                        var field = displayFields[j];
+                        <tr>
+                            <td>
+                                <span class="skeleton-box skeleton-btn"></span>
+                            </td>
+                            <td><span class="skeleton-box" style="width: 60px"></span></td>
+                            <td><span class="skeleton-box" style="width: 70px"></span></td>
+                            <td>
+                                <span class="skeleton-box skeleton-img"></span>
+                            </td>
+                            <td><span class="skeleton-box" style="width: 50px"></span></td>
+                            <td><span class="skeleton-box" style="width: 50px"></span></td>
+                            <td><span class="skeleton-box" style="width: 50px"></span></td>
+                            <td><span class="skeleton-box" style="width: 50px"></span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="loading-progress">
+            <div class="progress" style="height: 4px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" style="width: 100%"></div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    @* ============ Existing Plot Plans Table ============ *@
+    @if (_plotPlans.Count > 0)
+    {
+        <div class="table-responsive">
+            <table class="table table-striped table-hover table-sm">
+                <thead>
+                <tr>
+                    <th>Actions</th>
+                    @foreach (var t in displayFields)
+                    {
+                        <th>@t</th>
+                    }
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var plotPlan in _plotPlans)
+                {
+                    <tr class="@(plotPlan.KeyPlan ? "table-warning" : "")">
                         <td>
-                            @if (field == "ImgThumbString" && !string.IsNullOrEmpty(plotPlan.ImgThumbString))
+                            <button class="btn btn-danger btn-sm"
+                                    @onclick="() => ConfirmAndDeletePlotPlan(plotPlan.Tag)"
+                                    disabled="@_isDeleting"
+                                    title="Delete @plotPlan.Tag">
+                                @if (_isDeleting && _deletingTag == plotPlan.Tag)
+                                {
+                                    <span class="spinner-border spinner-border-sm"></span>
+                                }
+                                else
+                                {
+                                    <span>🗑️</span>
+                                }
+                            </button>
+                            @if (plotPlan.KeyPlan)
                             {
-                                <img src="@plotPlan.ImgThumbString" alt="Thumbnail" style="max-width: 100px; height: auto;"/>
+                                <span class="badge bg-warning text-dark ms-1" title="Key Plan">⭐</span>
+                            }
+                        </td>
+                        @for (int j = 0; j < displayFields.Count; j++)
+                        {
+                            var field = displayFields[j];
+                            <td>
+                                @if (field == "ImgThumbString" && !string.IsNullOrEmpty(plotPlan.ImgThumbString))
+                                {
+                                    <img src="@plotPlan.ImgThumbString" alt="Thumbnail"
+                                         style="max-width: 100px; height: auto;"/>
+                                }
+                                else
+                                {
+                                    @GetPropertyValue(plotPlan, field)
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        @* Empty State *@
+        <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <p class="empty-text">No plot plans yet</p>
+            <p class="empty-subtext">Add your first plot plan to get started</p>
+        </div>
+    }
+
+    @* ============ Add Plan Section - Only shows after loading complete ============ *@
+    @* ============ Ultra-Compact Toolbar Style with Validation ============ *@
+    @if (!_isLoadingPlans)
+    {
+        <EditForm Model="@newImage" OnValidSubmit="@HandleSubmit" class="plot-toolbar-form">
+            <DataAnnotationsValidator/>
+            <CustomValidation @ref="customValidation"/>
+
+            <div class="plot-toolbar">
+                @* Left: Step Badge *@
+                <div class="toolbar-section">
+                    @if (showScaleSubmit || showCentreSubmit || showSaveSubmit)
+                    {
+                        <span class="step-badge step-@CurrentStep">
+                            Step @CurrentStep/3: @(CurrentStep == 1 ? "Scale" : CurrentStep == 2 ? "Centre" : "Save")
+                        </span>
+                    }
+                </div>
+
+                @* Middle: Dynamic Content *@
+                <div class="toolbar-section toolbar-main">
+
+                    @* Initial: File Upload *@
+                    @* File Upload - Use CSS to hide instead of removing from DOM *@
+                    <div class="@GetFileUploadVisibility()">
+                        <span class="toolbar-label">📁 Add Plan:</span>
+                        <InputFile class="form-control form-control-sm toolbar-file"
+                                   OnChange="@LoadPlotPlan" accept=".png,.jpg,.jpeg,.pdf"/>
+                    </div>
+
+                    @* Processing indicator shown separately *@
+                    @if (showProcessing)
+                    {
+                        <span class="spinner-border spinner-border-sm"></span>
+                        <span class="ms-2">Processing...</span>
+                    }
+
+
+
+
+
+                    @* Preview *@
+                    @if (showThumbImage)
+                    {
+                        <img src="@newImage.ImgThumbString" class="toolbar-thumb" alt=""/>
+                        <button type="button" class="btn btn-sm btn-success" @onclick="DrawPlotPlan">✓ Use</button>
+                        <button type="button" class="btn btn-sm btn-light" @onclick="CancelUpload">✕</button>
+                    }
+
+                    @* Step 1: Scale *@
+                    @if (showScaleSubmit)
+                    {
+                        refPointTexts = ["X-Left", "X-Right", "Y-Bottom", "Y-Top"];
+                        _ = UpdateRefPointTexts();
+                        
+                        @if (_plotPlans.Count==0)
+                        {
+                            @* For Key Plot Plan, no neeed for rotation since the user eneters the image/pdf 
+                            in the same orientation that is expected to be rendered. User shall be asked to confirm if 
+                            the X-Axis id for East-West orientation or North-South orientation thru check box *@
+                            <div class="form-check table-check-item">
+                                <span class="toolbar-label">X-Axis: Est-West</span>
+                                <InputCheckbox class="form-check-input" 
+                                               @bind-Value="@newImage.XEW" 
+                                               @bind-Value:after="SetXEWForKeyPlan"/>
+                            </div>
+                        }else
+                        {
+                            @* For Subsequent Plots, rotation required to match the Key Plan orientation *@
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="RotatePlotPlan"
+                                    title="Rotate 90°">↩
+                            </button>
+                        }
+
+                        <span class="toolbar-label">X:</span>
+                        <InputNumber class="form-control form-control-sm toolbar-input"
+                                     @bind-Value="@newImage.X1" placeholder="L" title="X-Left (m)"/>
+                        <span class="text-muted">-</span>
+                        <InputNumber class="form-control form-control-sm toolbar-input"
+                                     @bind-Value="@newImage.X2" placeholder="R" title="X-Right (m)"/>
+
+                        <span class="toolbar-label ms-2">Y:</span>
+                        <InputNumber class="form-control form-control-sm toolbar-input"
+                                     @bind-Value="@newImage.Y1" placeholder="B" title="Y-Bottom (m)"/>
+                        <span class="text-muted">-</span>
+                        <InputNumber class="form-control form-control-sm toolbar-input"
+                                     @bind-Value="@newImage.Y2" placeholder="T" title="Y-Top (m)"/>
+
+                        <span class="badge bg-info ms-2"
+                              title="Reference points clicked">@(GlobalData.RefPoints?.Count ?? 0)/4 pts</span>
+                    }
+
+                    @* Step 2: Centre - Key Plan *@
+                    @if (showCentreSubmit && _plotPlans.Count == 0)
+                    {
+                        refPointTexts = ["Centre (0,0)"];
+                        _ = UpdateRefPointTexts();
+                        <span class="toolbar-label">Local:</span>
+                        <InputNumber class="form-control form-control-sm toolbar-input"
+                                     @bind-Value="@newImage.LocalE" placeholder="E" title="Local Reference E"/>
+                        <InputNumber class="form-control form-control-sm toolbar-input"
+                                     @bind-Value="@newImage.LocalN" placeholder="N" title="Local Reference N"/>
+
+                        <span class="toolbar-label ms-2">Global:</span>
+                        <InputNumber class="form-control form-control-sm toolbar-input"
+                                     @bind-Value="@newImage.GlobalE" placeholder="E" title="Global Reference E"/>
+                        <InputNumber class="form-control form-control-sm toolbar-input"
+                                     @bind-Value="@newImage.GlobalN" placeholder="N" title="Global Reference N"/>
+                        <InputNumber class="form-control form-control-sm toolbar-input"
+                                     @bind-Value="@newImage.AngleTrueNorth" placeholder="Deg" title="True North Angle (Clockwise)"/>
+
+                        <span class="toolbar-label ms-2">Z:</span>
+                        <InputNumber class="form-control form-control-sm" style="width:50px"
+                                     @bind-Value="@newImage.Z" title="Elevation"/>
+                    }
+
+                    @* Step 2: Centre - Subsequent Plan *@
+                    @if (showCentreSubmit && _plotPlans.Count > 0)
+                    {
+                        refPointTexts = ["Ref-New", "Ref-Key"];
+                        _ = UpdateRefPointTexts();
+                        <span class="text-muted small">
+                            <i class="bi bi-info-circle"></i> Ctrl+Click: New plan → Key plan ref
+                        </span>
+                        <span class="badge bg-info ms-2"
+                              title="Reference points clicked">@(GlobalData.RefPoints?.Count ?? 0)/2 pts</span>
+                    }
+
+                    @* Step 3: Save *@
+                    @if (showSaveSubmit)
+                    {
+                        @if (_plotPlans.Count == 0)
+                        {
+                            <span class="badge bg-warning text-dark" title="This will be the primary reference plan">⭐ Key Plan</span>
+                        }
+
+                        <span class="toolbar-label">Name:</span>
+                        <InputText class="form-control form-control-sm" style="width:140px"
+                                   @bind-Value="@newImage.Tag" placeholder="Required"/>
+                        <ValidationMessage For="@(() => newImage.Tag)" class="validation-inline"/>
+
+                        <span class="toolbar-label">Desc:</span>
+                        <InputText class="form-control form-control-sm" style="width:180px"
+                                   @bind-Value="@newImage.TagDescription" placeholder="Optional"/>
+
+                        <span class="toolbar-label">Remark:</span>
+                        <InputText class="form-control form-control-sm" style="width:100px"
+                                   @bind-Value="@newImage.Remark"/>
+                    }
+                </div>
+
+                @* Right: Action Buttons *@
+                <div class="toolbar-section toolbar-actions">
+                    @if (showScaleSubmit)
+                    {
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="TryScalePlotPlan">
+                            Apply →
+                        </button>
+                    }
+                    @if (showCentreSubmit)
+                    {
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="TryCentrePlotPlan">
+                            Apply →
+                        </button>
+                    }
+                    @if (showSaveSubmit)
+                    {
+                        <button type="submit" class="btn btn-sm btn-success" disabled="@_isSaving">
+                            @if (_isSaving)
+                            {
+                                <span class="spinner-border spinner-border-sm"></span>
                             }
                             else
                             {
-                                @GetPropertyValue(plotPlan, field)
+                                <span>💾 Save</span>
                             }
-                        </td>
+                        </button>
                     }
-                </tr>
-            }
-            </tbody>
-        </table>
-    </div>
+                    @if (showScaleSubmit || showCentreSubmit || showSaveSubmit)
+                    {
+                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ConfirmAndDiscard"
+                                disabled="@_isSaving" title="Discard and start over">✕</button>
+                    }
+                </div>
+            </div>
+
+            @* Validation Summary - shown below toolbar when errors exist *@
+            <ValidationSummary class="validation-summary"/>
+
+        </EditForm>
+    }
 }
-<div class=".container-fluid">
-    <div class="form-group col">
-        <div class="form-row"><br></div>
-        <div class="form-row" hidden="@hideFileOpen">
-            <label class="col-form-label" style="padding-right: 20px" for="image">Add Plan / Layout </label>
-            <InputFile class="input-group-append" OnChange="@LoadPlotPlan"></InputFile>
-        </div>
-        @if (showProcessing)
-        {
-            <h6>Processing image '@filenme' ... </h6>
-            <img src="./images/working.gif" asp-append-version="true" style="width:300px;" alt=""/>
-        }
-        @if (showThumbImage)
-        {
-            <div class="d-flex align-items-center gap-3">
-                <div class="img-thumbnail">
-                    <img src="@newImage.ImgThumbString" style="width:200px; height:150px" alt=""/>
-                </div>
-                <button type="submit" class="btn btn-success btn-sm" @onclick="DrawPlotPlan">Use this as background</button>
-            </div>
-        }
-        <div class="p-2">
-    <!-- Progress Bar -->
-    <div class="progress mb-3" style="height: 30px;">
-        <div class="progress-bar @GetProgressBarClass(1)" role="progressbar" style="width: 33.33%;" aria-valuenow="@(CurrentStep * 33.33)" aria-valuemin="0" aria-valuemax="100">Scale</div>
-        <div class="progress-bar @GetProgressBarClass(2)" role="progressbar" style="width: 33.33%;" aria-valuenow="@(CurrentStep * 33.33)" aria-valuemin="0" aria-valuemax="100">Centre</div>
-        <div class="progress-bar @GetProgressBarClass(3)" role="progressbar" style="width: 33.33%;" aria-valuenow="@(CurrentStep * 33.33)" aria-valuemin="0" aria-valuemax="100">Save</div>
-    </div>
-
-    <EditForm Model="@newImage" OnValidSubmit="@HandleSubmit" class="p-2 bg-light rounded shadow-sm">
-        <DataAnnotationsValidator/>
-        <CustomValidation @ref="customValidation"/>
-        <ValidationSummary class="text-danger mb-2"/>
-
-        @if (showScaleSubmit)
-        {
-            <div class="d-flex align-items-center gap-2 mb-3">
-                <button type="button" onclick="@RotatePlotPlan" class="btn btn-primary btn-sm ms-2">↩</button>
-                <div class="d-flex flex-column">
-                    <label for="X1" class="form-label small mb-0">X-Left (m)</label>
-                    <InputNumber id="X1" class="form-control form-control-sm" style="width: 120px;" @bind-Value="@newImage.X1"/>
-                    <ValidationMessage For="@(() => newImage.X1)" class="text-danger small"/>
-                </div>
-                <div class="d-flex flex-column">
-                    <label for="X2" class="form-label small mb-0">X-Right (m)</label>
-                    <InputNumber id="X2" class="form-control form-control-sm" style="width: 120px;" @bind-Value="@newImage.X2"/>
-                    <ValidationMessage For="@(() => newImage.X2)" class="text-danger small"/>
-                </div>
-                <div class="d-flex flex-column">
-                    <label for="Y1" class="form-label small mb-0">Y-Bottom (m)</label>
-                    <InputNumber id="Y1" class="form-control form-control-sm" style="width: 120px;" @bind-Value="@newImage.Y1"/>
-                    <ValidationMessage For="@(() => newImage.Y1)" class="text-danger small"/>
-                </div>
-                <div class="d-flex flex-column">
-                    <label for="Y2" class="form-label small mb-0">Y-Top (m)</label>
-                    <InputNumber id="Y2" class="form-control form-control-sm" style="width: 120px;" @bind-Value="@newImage.Y2"/>
-                    <ValidationMessage For="@(() => newImage.Y2)" class="text-danger small"/>
-                </div>
-            <div class="d-flex flex-column">
-                <button type="button" onclick="@(() => TryScalePlotPlan())" class="btn btn-primary btn-sm ms-2">Scale</button>
-            </div>
-            </div>
-        }
-
-        @if (showCentreSubmit)
-        {
-            <div class="d-flex align-items-center gap-2 mb-3">
-                <div class="d-flex flex-column">
-                    <label for="LocalE" class="form-label small mb-0">Local Reference E</label>
-                    <InputNumber id="LocalE" class="form-control form-control-sm" style="width: 120px;" @bind-Value="@newImage.LocalE" />
-                </div>
-                <div class="d-flex flex-column">
-                    <label for="LocalN" class="form-label small mb-0">Local Reference N</label>
-                    <InputNumber id="LocalN" class="form-control form-control-sm" style="width: 120px;" @bind-Value="@newImage.LocalN" />
-                </div>
-                <div class="d-flex flex-column">
-                    <label for="GlobalE" class="form-label small mb-0">Global Reference E</label>
-                    <InputNumber id="GlobalE" class="form-control form-control-sm" style="width: 120px;" @bind-Value="@newImage.GlobalE"/>
-                </div>
-                <div class="d-flex flex-column">
-                    <label for="GlobalN" class="form-label small mb-0">Global Reference N</label>
-                    <InputNumber id="GlobalN" class="form-control form-control-sm" style="width: 120px;" @bind-Value="@newImage.GlobalN"/>
-                </div>
-                <div class="d-flex flex-column">
-                    <label for="Z" class="form-label small mb-0">Elevation</label>
-                    <InputNumber id="Z" class="form-control form-control-sm" style="width: 60px;" @bind-Value="@newImage.Z"/>
-                </div>
-                <div class="d-flex flex-column">
-                    <button type="button" onclick="@(() => TryCentrePlotPlan())" class="btn btn-primary btn-sm ms-2">Centre</button>
-                </div>
-            </div>
-        }
-
-        @if (showSaveSubmit)
-        {
-            <div class="d-flex align-items-center gap-2 mb-3">
-                <div class="d-flex flex-column">
-                    <label for="Tag" class="form-label small mb-0">Name E</label>
-                    <InputText id="Tag" class="form-control form-control-sm" style="width: 200px;" @bind-Value="@newImage.Tag"/>
-                    <ValidationMessage For="@(() => newImage.Tag)" class="text-danger small"/>
-                </div>
-                <div class="d-flex flex-column">
-                    <label for="Description" class="form-label small mb-0">Description</label>
-                    <InputText id="Description" class="form-control form-control-sm" style="width: 400px;" @bind-Value="@newImage.TagDescription"/>
-                    <ValidationMessage For="@(() => newImage.TagDescription)" class="text-danger small"/>
-                </div>
-                <div class="d-flex flex-column">
-                    <label for="Remark" class="form-label small mb-0">Remark</label>
-                    <InputText id="Remark" class="form-control form-control-sm" style="width: 200px;" @bind-Value="@newImage.Remark"/>
-                    <ValidationMessage For="@(() => newImage.Remark)" class="text-danger small"/>
-                </div>
-                <div class="d-flex flex-column">
-                    <button type="submit" class="btn btn-success">Save Plan</button>
-                </div>
-            </div>
-        }
-    </EditForm>
-</div>
-        
-        
-    </div>
-</div>
-@* <div id="@_divString" onclick="@UpdatePage" style="height: 1200px; width: 800px; display:@(show3D ? "block" : "none")"></div> *@
-<div>Total clicked points: @GlobalData.RefPoints?.Count</div>
-<style>
-    .form-control-sm {
-        height: calc(1.5em + 0.5rem + 2px);
-        font-size: 0.875rem;
-    }
-    .form-label {
-        margin-bottom: 0.25rem;
-    }
-</style>
 
 @code {
+    #region Parameters & Fields
+
     [Parameter]
-    public Plot PlotComponent { get; set; } // Receive the Plot component reference
-    private static PlotPlan newImage = new();
-    private List<PlotPlan> _plotPlans = [];
+    public Plot? PlotComponent { get; set; }
+
+    // Data
+    private PlotPlan newImage = new();
+    private List<PlotPlan> _plotPlans = new();
+    private readonly List<ClickedPoint> ClickedPoints = new();
+
+    // UI State
     private readonly bool hideFileOpen = false;
     private bool showThumbImage = false;
     private bool showProcessing = false;
     private bool showCentreSubmit = false;
     private bool showScaleSubmit = false;
     private bool showSaveSubmit = false;
-    private readonly List<ClickedPoint> ClickedPoints = new();
-    private float RendererWidth { get; set; }
-    private float RendererHeight { get; set; }
-    private bool show3D = true;
-    private string filenme;
+    private bool _isLoading = false;
+    private bool _isSaving = false;
+    private bool _isDeleting = false;
+    private string? _deletingTag;
+    private string? filenme;
+    private bool _isPdfFile = false;
+    private int _pdfPageCount = 1;
+    private int _selectedPdfPage = 0;
     
-    private static SceneInfo? _sceneInfo;
-    private static string _divString = "plotEditDivString";
-    private static float _rendererWidth;
-    private static float _rendererHeight;
-    private DotNetObjectReference<Draw>? objPlot;
+    // ============ Loading State Variables ============
+    private bool _isLoadingPlans = true;
+
+    // Rendering control
     private bool shouldRenderUIChanges = true;
-    private string timeStamp = "";
-    
+    protected override bool ShouldRender() => shouldRenderUIChanges;
 
-    private List<string> displayFields = new List<string> 
-    { 
-        "Tag", "TagDescription", "ImgThumbString", "X1", "X2", "Y1", "Y2", "Z", "Opacity",
-        "ImgName", "Width", "Height", "ScaleX", "ScaleY", "CentreX", "CentreY", 
-        "CentreXRef", "CentreYRef", "GlobalE", "GlobalN", "RendererWidth", "RendererHeight", 
-    };
-    
-    protected override void OnInitialized()
+    private List<string> refPointTexts = [];
+
+    // Messages
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    // Validation
+    private CustomValidation? customValidation;
+
+    // Display fields
+    private readonly List<string> displayFields = new()
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
-        base.OnInitialized();
-    }
+        "Tag", "TagDescription", "ImgThumbString", "X1", "X2", "Y1", "Y2", "Z", "Opacity",
+        "Width", "Height", "ScaleX", "ScaleY", "CentreX", "CentreY",
+        "GlobalE", "GlobalN", "KeyPlan"
+    };
 
-    /// <inheritdoc />
+    private int CurrentStep => showScaleSubmit ? 1 : showCentreSubmit ? 2 : showSaveSubmit ? 3 : 0;
+
+    #endregion
+
+    #region Lifecycle
+
     protected override async Task OnInitializedAsync()
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
-        //
-        // load existing plot plans for the selected project
-        (GlobalData.PlotPlans, string logInfo, string logWarning, string logError)
-            = await DataService.ReadFromCacheOrDb<PlotPlan>();
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} " +
-                        $"Info: {logInfo}, Warning: {logWarning}, Error: {logError}");
-        _plotPlans = GlobalData.PlotPlans;
+        _isLoadingPlans = true;
+        
+        try
+        {
+            // Load plot plans from database/service
+            _plotPlans = await PlotPlanService.GetAllAsync() ?? new List<PlotPlan>();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to load plot plans: {ex.Message}";
+        }
+        finally
+        {
+            // Images will load progressively in the browser (better UX)
+            _isLoadingPlans = false;
+        }
+        
         await base.OnInitializedAsync();
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender}");
+    #endregion
 
-        if (firstRender)
+   #region Delete Operations
+
+    /// <summary>
+    /// Confirm and delete a plot plan with appropriate warnings
+    /// </summary>
+    private async Task ConfirmAndDeletePlotPlan(string tag)
+    {
+        var plan = _plotPlans.FirstOrDefault(p => p.Tag == tag);
+        if (plan == null) return;
+
+        // Initial confirmation
+        string message = plan.KeyPlan
+            ? "⚠️ This is the KEY PLAN (reference for all other plans).\n\nDeleting it will reposition all other plans. Continue?"
+            : $"Delete plot plan '{tag}'?";
+
+        bool confirmed = await JsRuntime.InvokeAsync<bool>("confirm", message);
+        if (!confirmed) return;
+
+        _isDeleting = true;
+        _deletingTag = tag;
+        ClearMessages();
+        StateHasChanged();
+
+        try
         {
-            // do nothing
+            bool wasKeyPlan = plan.KeyPlan;
+            float deltaE = 0, deltaN = 0;
+
+            // Handle key plan deletion
+            if (wasKeyPlan)
+            {
+                if (_plotPlans.Count > 1)
+                {
+                    // Additional confirmation for key plan deletion
+                    bool confirmedKeyPlan = await ConfirmKeyPlanDeletion();
+                    if (!confirmedKeyPlan)
+                    {
+                        return; // User cancelled
+                    }
+
+                    // Find and promote the next plan
+                    var newKeyPlan = _plotPlans.FirstOrDefault(p => p.Tag != tag);
+                    if (newKeyPlan != null)
+                    {
+                        // Calculate deltas for JS repositioning (before service call updates values)
+                        deltaE = plan.GlobalE - newKeyPlan.GlobalE;
+                        deltaN = plan.GlobalN - newKeyPlan.GlobalN;
+
+                        // Promote new key plan via service
+                        await PlotPlanService.PromoteToKeyPlanAsync(newKeyPlan, plan);
+
+                        // Update Three.js scene - reposition all planes
+                        await SafeJsInvoke("repositionAllPlanes", deltaE, deltaN);
+                    }
+                }
+                else
+                {
+                    // Deleting the only/last plan
+                    bool confirmedLastPlan = await ConfirmLastPlanDeletion();
+                    if (!confirmedLastPlan)
+                    {
+                        return; // User cancelled
+                    }
+                }
+            }
+
+            // Remove from 3D scene
+            await SafeJsInvoke("removePlane", plan.Tag);
+
+            // Delete from database via service
+            await PlotPlanService.DeletePlotPlanAsync(plan);
+
+            // Refresh local list
+            _plotPlans = await PlotPlanService.GetAllAsync();
+
+            _successMessage = $"Plot plan '{tag}' deleted successfully.";
         }
-        await base.OnAfterRenderAsync(firstRender);
-    }
-
-
-    private void UpdatePage()
-    {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - Update Page");
-    }
-    
-    async Task ShowHidePlotinPlotDotRazor()
-    {
-        if (PlotComponent != null)
+        catch (Exception ex)
         {
-            await PlotComponent.HidePlotPlan(); // Call the method on the Plot component
+            _errorMessage = $"Failed to delete plot plan: {ex.Message}";
+            Debug.WriteLine($"DeletePlotPlan error: {ex}");
         }
-    }
-    
-    
-    private async Task DeletePlotPlan(string tag)
-    {
-        var plotPlanToRemove = _plotPlans.FirstOrDefault(p => p.Tag == tag);
-        if (plotPlanToRemove != null)
+        finally
         {
-            _plotPlans.Remove(plotPlanToRemove);
-            
-            await Table.DeleteAsync(plotPlanToRemove);
-            
-            await RefreshAndReadPlotPlanFromDB();
-
+            _isDeleting = false;
+            _deletingTag = null;
             StateHasChanged();
         }
     }
-    
-    
-    async Task DrawPlotPlan()
+
+    /// <summary>
+    /// Confirm deletion of the key plan (will trigger repositioning)
+    /// </summary>
+    private async Task<bool> ConfirmKeyPlanDeletion()
     {
-        newImage.Tag = $"plotplan";
+        return await JsRuntime.InvokeAsync<bool>("confirm",
+            "⚠️ IMPORTANT: You are deleting the KEY PLAN.\n\n" +
+            "This will:\n" +
+            "• Promote another plan to be the new key plan\n" +
+            "• Update the project's global reference coordinates\n" +
+            "• Reposition all other plans relative to the new key plan\n\n" +
+            "This action cannot be undone. Continue?");
+    }
+
+    /// <summary>
+    /// Confirm deletion of the last/only plan
+    /// </summary>
+    private async Task<bool> ConfirmLastPlanDeletion()
+    {
+        return await JsRuntime.InvokeAsync<bool>("confirm",
+            "⚠️ WARNING: This is the ONLY plot plan for this project.\n\n" +
+            "Deleting it will remove all spatial reference for this project.\n\n" +
+            "Are you sure you want to delete it?");
+    }
+
+    #endregion
+
+    #region Upload & Processing
+
+    private async Task LoadPlotPlan(InputFileChangeEventArgs e)
+    {
+        showProcessing = true;
+        showThumbImage = false;
+        ResetSteps();
+        ClearMessages();
+        filenme = e.File.Name;
+        StateHasChanged();
+
+        try
+        {
+            _isPdfFile = e.File.ContentType.ToLower() == "application/pdf";
+
+            if (_isPdfFile)
+            {
+                //TODO : PDF render currently not working 
+                newImage = await PlotPlanService.LoadPdfAsync(e, _selectedPdfPage, 150);
+            }
+            else
+            {
+                newImage = await PlotPlanService.LoadImageAsync(e);
+            }
+            
+            newImage.ProjectId = GlobalData.SelectedProject?.Tag ?? "";
+            newImage.OptionId = "base";
+            newImage.Opacity = 1;
+            newImage.UpdatedOn = DateTime.Now;
+            newImage.Remark = "";
+            newImage.XEW = true;
+
+            showThumbImage = true;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to process image: {ex.Message}";
+            Debug.WriteLine($"LoadPlotPlan error: {ex}");
+        }
+        finally
+        {
+            showProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CancelUpload()
+    {
+        showThumbImage = false;
+        ResetSteps();
+        newImage = new PlotPlan();
+        filenme = null;
+    }
+
+    #endregion
+
+    #region Draw & Configure
+
+    private async Task DrawPlotPlan()
+    {
+        newImage.Tag = $"plotplan_{DateTime.Now:yyyyMMdd_HHmmss}";
         newImage.X1 = 0;
         newImage.X2 = 0;
         newImage.Y1 = 0;
         newImage.Y2 = 0;
-        
         newImage.Width = 0;
         newImage.Height = 0;
- 
         newImage.ScaleX = 1;
         newImage.ScaleY = 1;
-        newImage.CentreX  = 0;
+        newImage.CentreX = 0;
         newImage.CentreY = 0;
         newImage.Rotation = 0;
-        
-        // if already the plot plan exists for this project, then the X-axis and Y- axis orientation
-        // for East/North is available and the same to be followed for any new addition of plots
-        // for the 1st plot plan, the option of "EN" or "NE" to be chosen by the user
 
+        // Set Z level above existing plans
         if (_plotPlans.Count > 0)
         {
-            newImage.Z = _plotPlans.Find(plot => plot.KeyPlan)!.Z + 0.01f;
+            var keyPlan = _plotPlans.Find(plot => plot.KeyPlan);
+            newImage.Z = (keyPlan?.Z ?? 0) + 0.01f;
         }
 
         await DrawPlan(newImage);
-        
+
         showThumbImage = false;
         showScaleSubmit = true;
         await ShowHidePlotinPlotDotRazor();
-
     }
 
-    async Task DrawPlan(PlotPlan plotPlan)
+    private async Task ShowHidePlotinPlotDotRazor()
+    {
+        if (PlotComponent != null)
+        {
+            await PlotComponent.HidePlotPlan();
+        }
+    }
+
+    private async Task DrawPlan(PlotPlan plotPlan)
     {
         var planeName = "plotplan";
         var planeTag = plotPlan.Tag;
-        var scaleX = plotPlan.ScaleX;
-        var scaleY = plotPlan.ScaleY;
-        var centreX = plotPlan.CentreX;
-        var centreY = plotPlan.CentreY;
 
-        await JsRuntime.InvokeVoidAsync("drawPlane", planeName, planeTag, newImage.ImgString, scaleX, scaleY, centreX, centreY, newImage.Z, newImage.Opacity);
-        Console.WriteLine($"Plot plan '{planeName}' drawn.");
-
-    }
-    
-    async Task RotatePlotPlan()
-    {
-        newImage.Rotation += (float)Math.PI / 2;
-
-        Console.WriteLine($"Rotating the plot plan {Math.Round(newImage.Rotation*90/Math.PI,0)} deg");
-        await JsRuntime.InvokeVoidAsync("rotatePlane", newImage.Rotation);
-    }
-
-    
-
-    async Task ScalePlotPlan()
-    {
-        if (GlobalData.RefPoints != null && GlobalData.RefPoints.Count != 4) return;
-        // refPoints.push([point.x, point.y, mouse.x, mouse.y]);
-        var LX = GlobalData.RefPoints[1].X - GlobalData.RefPoints[0].X;
-        
-        //var LX = ClickedPoints[3].PosX - ClickedPoints[2].PosX;
-        //var MouseDX = GlobalData.RefPoints[3][2] - GlobalData.RefPoints[2][2];
-        var LY = GlobalData.RefPoints[3].Y - GlobalData.RefPoints[2].Y;
-        //var MouseDY = GlobalData.RefPoints[3][3] - GlobalData.RefPoints[2][3];
-        if (Math.Abs(LX) < 1 || Math.Abs(LY) < 1 || Math.Abs(newImage.X1 - newImage.X2)<1 || Math.Abs(newImage.Y1 - newImage.Y2)<1) return;
-        var scaleX = Math.Abs( (newImage.X1 - newImage.X2) / LX);
-        var scaleY = Math.Abs((newImage.Y1 - newImage.Y2) / LY);
-        var scaleXX = (newImage.X1 - newImage.X2) / LX;
-        var scaleYY = (newImage.Y1 - newImage.Y2) / LY;
-        
-        newImage.ScaleX = scaleXX;
-        newImage.ScaleY = scaleYY;
-        
-        newImage.RendererWidth = GlobalData.sceneDataCurrent.RendererWidth;
-        newImage.RendererHeight = GlobalData.sceneDataCurrent.RendererHeight;
-
-        newImage.XEW = true;
-        
-        Console.WriteLine("Scaling the plot plan");
-        await JsRuntime.InvokeVoidAsync("scalePlane", scaleX, scaleY);
-        showScaleSubmit = false;
-        showCentreSubmit = true;
-        showSaveSubmit = false;
-
-        GlobalData.RefPoints.Clear();
-    }
-
-
-    async Task CentrePlotPlan()
-    {
-        Console.WriteLine("Centering the plot plan");
-        if (GlobalData.RefPoints?.Count == 0) return;
-        
-        newImage.CentreX = GlobalData.RefPoints[0].X;
-        newImage.CentreY = GlobalData.RefPoints[0].Y;
-        
-        // if this is the 1st plot, then
-        // 1. the (E,N) corresponding to (x,y) = (0,0) to be saved to the SlectedProject.E, SlectedProject.N
-        // 2. Plotmesh to be shifted to the clicked (x,y) so that the axis is now from (0,0)
-        // otherwise, if this is the additional plots meshes (alreday (E,N) corresponding to scene's (x,y) = (0,0) set
-        // then for the entered (E,N) ref value shall be calculated based on SlectedProject.E, SlectedProject.N
-        // calculate (x,y) for this eneterd (E,N). Plotmesh to be shifted to clicked corrdinate relative to calculated (x,y)
-
-        var centreX = GlobalData.RefPoints[0].X;
-        var centreY = GlobalData.RefPoints[0].Y;
-        if (_plotPlans.Count > 0)
+        if (!await SafeJsInvoke("drawPlane", planeName, planeTag, newImage.ImgString,
+                plotPlan.ScaleX, plotPlan.ScaleY, plotPlan.CentreX, plotPlan.CentreY,
+                newImage.Z, newImage.Opacity))
         {
-            newImage.KeyPlan = false;
-            if (GlobalData.SelectedProject != null)
-            {
-                centreX += newImage.GlobalE - GlobalData.SelectedProject.GlobalE;
-                centreY += newImage.GlobalN - GlobalData.SelectedProject.GlobalN;
-            }
+            _errorMessage = "Failed to draw plot plan in 3D view.";
         }
         else
         {
-            newImage.KeyPlan = true;}
-        await JsRuntime.InvokeVoidAsync("centrePlane", centreX , centreY, newImage.Z);
-        
-        showCentreSubmit = false;
-        showSaveSubmit = true;
-        ClickedPoints.Clear();
-        
-        GlobalData.RefPoints.Clear();
+            Debug.WriteLine($"Plot plan '{planeName}' drawn.");
+        }
+    }
 
+    private async Task RotatePlotPlan()
+    {
+        newImage.Rotation += (float)Math.PI / 2;
+        Debug.WriteLine($"Rotating plot plan to {Math.Round(newImage.Rotation * 90 / Math.PI, 0)} degrees");
+        await SafeJsInvoke("rotatePlane", newImage.Rotation);
     }
 
 
-    async Task SavePlotPlan()
+
+
+    private async Task UpdateRefPointTexts()
     {
-        Console.WriteLine($"Saving image (plot plan) data to database Key plan {newImage.KeyPlan}.");
+        //refPointTexts = ["X-Left", "X-Right", "Y-Bottom", "Y-Top", "Centre (0,0)","Ref-New Plan", "Ref-Key Plan"];
+        if (!await SafeJsInvoke("updateRefPointTexts", refPointTexts))
+        {
+            _errorMessage = $"Unable to update refPointTexts = '{refPointTexts}'.";
+        }
+        else
+        {
+            Debug.WriteLine($"Successfully updated refPointTexts = '{refPointTexts}'.");
+        }
+    }
+
+    #endregion
+
+    #region Scale & Centre
+
+
+    private void SetXEWForKeyPlan()
+    {
+        // if there was no Key Plan yet, temporary assign the X Axis East-West / North-South orientation as per this loaded plot plan
         if (_plotPlans.Count == 0)
         {
-            // this is the key plot, update the GlobalE/N of the Project Data
-            GlobalData.SelectedProject.GlobalE = newImage.GlobalE;
-            GlobalData.SelectedProject.GlobalN = newImage.GlobalN;
-            try
-            {
-                await Table.UpdateAsync(GlobalData.SelectedProject);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Error in updating data {e.Message}");
-            }
+            GlobalData.SelectedProject.XEW = newImage.XEW;
+            Debug.WriteLine($"XEW changed to: {newImage.XEW}");
         }
-
-        try
-        {
-            await Table.InsertAsync(newImage);
-            Console.WriteLine($"Saved image (plot plan) data to database Key plan successfully.");
-            
-        }            
-        catch (Exception e)
-        {
-            Console.WriteLine($"Error in saving data {e.Message}.");
-        }
-
-        showSaveSubmit = false;
-        ClickedPoints.Clear();
-
-        await RefreshAndReadPlotPlanFromDB();
-
-        // 7025 000	8600 000	9550 000	11275 000    7413.300	9669.450
-    }
-
-    async Task RefreshAndReadPlotPlanFromDB()
-    {
-        // read plot plans afresh
-        (GlobalData.PlotPlans, string logInfo, string logWarning, string logError)
-            = await DataService.RefreshCacheAndReadFromDb<PlotPlan>();
-        _plotPlans = GlobalData.PlotPlans; 
-    }
-    
-
-    async Task LoadPlotPlan(InputFileChangeEventArgs e)
-    {
-        showProcessing = true;
-        showThumbImage = false;
-        showCentreSubmit = false;
-        showScaleSubmit = false;
-        showSaveSubmit = false;
-        filenme = e.File.Name; // e.g., "image.png"
- 
-        newImage = await MyFunction.LoadImage(e);
-        newImage.ProjectId = GlobalData.SelectedProject.Tag; // global.SelectedProject;
-        newImage.OptionId = "base";
-        newImage.Opacity = 1;
-        newImage.UpdatedBy = "KP";
-        newImage.UpdatedOn = DateTime.Now;
-        newImage.Remark = "";
-        //Console.WriteLine($"Uploaded file size {newImage.ImgString.Length}");
-        showProcessing = false;
-        showThumbImage = true;
-
-    }
-
-    private string GetPropertyValue(PlotPlan plotPlan, string propertyName)
-    {
-        var property = typeof(PlotPlan).GetProperty(propertyName);
-        if (property == null) return string.Empty;
-        var value = property.GetValue(plotPlan);
-        return value?.ToString() ?? string.Empty;
-    }
-    
-    private CustomValidation customValidation;
-    private int CurrentStep => showScaleSubmit ? 1 : showCentreSubmit ? 2 : showSaveSubmit ? 3 : 1;
-
-    private string GetProgressBarClass(int step)
-    {
-        if (CurrentStep > step) return "bg-success";
-        if (CurrentStep == step) return "bg-primary";
-        return "bg-secondary";
     }
 
     private async Task TryScalePlotPlan()
@@ -509,14 +706,27 @@
         customValidation?.ClearErrors();
         var errors = new Dictionary<string, List<string>>();
 
-        if (newImage.X1 == null || newImage.X2 == null || newImage.Y1 == null || newImage.Y2 == null)
+        // Check reference points
+        if (GlobalData.RefPoints == null || GlobalData.RefPoints.Count != 4)
         {
-            errors.Add(nameof(newImage.X1), new List<string> { "All scale fields (X1, X2, Y1, Y2) are required." });
+            errors.Add("RefPoints", new List<string> { "Please click 4 reference points on the image (2 for X-axis, 2 for Y-axis)." });
         }
-        else if (newImage.X1 >= newImage.X2 || newImage.Y1 >= newImage.Y2)
+
+        // Validate coordinate values
+        if (Math.Abs(newImage.X2 - newImage.X1) < 0.01f)
         {
-            errors.Add(nameof(newImage.X1), new List<string> { "X1 must be less than X2, and Y1 must be less than Y2." });
+            errors.Add(nameof(newImage.X1), new List<string> { "X1 and X2 must have a meaningful difference (at least 0.01m)." });
         }
+
+        if (Math.Abs(newImage.Y2 - newImage.Y1) < 0.01f)
+        {
+            errors.Add(nameof(newImage.Y1), new List<string> { "Y1 and Y2 must have a meaningful difference (at least 0.01m)." });
+        }
+
+        // if (newImage.X1 >= newImage.X2 || newImage.Y1 >= newImage.Y2)
+        // {
+        //     errors.Add(nameof(newImage.X1), new List<string> { "X1 must be less than X2, and Y1 must be less than Y2." });
+        // }
 
         if (errors.Any())
         {
@@ -530,27 +740,164 @@
         }
     }
 
+    private async Task ScalePlotPlan()
+    {
+        if (GlobalData.RefPoints == null || GlobalData.RefPoints.Count != 4) return;
+
+        var LX = GlobalData.RefPoints[1].X - GlobalData.RefPoints[0].X;
+        var LY = GlobalData.RefPoints[3].Y - GlobalData.RefPoints[2].Y;
+
+        if (Math.Abs(LX) < 1 || Math.Abs(LY) < 1 ||
+            Math.Abs(newImage.X1 - newImage.X2) < 1 ||
+            Math.Abs(newImage.Y1 - newImage.Y2) < 1) return;
+
+        var scaleX = (newImage.X2 - newImage.X1) / LX;
+        var scaleY = (newImage.Y2 - newImage.Y1) / LY;
+        
+        // For Key Plot Plan, temporarily assign the polarity of the scale
+        // for calculating the Local EN correctly
+        if (_plotPlans.Count == 0)
+        {
+            GlobalData.SelectedProject.PositiveScaleX = scaleX > 0;
+            GlobalData.SelectedProject.PositiveScaleY = scaleY > 0;
+        }
+
+        // Image scale has to be positive, otherwise the image would get rendered reversed
+        scaleX = Math.Abs(scaleX);
+        scaleY = Math.Abs(scaleY);
+
+        newImage.ScaleX = scaleX;
+        newImage.ScaleY = scaleY;
+
+        if (GlobalData.sceneDataCurrent != null)
+        {
+            newImage.RendererWidth = GlobalData.sceneDataCurrent.RendererWidth;
+            newImage.RendererHeight = GlobalData.sceneDataCurrent.RendererHeight;
+        }
+
+        Debug.WriteLine("Scaling the plot plan");
+        await SafeJsInvoke("scalePlane", scaleX, scaleY);
+
+        showScaleSubmit = false;
+        showCentreSubmit = true;
+        showSaveSubmit = false;
+
+        GlobalData.RefPoints?.Clear();
+        
+    }
+
     private async Task TryCentrePlotPlan()
     {
         customValidation?.ClearErrors();
         var errors = new Dictionary<string, List<string>>();
-
-        if (newImage.GlobalE == null || newImage.GlobalN == null)
+        
+        
+                
+        // for the Key Plot Plan
+        if (_plotPlans.Count == 0)
         {
-            errors.Add(nameof(newImage.GlobalE), new List<string> { "Both Reference E and Reference N are required." });
-        }
+            // Check reference points
+            if (GlobalData.RefPoints == null || GlobalData.RefPoints.Count != 1)
+            {
+                errors.Add("RefPoints", new List<string> { "Please click the reference points on the image as the Centre (0,0) of the Key Plot Plan)." });
+            }
+            // For Key Plot Plan, Local EN (newImage.LocalE, newImage.LocalN) are must.
+            // There can be a separate Global coordinate Reference (newImage.GlobalE, newImage.GlobalN), else the Global EN is considered as same as Local EN
+            // Elevation, by default newImage.Z = 0
+            
 
-        if (errors.Any())
-        {
-            customValidation?.DisplayErrors(errors);
+            if (newImage.LocalE == 0 && newImage.LocalN == 0)
+            {
+                errors.Add(nameof(newImage.GlobalE), new List<string> { "Both E and N of local coordinates are required. Global EN coordinates are optional." });
+            }
+
+            if (errors.Any())
+            {
+                customValidation?.DisplayErrors(errors);
+            }
+            else
+            {
+                await CentrePlotPlan();
+                showCentreSubmit = false;
+                showSaveSubmit = true;
+            }
         }
         else
         {
-            await CentrePlotPlan();
-            showCentreSubmit = false;
-            showSaveSubmit = true;
+            // For subsequent plot plans
+            // Check reference points
+            if (GlobalData.RefPoints == null || GlobalData.RefPoints.Count != 2)
+            {
+                errors.Add("RefPoints", new List<string> { "Please click 2 reference points on the image (1 for Ref-New, 2 for Ref-Key Plan)." });
+            }
+
+            if (errors.Any())
+            {
+                customValidation?.DisplayErrors(errors);
+            }
+            else
+            {
+                await CentrePlotPlan();
+                showCentreSubmit = false;
+                showSaveSubmit = true;
+            }
+            
         }
     }
+
+    private async Task CentrePlotPlan()
+    {
+        Debug.WriteLine("Centering the plot plan");
+        if (GlobalData.RefPoints?.Count == 0) return;
+        
+        var centreX = 0f;
+        var centreY = 0f;
+
+        if (_plotPlans.Count > 0 && GlobalData.RefPoints is { Count: 2 })
+        {
+            // For subsequent plot plans
+            centreX = GlobalData.RefPoints[0].X-GlobalData.RefPoints[1].X;
+            centreY = GlobalData.RefPoints[0].Y -GlobalData.RefPoints[1].Y;
+            
+            newImage.KeyPlan = false;
+        }
+        else if (_plotPlans.Count == 0 && GlobalData.RefPoints is { Count: 1 })
+        {
+            // For Key Plot Plan
+            centreX = GlobalData.RefPoints[0].X;
+            centreY = GlobalData.RefPoints[0].Y;
+            
+            newImage.KeyPlan = true;
+        }
+
+        newImage.CentreX = centreX;
+        newImage.CentreY = centreY;
+
+        await SafeJsInvoke("centrePlane", centreX, centreY, newImage.Z);
+
+        showCentreSubmit = false;
+        showSaveSubmit = true;
+        ClickedPoints.Clear();
+        GlobalData.RefPoints?.Clear();
+        
+                   
+        // if there was no Key Plan yet, temporary assign the Local and Global EN values as per this loaded plot plan
+        if (_plotPlans.Count == 0)
+        {
+            GlobalData.SelectedProject.LocalE = newImage.LocalE;
+            GlobalData.SelectedProject.LocalN = newImage.LocalN;
+            GlobalData.SelectedProject.LocalE = newImage.GlobalE;
+            GlobalData.SelectedProject.GlobalN = newImage.GlobalN;
+            GlobalData.SelectedProject.XEW = newImage.XEW;
+            GlobalData.SelectedProject.AngleTrueNorth = newImage.AngleTrueNorth;
+        }
+
+        
+    }
+
+    #endregion
+
+    #region Save
 
     private async Task HandleSubmit()
     {
@@ -559,7 +906,11 @@
 
         if (string.IsNullOrWhiteSpace(newImage.Tag))
         {
-            errors.Add(nameof(newImage.Tag), new List<string> { "Name E is required." });
+            errors.Add(nameof(newImage.Tag), new List<string> { "Name is required." });
+        }
+        else if (_plotPlans.Any(p => p.Tag?.Equals(newImage.Tag, StringComparison.OrdinalIgnoreCase) == true))
+        {
+            errors.Add(nameof(newImage.Tag), new List<string> { "A plot plan with this name already exists." });
         }
 
         if (errors.Any())
@@ -571,9 +922,166 @@
             await SavePlotPlan();
         }
     }
-    
-    
-    
-    
 
+    private async Task SavePlotPlan()
+    {
+        Debug.WriteLine($"Saving plot plan. KeyPlan: {newImage.KeyPlan}");
+        _isSaving = true;
+        ClearMessages();
+        StateHasChanged();
+        
+        try
+        {
+            await PlotPlanService.SavePlotPlanAsync(newImage);
+            _successMessage = $"Plot plan '{newImage.Tag}' saved successfully.";
+            _plotPlans = await PlotPlanService.GetAllAsync();
+            newImage = new PlotPlan();
+            ResetSteps();
+            ClickedPoints.Clear();
+            GlobalData.RefPoints?.Clear();
+            customValidation?.ClearErrors();
+            filenme = null;
+            
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error saving plot plan: {ex.Message}");
+            _errorMessage = $"Failed to save plot plan: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+            ClickedPoints.Clear();
+            StateHasChanged();
+            
+        }
+    }
+    
+    
+    
+    /// <summary>
+    /// Confirm and discard the current plot plan import, resetting back to file selection
+    /// </summary>
+    private async Task ConfirmAndDiscard()
+    {
+        bool confirmed = await JsRuntime.InvokeAsync<bool>("confirm",
+            "⚠️ Discard this plot plan?\n\n" +
+            "All changes will be lost and you'll need to import the image again.\n\n" +
+            "Continue?");
+
+        if (confirmed)
+        {
+            await DiscardAndReset();
+        }
+    }
+
+    /// <summary>
+    /// Discard the current import and reset to initial state
+    /// </summary>
+    private async Task DiscardAndReset()
+    {
+        // Remove the plane from 3D scene if it was drawn
+        if (!string.IsNullOrEmpty(newImage.Tag))
+        {
+            await SafeJsInvoke("removePlane", newImage.Tag);
+        }
+
+        // Reset all state
+        newImage = new PlotPlan();
+        filenme = null;
+        ResetSteps();
+        ClickedPoints.Clear();
+        GlobalData.RefPoints?.Clear();
+        customValidation?.ClearErrors();
+        ClearMessages();
+
+        // Show the Plot component again if it was hidden
+        if (PlotComponent != null)
+        {
+            await PlotComponent.HidePlotPlan();
+        }
+
+        _successMessage = "Plot plan discarded. You can import a new image.";
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    private async Task RefreshAndReadPlotPlanFromDB()
+    {
+        (GlobalData.PlotPlans, _, _, _) = await DataService.RefreshCacheAndReadFromDb<PlotPlan>();
+        _plotPlans = GlobalData.PlotPlans ?? new List<PlotPlan>();
+    }
+
+    private async Task<bool> SafeJsInvoke(string identifier, params object[] args)
+    {
+        try
+        {
+            await JsRuntime.InvokeVoidAsync(identifier, args);
+            return true;
+        }
+        catch (JSException ex)
+        {
+            _errorMessage = $"3D rendering error: {ex.Message}";
+            Debug.WriteLine($"JS Interop failed for {identifier}: {ex}");
+            return false;
+        }
+    }
+
+    private string GetPropertyValue(PlotPlan plotPlan, string propertyName)
+    {
+        var property = typeof(PlotPlan).GetProperty(propertyName);
+        if (property == null) return string.Empty;
+
+        var value = property.GetValue(plotPlan);
+
+        // Format numbers nicely
+        if (value is float f) return f.ToString("F2");
+        if (value is double d) return d.ToString("F2");
+        if (value is bool b) return b ? "Yes" : "No";
+
+        return value?.ToString() ?? string.Empty;
+    }
+
+    private string GetProgressBarClass(int step)
+    {
+        if (CurrentStep > step) return "bg-success";
+        if (CurrentStep == step) return "bg-primary";
+        return "bg-secondary";
+    }
+
+    private void ResetSteps()
+    {
+        showScaleSubmit = false;
+        showCentreSubmit = false;
+        showSaveSubmit = false;
+    }
+
+    private void ClearMessages()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+    }
+
+    #endregion
+    
+    
+    // ============ Helper Methods ============
+    
+    /// <summary>
+    /// Returns CSS class to show/hide file upload (using CSS, not conditional rendering)
+    /// </summary>
+    private string GetFileUploadVisibility()
+    {
+        if (showProcessing || showThumbImage || showScaleSubmit || showCentreSubmit || showSaveSubmit)
+        {
+            return "d-none";
+        }
+        return "d-flex align-items-center gap-2";
+    }
+    
+    
+    
 }

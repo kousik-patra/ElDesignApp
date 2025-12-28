@@ -220,38 +220,38 @@ public class Draw
     }
     
     [JSInvokable("UpdateRefPoints")]
-    public void UpdateRefPoints(string refPoints)
+    public void UpdateRefPoints(string refPointsJson)
     {
-     
-        Debug.WriteLine($"Draw: UpdateRefPoints: {refPoints}");
-        
-        // refPoints.push([point.x, point.y, mouse.x, mouse.y]);
-        
+        Debug.WriteLine($"Draw: UpdateRefPoints: {refPointsJson}");
+    
         try
         {
-            // Split the input string by commas and trim whitespace
-            var values = refPoints.Split(',').Select(s => s.Trim()).ToArray();
-
-            // Parse to floats
-            var numbers = new float[16];
-            for (int i = 0; i < values.Length; i++)
-            {
-                if (!float.TryParse(values[i], out var number))
-                {
-                    throw new ArgumentException($"Invalid number format at position {i + 1}: '{values[i]}'.");
-                }
-                numbers[i] = number;
-            }
-            
-            
-
             _globalData.RefPoints?.Clear();
-            Enumerable.Range(0, numbers.Length / 4).ToList();
-            new List<int>{0,1,2,3}.ForEach(i=> _globalData.RefPoints?.Add(new Vector3(numbers[i*4], numbers[i*4+1], 0)));
+        
+            if (string.IsNullOrWhiteSpace(refPointsJson) || refPointsJson == "[]")
+            {
+                return;
+            }
+
+            // Parse the JSON array of arrays
+            var points = JsonSerializer.Deserialize<float[][]>(refPointsJson);
+        
+            if (points == null) return;
+
+            foreach (var point in points)
+            {
+                if (point.Length >= 2)
+                {
+                    // Store only position (X, Y), Z = 0
+                    _globalData.RefPoints?.Add(new Vector3(point[0], point[1], 0));
+                }
+            }
+        
+            Debug.WriteLine($"Parsed {_globalData.RefPoints?.Count} reference points");
         }
         catch (JsonException ex)
         {
-            throw new ArgumentException("Invalid JSON format.", ex);
+            Debug.WriteLine($"UpdateRefPoints error: {ex.Message}");
         }
     }
 

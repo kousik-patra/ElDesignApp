@@ -14,7 +14,6 @@
 @using Microsoft.Extensions.Logging;
 
 @inject IDataRetrievalService DataService
-@inject IMyTableService MyTable
 @inject ITableService Table
 @inject ICacheService CacheService
 @inject IGlobalDataService GlobalData
@@ -260,7 +259,7 @@
     }
 
 
-    private async Task UpdateTableChange<T>((T item, List<T>? list, List<T> originalList, string success, string info, string warning, string error) parameters)
+    private async Task UpdateTableChange<T>((T item, List<T>? list, List<T> originalList, string success, string info, string warning, string error) parameters)where T : class
     {
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
                         $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Updating data to the database...");
@@ -276,7 +275,7 @@
             (System.Text.Json.JsonSerializer.Serialize(updatedList, _jsonSerializerOption), _jsonSerializerOption);
         try
         {
-            await MyTable.BulkCopyDataTableAsync(updatedList);
+            if (updatedList != null) await Table.BulkCopyAsync(updatedList);
             _tableSuccessMessage += "Changed Table is successfully updated to database.";
         }
         catch (Exception e)
@@ -346,7 +345,7 @@
                 await DataService.ReadFromCacheOrDb<Load>();
     
         GlobalData.Loads.ForEach(load => LayoutFunction.LoadUpdate(load));
-        GlobalData.Loads = MyTable.AssignSequenceToList(GlobalData.Loads);
+        GlobalData.Loads = Table.AssignSequence(GlobalData.Loads);
     
         UpdateDbLocalVariable(GlobalData.Loads);
     

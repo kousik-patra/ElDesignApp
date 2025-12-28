@@ -21,6 +21,19 @@ public class MyClass
     
 }
 
+public class ConnectionStrings
+{
+    public string? DefaultConnection { get; set; }
+    public string? MacMini { get; set; }
+    public string? MacBook { get; set; }
+    public string? OracleVM1VCU { get; set; }
+    public string? TestFeb24Context { get; set; }
+    public string? MacMiniDocker { get; set; }
+    public string? Redis { get; set; }
+}
+
+
+
 /// <summary>
 /// Updated RoleMapping model - now project-specific
 /// </summary>
@@ -243,11 +256,27 @@ public class Project
     [Display(Name = "X-Axis = East-West", Order = 10)]
     public bool XEW { get; set; } = true;
 
-    [Display(Name = "Global Easting (X=0)", Order = 11)]
-    public float GlobalE { get; set; } = 0f;
+    [Display(Name = "Local Easting (X=0)", Order = 11)]
+    public float LocalE { get; set; } = 0f; // Local E coordinate at Origin of 3D(X=0, Y=0)
 
-    [Display(Name = "Global Northing (Y=0)", Order = 12)]
-    public float GlobalN { get; set; } = 0f;
+    [Display(Name = "Local Northing (Y=0)", Order = 12)]
+    public float LocalN { get; set; } = 0f; // Local N coordinate at Origin of 3D(X=0, Y=0)
+    
+    [Display(Name = "Global Easting (X=0)", Order = 13)]
+    public float GlobalE { get; set; } = 0f; // Global E coordinate at Origin of 3D(X=0, Y=0)
+
+    [Display(Name = "Global Northing (Y=0)", Order = 14)]
+    public float GlobalN { get; set; } = 0f; // Local N coordinate at Origin of 3D(X=0, Y=0)
+    
+    [Display(Name = "Angle True North)", Order = 15)]
+    public float AngleTrueNorth { get; set; } = 0f; // Angle (degree) of True North with respect to Plant North (Clock wise is +ve)
+    
+    [Display(Name = "X2>X1", Order = 16)]
+    public bool PositiveScaleX { get; set; } = true; // While scaling the Key Plot Plan X2>X1?
+    
+    [Display(Name = "Y2>Y1", Order = 17)]
+    public bool PositiveScaleY { get; set; } = true; // While scaling the Key Plot Plan Y2>Y1?
+    
     
     public int Order { get; set; }
     
@@ -260,8 +289,11 @@ public class Project
 // Base class with the Basic Info to be inherited by ALL classes
 public class BaseInfo
 {
+    [ExcludeFromExcelExport]
     [Display(Name = "UID", Order = 1)] public Guid UID { get; set; }
+    [ExcludeFromExcelExport]
     [Display(Name = "Project", Order = 2)] public string? ProjectId { get; set; }
+    [ExcludeFromExcelExport]
     [Display(Name = "Option", Order = 3)] public string? OptionId { get; set; } = "base";
     
     [Display(Name = "Sequence", Order = 0)]
@@ -278,6 +310,7 @@ public class BaseInfo
         ErrorMessage = "Tag Description should be 3 to 255 characters and can not contain any special characters")]
     public string? TagDescription { get; set; } // Tag Description
     [Display(Name = "Remark", Order = 90)] public string? Remark { get; set; } = "";
+    
     [Display(Name = "Updated By", Order = 91)] public string UpdatedBy { get; set; } = "KP";
     [Display(Name = "Update Date Time", Order = 92)] public DateTime UpdatedOn { get; set; }
 
@@ -328,7 +361,7 @@ public class Bus : BaseInfo, IBaseMethod
     [RegularExpression(@"^[0-9]{1,5}?[\.]{0,1}[0-9]{0,3}[ ]{0,2}[k]?[M]?[V]?[A]?$",
         ErrorMessage = "Short Circuit value with unit kA or MVA, value should be max 5 digit. Default unit 'kA'")]
     [Display(Name = "Rated Current (A)")] public float IR { get; set; } // Rated FLC (A)
-
+    [IncludeExcelExport]
     [Display(Name = "Short Circuit")] public string SC { get; set; } // Bus Short Circuit (e.g., 25kA, 325 MVA, 200MVA, 25) default unit kA
     [Display(Name = "SC Current (kA)")] public float ISC { get; set; } // Bus Short Circuit Current in kA
     [Display(Name = "X/R Ratio")] public float XR { get; set; } = 10; // Bus X/R ratio (applicable for source
@@ -616,6 +649,10 @@ public class BusDuct : Branch
 public class ExcludeFromExcelExportAttribute : Attribute
 {
 }
+[AttributeUsage(AttributeTargets.Property, AllowMultiple = false)]
+public class IncludeExcelExportAttribute : Attribute
+{
+}
 
 public class CableBranchValidationAttribute : ValidationAttribute
 {
@@ -649,7 +686,7 @@ public class CableBranch : Branch
 
         // BranchBusUpdate from the Razor Page where Bus List is already available
     }
-
+    [IncludeExcelExport]
     [Display(Name = "Length (m)", Order = 14)]
     public float L { get; set; } // Branch Length, m
     

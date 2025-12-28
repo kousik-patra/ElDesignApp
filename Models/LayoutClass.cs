@@ -112,13 +112,13 @@ public class PlotPlan : BaseInfo, IBaseMethod
     public float GlobalE { get; set; } = 0;
 
     [Required]
-    [RegularExpression(@"[+-]?(\d{1,8}|\d{0,5}\.\d{1,3}|\.\d{1,3})$",
+    [RegularExpression(@"[+-]?(\d{1,12}|\d{0,9}\.\d{1,3}|\.\d{1,3})$",
         ErrorMessage = "More than three decimals and characters are not allowed.")]
     [Display(Name = "Global N")]
     public float GlobalN { get; set; } = 0;
     
     [Required]
-    [RegularExpression(@"[+-]?(\d{1,8}|\d{0,5}\.\d{1,3}|\.\d{1,3})$",
+    [RegularExpression(@"[+-]?(\d{1,12}|\d{0,9}\.\d{1,3}|\.\d{1,3})$",
         ErrorMessage = "More than three decimals and characters are not allowed.")]
     [Display(Name = "Local E")]
     public float LocalE { get; set; } = 0;
@@ -128,6 +128,12 @@ public class PlotPlan : BaseInfo, IBaseMethod
         ErrorMessage = "More than three decimals and characters are not allowed.")]
     [Display(Name = "Local N")]
     public float LocalN { get; set; } = 0;
+    
+    [Required]
+    [RegularExpression(@"[+-]?(\d{1,8}|\d{0,5}\.\d{1,3}|\.\d{1,3})$",
+        ErrorMessage = "More than three decimals and characters are not allowed.")]
+    [Display(Name = "Angle True North")]
+    public float AngleTrueNorth { get; set; } = 0f; // Angle (degree) of True North with respect to Plant North (Clock wise is +ve)
 
     public float RendererWidth { get; set; }
     public float RendererHeight { get; set; }

@@ -24,6 +24,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Resend;
 using ElDesignApp.Constants;
+using ElDesignApp.Models;
 using OfficeOpenXml;
 using ICacheService = ElDesignApp.Services.Cache.ICacheService;
 using IGlobalDataService = ElDesignApp.Services.Global.IGlobalDataService;
@@ -80,7 +81,6 @@ builder.Services.AddDistributedMemoryCache();
     builder.Services.Configure<ConnectionStrings>(builder.Configuration.GetSection("ConnectionStrings"));
     builder.Services.AddScoped<IMiscService, MiscService>();
     builder.Services.AddScoped<IDbConnectionFactory, SqlConnectionFactory>();
-    builder.Services.AddScoped<IMyTableService, MyTableService>();
     builder.Services.AddScoped<ITableService, TableService>();
     builder.Services.AddScoped<IDataRetrievalService, DataRetrievalService>();
     builder.Services.AddScoped<IMyFunctionService, MyFunctionService>();
@@ -93,6 +93,8 @@ builder.Services.AddDistributedMemoryCache();
     builder.Services.AddScoped<IProjectContextService, ProjectContextService>();
     builder.Services.AddScoped<IAuthorizationHandler, HardRoleHandler>();
     builder.Services.AddScoped<IDefaultRoleSeederService, DefaultRoleSeederService>();
+    builder.Services.AddScoped<IUserContextService, UserContextService>();
+    builder.Services.AddScoped<IPlotPlanService, PlotPlanService>();
 
     builder.Services.AddScoped<IDbConnection>(sp => 
         new SqlConnection(sp.GetRequiredService<IConfiguration>()
@@ -104,11 +106,9 @@ builder.Services.AddDistributedMemoryCache();
         options.AddPolicy("RequireSuperAdmin", policy =>
             policy.RequireRole(HardRoles.SuperAdmin));
     
-        // options.AddPolicy("RequireAdmin", policy =>
-        //     policy.RequireRole(HardRoles.Admin, HardRoles.SuperAdmin));
         
-options.AddPolicy("RequireAdmin", policy =>
-{
+        options.AddPolicy("RequireAdmin", policy =>
+        {
     policy.RequireAssertion(async context =>
     {
         var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -316,23 +316,8 @@ options.AddPolicy("RequireAdmin", policy =>
                 return false;
             });
         });
-
-    
-        // options.AddPolicy("RequireUser", policy =>
-        //     policy.RequireAuthenticatedUser());
-        //
-        // options.AddPolicy("RequireUser", policy =>
-        //     policy.RequireRole(HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
-        //
-        // options.AddPolicy("RequireReport", policy =>
-        //     policy.RequireRole(HardRoles.Report, HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
-        //
-        // options.AddPolicy("RequireGuest", policy =>
-        //     policy.RequireRole(HardRoles.Guest, HardRoles.Report, HardRoles.User, HardRoles.Admin, HardRoles.SuperAdmin));
+        
     });
-
-    // builder.Services.AddScoped<IAuthorizationHandler, HardRoleHandler>();
-
 
 
 var app = builder.Build();
@@ -356,7 +341,7 @@ app.UseAuthorization();
 if (app.Environment.IsDevelopment())
 {
     // comment is auto logoin as seed (admin) is not required
-    //app.UseMiddleware<DevAutoLoginMiddleware>();
+    app.UseMiddleware<DevAutoLoginMiddleware>();
 }
 
 
@@ -397,13 +382,3 @@ using (var scope = app.Services.CreateScope())
 app.Run();
 
 
-public class ConnectionStrings
-{
-    public string? DefaultConnection { get; set; }
-    public string? MacMini { get; set; }
-    public string? MacBook { get; set; }
-    public string? OracleVM1VCU { get; set; }
-    public string? TestFeb24Context { get; set; }
-    public string? MacMiniDocker { get; set; }
-    public string? Redis { get; set; }
-}

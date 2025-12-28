@@ -11,7 +11,6 @@
 @inject NavigationManager MyNavigationManager
 @inject IJSRuntime JSRuntime
 @inject IDataRetrievalService DataService
-@inject IMyTableService MyTable
 @inject ITableService Table
 @inject IGlobalDataService GlobalData
 @inject IMyFunctionService MyFunction
@@ -207,6 +206,22 @@
         
         base.OnInitialized();
     }
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Get SQL field names
+            _sqlFieldsNames = await Table.GetColumnNamesAsync(typeof(T).Name);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"OnInitializedAsync Error: {ex.Message}");
+        }
+    }
+    
+
     
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -270,8 +285,7 @@
         _inputClasses.Clear();
         _tableProperties.ForEach(_ => _inputClasses.Add(_inputClass));
         
-        // Get SQL field names
-        _sqlFieldsNames = MyTable?.GetSqlFieldsNames(typeof(T).Name) ?? new List<string>();
+
         
         // Get type and tag property
         _type = typeof(T).Name;

@@ -64,6 +64,7 @@ public interface IProjectContextService
     /// Gets user's hard roles in a specific project (via custom role mappings)
     /// </summary>
     Task<List<string>> GetUserHardRolesInProjectAsync(string userId, Guid projectId);
+    
 }
 
 public class ProjectContextService : IProjectContextService
@@ -512,4 +513,7 @@ public async Task<List<string>> GetUserHardRolesInProjectAsync(string userId, Gu
             _isLoaded = true; // Prevent infinite retry
         }
     }
+
+
+    
 }

@@ -49,7 +49,7 @@ public interface ILayoutFunctionService
 
 
     void BoardUpdate(Board board);
-    void BoardFaceUpdate(Board board, string xyne);
+    void BoardFaceUpdate(Board board, bool xew);
     void BoardCentrePointUpdate(Board board);
 
 
@@ -210,44 +210,82 @@ public class LayoutFunctionService : ILayoutFunctionService
         /// <summary></summary>
     public ENU XY2EN(Vector3 xyz, string coordSystem = "LOCAL")
     {
-        ENU enu = new(0f,0f,0f);
-
-        if (_globalData.PlotPlans != null)
-        {
-            var keyPlotPlan = _globalData.PlotPlans.Find(plan => plan.KeyPlan);
         
-            if (keyPlotPlan == null) return enu;
+        ENU enu = new(0f,0f,0f);
+        
+        if(_globalData.SelectedProject == null) return enu;
+        
+        var xew = _globalData.SelectedProject.XEW;
 
-            var x1 = keyPlotPlan?.X1 ?? 0f;
-            var x2 = keyPlotPlan?.X2 ?? 0f;
-            var y1 = keyPlotPlan?.Y1 ?? 0f;
-            var y2 = keyPlotPlan?.Y2 ?? 0f;
+        // Local EN coordinates at Origin of 3D(X=0, Y=0)
+        var localE = _globalData.SelectedProject.LocalE;
+        var localN = _globalData.SelectedProject.LocalN;
+        
+        // Global EN coordinates at Origin of 3D(X=0, Y=0)
+        var globalE = _globalData.SelectedProject.GlobalE;
+        var globalN = _globalData.SelectedProject.GlobalN;
+        
+        // Angle (rad) of True North with respect to Plant North (Clock wise is +ve)
+        var angleTrueNorth = _globalData.SelectedProject.AngleTrueNorth* Math.PI / 180;
+        
+        // While scaling the Key Plot Plan X2>X1? Y2>Y1?
+        var xFactor = _globalData.SelectedProject.PositiveScaleX ? 1 : -1;
+        var yFactor = _globalData.SelectedProject.PositiveScaleY? 1 : -1;
+        
+        var l = Math.Pow( Math.Pow(xyz.X, 2) + Math.Pow(xyz.Y, 2),0.5);
+        
+
+            // var keyPlotPlan = _globalData.PlotPlans.Find(plan => plan.KeyPlan);
+            //
+            // if (keyPlotPlan == null) return enu;
+            //
+            // var x1 = keyPlotPlan?.X1 ?? 0f;
+            // var x2 = keyPlotPlan?.X2 ?? 0f;
+            // var y1 = keyPlotPlan?.Y1 ?? 0f;
+            // var y2 = keyPlotPlan?.Y2 ?? 0f;
 
             if (coordSystem.ToUpper() == "GLOBAL")
             {
-                enu.E = keyPlotPlan?.GlobalE ?? 0f;
-                enu.N = keyPlotPlan?.GlobalN ?? 0f;
+                // enu.E = keyPlotPlan?.GlobalE ?? 0f;
+                // enu.N = keyPlotPlan?.GlobalN ?? 0f;
+                
+                var angle = Math.Abs(xyz.X) < .01
+                    ? Math.PI / 2 : Math.Atan(xyz.Y / xyz.X);
+                angle += xyz.Y > 0 ? 0: Math.PI;
+                
+                var dx = (float)(l * Math.Cos(angle-angleTrueNorth) * xFactor);
+                var dy = (float)(l * Math.Sin(angle- angleTrueNorth) * yFactor);
+                
+                var de = xew ? dx : dy;
+                var dn = xew ? dy : dx;
+                
+                enu.E = globalE + de;
+                enu.N = globalN + dn;
             }
             else
             {
-                enu.E = keyPlotPlan?.LocalE ?? 0f;
-                enu.N = keyPlotPlan?.LocalN ?? 0f;
+                // enu.E = keyPlotPlan?.LocalE ?? 0f;
+                // enu.N = keyPlotPlan?.LocalN ?? 0f;
+
+                enu.E = localE;
+                enu.N = localN;
             }
 
             //check the coordinate orientation        
-            if (keyPlotPlan is { XEW: true })
+            // if (keyPlotPlan is { XEW: true })
+            if(xew)    
             {
                 // X-Axis : East -> West
-                enu.E += xyz.X * (x2 > x1 ? 1 : -1);
-                enu.N += xyz.Y * (y2 > y1 ? 1 : -1);
+                enu.E += xyz.X * xFactor;
+                enu.N += xyz.Y * yFactor;
             }
             else
             {
                 // X-Axis : North -> South
-                enu.N += xyz.X * (x2 > x1 ? 1 : -1);
-                enu.E += xyz.Y * (y2 > y1 ? 1 : -1);
+                enu.N += xyz.X * xFactor;
+                enu.E += xyz.Y * yFactor;
             }
-        }
+        
 
         enu.U = xyz.Z;
         //
@@ -259,25 +297,29 @@ public class LayoutFunctionService : ILayoutFunctionService
     {
         Vector3 xyz = new(enu.E, enu.N, enu.U);
         
-        var keyPlotPlan = _globalData.PlotPlans?.Find(plan => plan.KeyPlan);
-        if (keyPlotPlan == null) return xyz;
+        if(_globalData.SelectedProject == null) return xyz;
         
-        var x1 = keyPlotPlan?.X1 ?? 0f;
-        var x2 = keyPlotPlan?.X2 ?? 0f;
-        var y1 = keyPlotPlan?.Y1 ?? 0f;
-        var y2 = keyPlotPlan?.Y2 ?? 0f;
+        var xew = _globalData.SelectedProject.XEW;
 
-        if (keyPlotPlan is { XEW: true })
+        // Local EN coordinates at Origin of 3D(X=0, Y=0)
+        var localE = _globalData.SelectedProject.LocalE;
+        var localN = _globalData.SelectedProject.LocalN;
+        
+        // While scaling the Key Plot Plan X2>X1? Y2>Y1?
+        var xFactor = _globalData.SelectedProject.PositiveScaleX ? 1 : -1;
+        var yFactor = _globalData.SelectedProject.PositiveScaleY? 1 : -1;
+        
+    if (xew)
         {
             // X-Axis : East -> West
-            xyz.X = (enu.E - x1) * (x2 > x1 ? 1 : -1);
-            xyz.Y = (enu.N - y1) * (y2 > y1 ? 1 : -1);
+            xyz.X = (enu.E - localE) * xFactor;
+            xyz.Y = (enu.N - localN) * yFactor;
         }
         else
         {
             // X-Axis : North -> South
-            xyz.X = (enu.N - x1) * (x2 > x1 ? 1 : -1);
-            xyz.Y = (enu.E - y1) * (y2 > y1 ? 1 : -1);
+            xyz.X = (enu.N - localN) * xFactor;
+            xyz.Y = (enu.E - localE) * yFactor;
         }
 
         xyz.Z = enu.U;
@@ -371,10 +413,11 @@ public class LayoutFunctionService : ILayoutFunctionService
     /// <summary></summary>
     public Vector3 LocationToVector(string locationString, string coordSystem = "")
     {
-        // this function accpets the Global/Local/UTM coordinate and convert to Vector3 (XYZ) based on the choosen coordinate system
+        // this function accepts the Local/Global/UTM coordinate string and convert to Vector3 (XYZ) based on the chosen coordinate system
         
         Vector3 point = new();
-        if (_globalData.PlotPlans.Count == 0) return point;
+        ///if (_globalData.PlotPlans.Count == 0) return point;
+        if(_globalData.SelectedProject == null) return point;
 
         try
         {
@@ -417,9 +460,10 @@ public class LayoutFunctionService : ILayoutFunctionService
     public string? VectorToLocation(Vector3 point, string coordSystem = "")
     {
         // this function is opposite to LocationToVector
-        // accepts Vector3 and convert to the Global/Local/UTM coordinate based on the chosen coordinate system
+        // accepts Vector3 and convert to the Local/Global/UTM coordinate based on the chosen coordinate system
         //
-        if (_globalData.PlotPlans?.Count == 0) return "";
+        //if (_globalData.PlotPlans?.Count == 0) return "";
+        if(_globalData.SelectedProject == null) return "";
         if (coordSystem.ToUpper() == "XYZ")
         {
             var options = new JsonSerializerOptions
@@ -445,7 +489,8 @@ public class LayoutFunctionService : ILayoutFunctionService
     
     public void SegmentUpdate(Segment segment)
     {
-        if (_globalData.PlotPlans.Count == 0) return;
+        //if (_globalData.PlotPlans.Count == 0) return;
+        if(_globalData.SelectedProject == null) return ;
         
         var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
         if (segment.UID == Guid.Empty) segment.UID = Guid.NewGuid();
@@ -543,29 +588,21 @@ public class LayoutFunctionService : ILayoutFunctionService
 
     public void BoardUpdate(Board board)
     {
-        if (_globalData.PlotPlans.Count == 0) return;
+        //if (_globalData.PlotPlans.Count == 0) return;
+        if(_globalData.SelectedProject == null) return ;
 
         if (board.UID == Guid.Empty) board.UID = Guid.NewGuid();
         ;
         board.Tag = board.Tag.Trim();
         BoardCentrePointUpdate(board);
         
-        // Default expected to be "NE" i.e., X is towards "N" and "Y" is toward East
-        var xyne = _globalData.PlotPlans?.FirstOrDefault()?.XY ?? "NE";
+        // Default expected to be "NE" i.e., Y is towards "North -South" and "X" is toward East-West
+        var xew = _globalData.SelectedProject.XEW;
 
         if (board.FaceS == null)
             board.FaceS = "?";
         else
-            BoardFaceUpdate(board, xyne);
-        //switch (xyne)
-        //{
-        //    case "EN": // EN x axix east/west and y axis north/south
-        //        Face = new Vector3((FaceS == "E") ? 1 : (FaceS == "W") ? -1 : 0, (FaceS == "N") ? 1 : (FaceS == "S") ? -1 : 0, 0);
-        //        break;
-        //    default: // NE x axix north/south and y axis east/west
-        //        Face = new Vector3((FaceS == "N") ? 1 : (FaceS == "S") ? -1 : 0, (FaceS == "E") ? 1 : (FaceS == "W") ? -1 : 0, 0);
-        //        break;
-        //}
+            BoardFaceUpdate(board, xew);
 
         board.PanelTag =board.PanelTagS != null && board.PanelTagS.Contains(',') ? board.PanelTagS.Split(',').ToList() : [];
         
@@ -603,7 +640,7 @@ public class LayoutFunctionService : ILayoutFunctionService
         }
     }
     
-    public void BoardFaceUpdate(Board board, string xyne)
+    public void BoardFaceUpdate(Board board, bool xew)
     {
         var e = (float)(board.FaceS.Contains('E') || board.FaceS.Contains('e') ? 1 :
             board.FaceS.Contains('W') || board.FaceS.Contains('w') ? -1 : 0);
@@ -613,7 +650,7 @@ public class LayoutFunctionService : ILayoutFunctionService
             board.FaceS.Contains('D') || board.FaceS.Contains('d') ? -1 : 0);
         //
         if (e == 0f && n == 0f && u == 0) n = -1; // default Fcae towards -ve Y axis
-        board.Face = Vector3.Normalize(new Vector3(xyne == "EN" ? e : n, xyne == "EN" ? n : e, u));
+        board.Face = Vector3.Normalize(new Vector3(xew ? e : n, xew ? n : e, u));
     }
     
     public void BoardCentrePointUpdate(Board board)

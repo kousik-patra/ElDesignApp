@@ -14,7 +14,6 @@
 
 
 @inject IDataRetrievalService DataService
-@inject IMyTableService MyTable
 @inject ITableService Table
 @inject IGlobalDataService GlobalData
 @inject IMyFunctionService MyFunction
@@ -322,9 +321,7 @@
 
         TableProperties.ForEach(prop => inputClasses.Add(inputClass));
 
-        // read the DB filed name
-        // if the C# class property not among the SQL Server DB filed, then disable editing
-        SQLFieldsNames = MyTable.GetSqlFieldsNames(typeof(T).Name);
+
 
         _Type = typeof(T).Name;
         tagProperty = typeof(T).GetProperty("Tag");
@@ -338,11 +335,14 @@
         base.OnInitialized();
     }
 
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
+        // read the DB filed name
+        // if the C# class property not among the SQL Server DB filed, then disable editing
+        SQLFieldsNames = await Table.GetColumnNamesAsync(typeof(T).Name);
         //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
-        return Task.CompletedTask;
-        //return base.OnInitializedAsync();
+        //return Task.CompletedTask;
+        await base.OnInitializedAsync();
     }
 
     protected override void OnParametersSet()

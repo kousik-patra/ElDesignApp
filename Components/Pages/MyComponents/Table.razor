@@ -12,7 +12,7 @@
 @using ElDesignApp.Components.MyModals
 @using OfficeOpenXml;
 
-@typeparam T;
+@typeparam T where T : class, new()
 
 @inject NavigationManager MyNavigationManager
 @inject IJSRuntime Js;
@@ -22,7 +22,6 @@
 @using OfficeOpenXml
 @using LicenseContext = OfficeOpenXml.LicenseContext
 @inject IDataRetrievalService DataService
-@inject IMyTableService MyTable
 @inject ITableService TableService
 @inject IGlobalDataService GlobalData
 @inject IMyFunctionService MyFunction
@@ -203,8 +202,11 @@
                                     <button @onclick="ParentUpdate" data-toggle="button" class="btn btn-outline-success"
                                             title="Verify and Update Changes">Update
                                     </button>
-                                    <button @onclick="Download" data-toggle="button" class="btn btn-outline-primary"
-                                            title="Download the table">Download
+                                    <button @onclick="DownloadData" data-toggle="button" class="btn btn-outline-primary"
+                                            title="Download the table">Download Data
+                                    </button>
+                                    <button @onclick="DownloadTemplate" data-toggle="button" class="btn btn-outline-primary"
+                                            title="Download the table">Download Template
                                     </button>
                                 </div>
                             </div>
@@ -852,8 +854,7 @@
         System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name} : Warning - UID property not found");
     }
 
-    // Initialize SQL field names
-    _sqlFieldsNames = MyTable.GetSqlFieldsNames(typeof(T).Name) ?? [];
+
 
     // Initialize property indexing (0 = not indexed, 1 = ascending, 2 = descending)
     _propertyIndexed.Clear();
@@ -912,6 +913,10 @@
         //Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
         //
         //return base.OnInitializedAsync();
+        
+        // Initialize SQL field names
+        _sqlFieldsNames = await TableService.GetColumnNamesAsync(typeof(T).Name);
+        
         // Get current user information
         try
         {
@@ -1332,11 +1337,10 @@
         try
         {
             // Call the updated service method with sheet name
-            var result = await MyTable.ImportFromExcel(
-                _selectedFile, 
-                (T)Activator.CreateInstance(typeof(T))!, 
-                selectedSheet
-            );
+            var result = await TableService.ImportFromExcelAsync<T>(_selectedFile, selectedSheet);
+            
+            
+            
 
             _importedItemsFromExcel = result.Items;
             _excelImportSummary = result.Summary;
@@ -1799,19 +1803,31 @@ private async Task CallUpdateMethodIfExists(T item)
     }
 }
 
-    private async void Download()
+    private async Task DownloadData()
     {
         // download total records to excel
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} : Table {typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
         //
-        var excelBytes = MyTable.GenerateExcelWorkbookByte(_iteratedList);
+        var excelBytes = TableService.ExportToExcel<T>(_iteratedList);
         await Js.InvokeVoidAsync("saveAsFile", $"{typeof(T).Name}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", Convert.ToBase64String(excelBytes));
 
         if (_iteratedList == null) return;
         _displayMsgAction = _iteratedList.Count + " record(s) saved in Excel successfully.";
         Debug.WriteLine($"Table - downloading {_iteratedList.Count} records");
     }
+    
+    private async Task DownloadTemplate()
+    {
+        // download template to excel for data import
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} : Table {typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
+        //
+        var excelBytes = await TableService.ExportExcelTemplateAsync<T>();
+        await Js.InvokeVoidAsync("saveAsFile", $"{typeof(T).Name}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", Convert.ToBase64String(excelBytes));
 
+        _displayMsgAction = $"Table {typeof(T).Name} template generated successfully.";
+        Debug.WriteLine($"Table - downloading {typeof(T).Name} templates");
+    }
+    
 
     /// <summary>
     /// </summary>

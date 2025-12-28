@@ -3,7 +3,7 @@
 @inject IRoleAuthorizationService RoleAuthService
 @inject RoleManager<IdentityRole> RoleManager
 @inject IJSRuntime JS
-@inject Services.IMyTableService MyTable
+@inject ITableService Table
 @inject IDataRetrievalService DataRetrievalService
 
 <div class="modal fade show d-block" style="background-color: rgba(0,0,0,0.6);" tabindex="-1">
@@ -351,7 +351,7 @@
                     CreatedBy = "Admin"
                 };
         
-                await MyTable.InsertItemAsync(newMapping);
+                await Table.InsertAsync(newMapping);
 
                 await LoadMappings();
         
@@ -376,8 +376,7 @@
                 _editingMapping.Description = _description?.Trim() ?? string.Empty;
                 _editingMapping.MappedHardRoles = JsonSerializer.Serialize(_selectedHardRoles);
         
-                await MyTable.UpdateParameter(_editingMapping, _editingMapping.UID,
-                    ["Description", "MappedHardRoles"]);
+                await Table.UpdateFieldsAsync(_editingMapping, ["Description", "MappedHardRoles"]);
             }
 
             await LoadMappings();
@@ -402,7 +401,7 @@
         {
             // Soft delete by setting IsActive to false
             mapping.IsActive = false;
-            await MyTable.UpdateParameter(mapping, mapping.UID, new List<string>() { "IsActive" });
+            await Table.UpdateFieldsAsync(mapping,["IsActive"] );
             // Clear cache
             await DataRetrievalService.InvalidateCacheAsync("RoleMapping");
 

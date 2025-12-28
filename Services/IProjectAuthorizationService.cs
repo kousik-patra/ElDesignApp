@@ -3,6 +3,7 @@ using System.Text.Json;
 using ElDesignApp.Constants;
 using ElDesignApp.Data;
 using ElDesignApp.Models;
+using ElDesignApp.Services.DataBase;
 using Microsoft.AspNetCore.Identity;
 
 namespace ElDesignApp.Services;
@@ -26,14 +27,14 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
     private readonly IServiceProvider _serviceProvider;
     private readonly IDataRetrievalService _dataService;
     private readonly UserManager<ApplicationUser> _userManager;
-    private readonly IMyTableService _tableService;
+    private readonly ITableService _tableService;
     private readonly ILogger<ProjectAuthorizationService> _logger;
 
     public ProjectAuthorizationService(
         IServiceProvider serviceProvider,
         IDataRetrievalService dataService,
         UserManager<ApplicationUser> userManager,
-        IMyTableService tableService,
+        ITableService tableService,
         ILogger<ProjectAuthorizationService> logger)
     {
         _serviceProvider = serviceProvider;
@@ -75,7 +76,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
             
             // Check if user is Project Admin via ProjectUserAssignment
             var sql = "SELECT * FROM ProjectUserAssignment WHERE ProjectId = @ProjectId AND UserId = @UserId AND IsActive = 1";
-            var assignments = await _tableService.LoadData<ProjectUserAssignment, dynamic>(sql, 
+            var assignments = await _tableService.QueryAsync<ProjectUserAssignment>(sql, 
                 new { ProjectId = projectId, UserId = userId });
             
             var assignment = assignments?.FirstOrDefault();
@@ -87,14 +88,14 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
                 
                 // Get user's custom roles in this project
                 var roleSql = "SELECT CustomRoleName FROM ProjectUserRoles WHERE ProjectId = @ProjectId AND UserId = @UserId AND IsActive = 1";
-                var userRoles = await _tableService.LoadData<CustomRoleRecord, dynamic>(roleSql, 
+                var userRoles = await _tableService.QueryAsync<CustomRoleRecord>(roleSql, 
                     new { ProjectId = projectId, UserId = userId });
                 
                 if (userRoles != null && userRoles.Any())
                 {
                     // Get role mappings for this project
                     var mappingSql = "SELECT * FROM RoleMapping WHERE ProjectId = @ProjectId AND IsActive = 1";
-                    var mappings = await _tableService.LoadData<RoleMapping, dynamic>(mappingSql, 
+                    var mappings = await _tableService.QueryAsync<RoleMapping>(mappingSql, 
                         new { ProjectId = projectId });
                     
                     // Check if any of user's custom roles map to the required hard role
@@ -134,7 +135,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
             
             // Get projects where user is ProjectAdmin
             var sql = "SELECT ProjectId FROM ProjectUserAssignment WHERE UserId = @UserId AND IsProjectAdmin = 1 AND IsActive = 1";
-            var adminProjectIds = await _tableService.LoadData<ProjectIdRecord, dynamic>(sql, new { UserId = userId });
+            var adminProjectIds = await _tableService.QueryAsync<ProjectIdRecord>(sql, new { UserId = userId });
             
             if (adminProjectIds != null && adminProjectIds.Any())
             {
@@ -157,7 +158,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
         {
             // Get all projects where user has any assignment
             var sql = "SELECT DISTINCT ProjectId FROM ProjectUserAssignment WHERE UserId = @UserId AND IsActive = 1";
-            var projectIdRecords = await _tableService.LoadData<ProjectIdRecord, dynamic>(sql, new { UserId = userId });
+            var projectIdRecords = await _tableService.QueryAsync<ProjectIdRecord>(sql, new { UserId = userId });
             
             if (projectIdRecords != null && projectIdRecords.Any())
             {
@@ -189,7 +190,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
             
             // Check if Project Admin
             var assignmentSql = "SELECT * FROM ProjectUserAssignment WHERE ProjectId = @ProjectId AND UserId = @UserId AND IsActive = 1";
-            var assignments = await _tableService.LoadData<ProjectUserAssignment, dynamic>(assignmentSql, 
+            var assignments = await _tableService.QueryAsync<ProjectUserAssignment>(assignmentSql, 
                 new { ProjectId = projectId, UserId = userId });
             
             var assignment = assignments?.FirstOrDefault();
@@ -202,14 +203,14 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
                 
                 // Get user's custom roles
                 var roleSql = "SELECT CustomRoleName FROM ProjectUserRoles WHERE ProjectId = @ProjectId AND UserId = @UserId AND IsActive = 1";
-                var userRoles = await _tableService.LoadData<CustomRoleRecord, dynamic>(roleSql, 
+                var userRoles = await _tableService.QueryAsync<CustomRoleRecord>(roleSql, 
                     new { ProjectId = projectId, UserId = userId });
                 
                 if (userRoles != null && userRoles.Any())
                 {
                     // Get role mappings
                     var mappingSql = "SELECT * FROM RoleMapping WHERE ProjectId = @ProjectId AND IsActive = 1";
-                    var mappings = await _tableService.LoadData<RoleMapping, dynamic>(mappingSql, 
+                    var mappings = await _tableService.QueryAsync<RoleMapping>(mappingSql, 
                         new { ProjectId = projectId });
                     
                     foreach (var userRole in userRoles)
@@ -249,7 +250,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
             
             // Get all users assigned to this project who are NOT admins
             var sql = "SELECT UserId FROM ProjectUserAssignment WHERE ProjectId = @ProjectId AND IsProjectAdmin = 0 AND IsActive = 1";
-            var userIdRecords = await _tableService.LoadData<UserIdRecord, dynamic>(sql, new { ProjectId = projectId });
+            var userIdRecords = await _tableService.QueryAsync<UserIdRecord>(sql, new { ProjectId = projectId });
             
             var users = new List<ApplicationUser>();
             if (userIdRecords != null)
@@ -286,7 +287,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
             
             // Get all active assignments for this project
             var sql = "SELECT DISTINCT UserId FROM ProjectUserAssignment WHERE ProjectId = @ProjectId AND IsActive = 1";
-            var userIdRecords = await _tableService.LoadData<UserIdRecord, dynamic>(sql, new { ProjectId = projectId });
+            var userIdRecords = await _tableService.QueryAsync<UserIdRecord>(sql, new { ProjectId = projectId });
             
             var users = new List<ApplicationUser>();
             if (userIdRecords != null)
@@ -323,7 +324,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
             
             // Check if user is assigned to the project
             var assignmentCheckSql = "SELECT * FROM ProjectUserAssignment WHERE ProjectId = @ProjectId AND UserId = @UserId AND IsActive = 1";
-            var existingAssignments = await _tableService.LoadData<ProjectUserAssignment, dynamic>(assignmentCheckSql, 
+            var existingAssignments = await _tableService.QueryAsync<ProjectUserAssignment>(assignmentCheckSql, 
                 new { ProjectId = projectId, UserId = targetUserId });
             
             if (existingAssignments == null || !existingAssignments.Any())
@@ -333,7 +334,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
             
             // Check if role assignment already exists
             var roleCheckSql = "SELECT * FROM ProjectUserRoles WHERE ProjectId = @ProjectId AND UserId = @UserId AND CustomRoleName = @CustomRoleName";
-            var existingRoles = await _tableService.LoadData<ProjectUserRole, dynamic>(roleCheckSql, 
+            var existingRoles = await _tableService.QueryAsync<ProjectUserRole>(roleCheckSql, 
                 new { ProjectId = projectId, UserId = targetUserId, CustomRoleName = customRoleName });
             
             var existing = existingRoles?.FirstOrDefault(r => r.IsActive);
@@ -356,7 +357,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
                 IsActive = true
             };
             
-            await _tableService.InsertItemAsync(roleAssignment);
+            await _tableService.InsertAsync(roleAssignment);
         }
         catch (Exception ex)
         {
@@ -377,7 +378,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
             }
             
             var sql = "SELECT * FROM ProjectUserAssignment WHERE ProjectId = @ProjectId AND UserId = @UserId AND IsActive = 1";
-            var assignments = await _tableService.LoadData<ProjectUserAssignment, dynamic>(sql, 
+            var assignments = await _tableService.QueryAsync<ProjectUserAssignment>(sql, 
                 new { ProjectId = projectId, UserId = targetUserId });
             
             var assignment = assignments?.FirstOrDefault();
@@ -387,12 +388,11 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
                 assignment.RemovedBy = adminUserId;
                 assignment.RemovedOn = DateTime.Now;
                 
-                await _tableService.UpdateParameter(assignment, assignment.UID, 
-                    new List<string> { "IsActive", "RemovedBy", "RemovedOn" });
+                await _tableService.UpdateFieldsAsync(assignment, ["IsActive", "RemovedBy", "RemovedOn"]);
                     
                 // Also remove all role assignments
                 var roleSql = "SELECT * FROM ProjectUserRoles WHERE ProjectId = @ProjectId AND UserId = @UserId AND IsActive = 1";
-                var roleAssignments = await _tableService.LoadData<ProjectUserRole, dynamic>(roleSql, 
+                var roleAssignments = await _tableService.QueryAsync<ProjectUserRole>(roleSql, 
                     new { ProjectId = projectId, UserId = targetUserId });
                 
                 if (roleAssignments != null)
@@ -403,8 +403,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
                         roleAssignment.RemovedBy = adminUserId;
                         roleAssignment.RemovedOn = DateTime.Now;
                         
-                        await _tableService.UpdateParameter(roleAssignment, roleAssignment.UID, 
-                            new List<string> { "IsActive", "RemovedBy", "RemovedOn" });
+                        await _tableService.UpdateFieldsAsync(roleAssignment, ["IsActive", "RemovedBy", "RemovedOn"]);
                     }
                 }
             }
@@ -421,7 +420,7 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
         try
         {
             var sql = "SELECT * FROM ProjectUserAssignment WHERE ProjectId = @ProjectId AND IsActive = 1";
-            var assignments = await _tableService.LoadData<ProjectUserAssignment, dynamic>(sql, new { ProjectId = projectId });
+            var assignments = await _tableService.QueryAsync<ProjectUserAssignment>(sql, new { ProjectId = projectId });
             return assignments ?? new List<ProjectUserAssignment>();
         }
         catch (Exception ex)
@@ -430,6 +429,9 @@ public class ProjectAuthorizationService : IProjectAuthorizationService
             return new List<ProjectUserAssignment>();
         }
     }
+    
+    
+    
 }
 
 // Helper classes for LoadData returns

@@ -12,6 +12,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OfficeOpenXml;
 
+
 namespace ElDesignApp.Services.DataBase;
 
 #region Custom Exceptions
@@ -155,7 +156,7 @@ public interface ITableService
     /// <summary>
     /// Bulk copy data to a table (replaces existing project data)
     /// </summary>
-    Task BulkCopyAsync<T>(List<T> items, string projectId) where T : class;
+    Task BulkCopyAsync<T>(List<T> items) where T : class;
 
     #endregion
 
@@ -184,11 +185,23 @@ public interface ITableService
     /// Get all table names in the database
     /// </summary>
     Task<List<string>> GetTableNamesAsync();
+    
+    /// <summary>
+    /// Get all table names from a specific database connection
+    /// </summary>
+    Task<List<string>> GetTableNamesAsync(string connectionString);
+
 
     #endregion
 
     #region Excel Operations
-
+    
+    /// <summary>
+    /// Async version - Exports items to Excel with SQL column filtering
+    /// </summary>
+    Task<byte[]> ExportExcelTemplateAsync<T>() where T : new();
+    
+    
     /// <summary>
     /// Import data from Excel file
     /// </summary>
@@ -202,7 +215,7 @@ public interface ITableService
     /// <summary>
     /// Generate Excel workbook bytes from a list
     /// </summary>
-    byte[] ExportToExcel<T>(List<T>? items) where T : class, new();
+    byte[] ExportToExcel<T>(List<T>? items) where T : new();
 
     #endregion
 
@@ -255,22 +268,30 @@ public class TableService : ITableService
     private readonly IConfiguration _configuration;
     private readonly ILogger<TableService> _logger;
     private readonly string _connectionString;
+    private readonly IUserContextService _userContext;
 
     // Column name cache to avoid repeated schema queries
     private readonly Dictionary<string, List<string>> _columnCache = new();
     private readonly object _cacheLock = new();
+    private readonly string _userName;
 
     #endregion
 
     #region Constructor
 
-    public TableService(IConfiguration configuration, ILogger<TableService> logger)
+    public TableService(
+        IConfiguration configuration, 
+        ILogger<TableService> logger, 
+        IUserContextService userContext)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _connectionString = _configuration.GetConnectionString("DefaultConnection")
                             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is missing.");
+
+        _userContext = userContext ?? throw new ArgumentNullException(nameof(userContext));
+
     }
 
     #endregion
@@ -677,14 +698,25 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         return new UpdateResult(added, modified, deleted, errors);
     }
 
-    public async Task BulkCopyAsync<T>(List<T> items, string projectId) where T : class
+    public async Task BulkCopyAsync<T>(List<T> items) where T : class
     {
+        var (userName, projectId) = await _userContext.GetContextAsync();
         if (items == null || items.Count == 0) return;
         if (string.IsNullOrWhiteSpace(projectId))
             throw new ArgumentException("Project ID is required", nameof(projectId));
 
         var tableName = typeof(T).Name;
 
+        // Set UpdatedBy for all items
+        var updatedByProp = typeof(T).GetProperty(UPDATED_BY_FIELD);
+        if (updatedByProp != null)
+        {
+            foreach (var item in items)
+            {
+                updatedByProp.SetValue(item, userName);
+            }
+        }
+        
         // Set UpdatedOn for all items
         var updatedOnProp = typeof(T).GetProperty(UPDATED_ON_FIELD);
         if (updatedOnProp != null)
@@ -793,6 +825,18 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         return await QueryAsync<string>(sql);
     }
 
+    public async Task<List<string>> GetTableNamesAsync(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new ArgumentException("Connection string is required", nameof(connectionString));
+
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+    
+        var sql = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME";
+        var tables = await connection.QueryAsync<string>(sql);
+        return tables.ToList();
+    }
     /// <summary>
     /// Clear the column name cache (useful after schema changes)
     /// </summary>
@@ -807,6 +851,79 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
     #endregion
 
     #region Excel Operations
+    
+    
+    /// <summary>
+    /// Async version - Exports items to Excel with SQL column filtering
+    /// </summary>
+    public async Task<byte[]> ExportExcelTemplateAsync<T>() where T : new()
+    {
+        var tableName = typeof(T).Name;
+
+        var sqlColumns = await GetColumnNamesAsync(tableName);
+        
+        if (sqlColumns.Count == 0)
+        {
+            throw new InvalidOperationException($"Table '{tableName}' not found or has no columns.");
+        }
+        
+        return await Task.Run(() => GenerateExcelTemplate<T>(sqlColumns));
+
+    }
+
+    private byte[] GenerateExcelTemplate<T>( List<string> sqlColumns)
+    {
+        
+        ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
+        using var package = new ExcelPackage();
+        var ws = package.Workbook.Worksheets.Add(typeof(T).Name);
+
+        var properties = typeof(T).GetProperties()
+            .Where(p => sqlColumns.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(p => p.GetCustomAttribute<DisplayAttribute>()?.Order ?? int.MaxValue)
+            .ToList();
+
+        if (properties.Count == 0)
+        {
+            throw new InvalidOperationException($"No matching columns found between class '{typeof(T).Name}' and SQL table.");
+        }
+
+        // Headers - Row 1: Property names
+        for (int col = 0; col < properties.Count; col++)
+        {
+            ws.Cells[1, col + 1].Value = properties[col].Name;
+        }
+
+        // Headers - Row 2: Display names
+        for (int col = 0; col < properties.Count; col++)
+        {
+            var displayName = properties[col].GetCustomAttribute<DisplayAttribute>()?.Name 
+                              ?? properties[col].Name;
+            ws.Cells[2, col + 1].Value = displayName;
+        }
+
+        // Data shall be empty as its a template for data input
+
+        // Formatting
+        var range = ws.Cells[1, 1, 9999, properties.Count];
+        range.AutoFilter = true;
+        range.AutoFitColumns();
+
+        for (int col = 1; col <= properties.Count; col++)
+        {
+            ws.Column(col).Width = Math.Min(ws.Column(col).Width, 100);
+        }
+
+        ws.Row(1).Style.Font.Bold = true;
+        ws.Row(2).Style.Font.Bold = true;
+        ws.View.FreezePanes(3, 1);
+
+        return package.GetAsByteArray();
+    }
+        
+  
+    
+    
 
     public async Task<ImportResult<T>> ImportFromExcelAsync<T>(IBrowserFile file, string? sheetName = null) where T : class, new()
     {
@@ -845,7 +962,7 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         return await ImportFromExcelAsync<T>(e.File, sheetName);
     }
 
-    public byte[] ExportToExcel<T>(List<T>? items) where T : class, new()
+    public byte[] ExportToExcel<T>(List<T>? items) where T : new()
     {
         items ??= new List<T> { new T() };
 
@@ -862,8 +979,13 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         // Write headers
         for (int col = 0; col < properties.Count; col++)
         {
-            var displayName = properties[col].GetCustomAttribute<DisplayAttribute>()?.Name ?? properties[col].Name;
+            var displayName = properties[col].Name;
             ws.Cells[1, col + 1].Value = displayName;
+        }
+        for (int col = 0; col < properties.Count; col++)
+        {
+            var displayName = properties[col].GetCustomAttribute<DisplayAttribute>()?.Name ?? properties[col].Name;
+            ws.Cells[2, col + 1].Value = displayName;
         }
 
         // Write data
@@ -871,7 +993,7 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         {
             for (int col = 0; col < properties.Count; col++)
             {
-                ws.Cells[row + 2, col + 1].Value = properties[col].GetValue(items[row]);
+                ws.Cells[row + 3, col + 1].Value = properties[col].GetValue(items[row]);
             }
         }
 
@@ -1207,8 +1329,8 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         var uidProp = properties.FirstOrDefault(p =>
             p.Name.Equals(UID_FIELD, StringComparison.OrdinalIgnoreCase));
 
-        // Process rows
-        for (int row = 2; row <= rowCount; row++)
+        // Process rows from row 3 as row 1 has long filed, row 2 has short field
+        for (int row = 3; row <= rowCount; row++)
         {
             try
             {
