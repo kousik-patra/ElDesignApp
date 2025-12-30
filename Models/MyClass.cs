@@ -289,15 +289,22 @@ public class Project
 // Base class with the Basic Info to be inherited by ALL classes
 public class BaseInfo
 {
+    [ExcludeFromExcelImport] 
     [ExcludeFromExcelExport]
     [Display(Name = "UID", Order = 1)] public Guid UID { get; set; }
     [ExcludeFromExcelExport]
+    
+    [ExcludeFromExcelImport] 
     [Display(Name = "Project", Order = 2)] public string? ProjectId { get; set; }
+    
+    
     [ExcludeFromExcelExport]
     [Display(Name = "Option", Order = 3)] public string? OptionId { get; set; } = "base";
     
+    [ExcludeFromExcelImport] 
     [Display(Name = "Sequence", Order = 0)]
     public int Seq { get; set; }
+    
     [Display(Name = "Record", Order = 5)] public string? RecordId { get; set; } // Users own identification record # for reference
     
     [Required] [Display(Name = "Tag", Order = 6)]
@@ -311,12 +318,17 @@ public class BaseInfo
     public string? TagDescription { get; set; } // Tag Description
     [Display(Name = "Remark", Order = 90)] public string? Remark { get; set; } = "";
     
+    [ExcludeFromExcelImport] 
     [Display(Name = "Updated By", Order = 91)] public string UpdatedBy { get; set; } = "KP";
+    
+    [ExcludeFromExcelImport] 
     [Display(Name = "Update Date Time", Order = 92)] public DateTime UpdatedOn { get; set; }
 
-
+    [ExcludeFromExcelImport] 
     [ExcludeFromExcelExport]
     public List<string> CellCSS { get; set; } // dynamically assign CSS for Table 
+    
+    [ExcludeFromExcelImport] 
     [ExcludeFromExcelExport]
     public bool Save2DB { get; set; } // if this item are programatically generated or to be saved to DB
 }
@@ -653,6 +665,13 @@ public class ExcludeFromExcelExportAttribute : Attribute
 public class IncludeExcelExportAttribute : Attribute
 {
 }
+
+/// <summary>
+/// Mark properties to exclude from Excel import
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public class ExcludeFromExcelImportAttribute : Attribute { }
+
 
 public class CableBranchValidationAttribute : ValidationAttribute
 {

@@ -16,6 +16,7 @@
 @inject IMyFunctionService MyFunction
 @inject ILayoutFunctionService LayoutFunction
 @inject IProjectContextService ProjectContext
+@inject IJSRuntime JSRuntime
 
 @namespace ElDesignApp.Components.Pages.MyComponents
 
@@ -282,6 +283,16 @@
                 
                 // Refresh cache
                 await Refresh();
+                
+    
+                // Force MainLayout to re-render with new ProjectId
+                StateHasChanged();
+    
+                // Or directly trigger scene refresh via JS
+                await JSRuntime.InvokeVoidAsync("clearAllSceneLayers");
+
+                
+                
             }
         }
         catch (Exception ex)

@@ -448,7 +448,6 @@ obj/
 node_modules/
 wwwroot/lib/
 wwwroot/dist/
-NpmJS/
 node_modules/
 .idea/
 dataprotection-keys/

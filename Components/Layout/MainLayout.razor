@@ -1,4 +1,7 @@
-﻿@inherits LayoutComponentBase
+﻿@using Microsoft.AspNetCore.Authorization
+@inherits LayoutComponentBase
+@inject NavigationManager NavigationManager
+@inject IGlobalDataService GlobalData
 
 <div class="page">
     <div class="sidebar">
@@ -7,11 +10,17 @@
 
     <main>
         <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+            <!-- Header content -->
         </div>
 
         <article class="content px-4">
             @Body
+            
+            <!-- Shared 3D Scene - below page content -->
+            <SharedSceneHost @rendermode="InteractiveServer" 
+                             CurrentPage="@_currentPage" 
+                             ProjectId="@_currentProjectId"
+                             Visible="@_show3D" />
         </article>
     </main>
 </div>
@@ -22,3 +31,38 @@
     <span class="dismiss">🗙</span>
 </div>
 
+@code {
+    private string _currentPage = "";
+    private string? _currentProjectId => GlobalData.SelectedProject?.UID.ToString();
+    
+    private bool _show3D = true;
+
+    protected override void OnInitialized()
+    {
+        _currentPage = GetPageName(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _currentPage = GetPageName(e.Location);
+        StateHasChanged();
+    }
+
+    private string GetPageName(string uri)
+    {
+        var path = new Uri(uri).AbsolutePath.ToLower();
+        return path switch
+        {
+            "/loadlist" => "LoadList",
+            "/segment" => "Segment",
+            "/cable" => "Cable",
+            _ => "Default"
+        };
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}

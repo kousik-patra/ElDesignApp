@@ -1,0 +1,155 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JSRuntime
+@inject IGlobalDataService GlobalData
+@inject ILayoutFunctionService LayoutFunction
+
+<div id="shared-scene-container" 
+     style="width: 100%; 
+            height: @(_isVisible ? "800px" : "0px"); 
+            display: @(_isVisible ? "block" : "none");
+            overflow: hidden;">
+</div>
+
+@code {
+    private DotNetObjectReference<Draw>? _drawRef;
+    private bool _isInitialized;
+    private bool _isVisible = true;
+    [Parameter] public string CurrentPage { get; set; } = "";
+    [Parameter] public string? ProjectId { get; set; }
+    [Parameter] public bool Visible { get; set; } = true;
+    private string? _previousProjectId;
+
+    protected override void OnParametersSet()
+    {
+        _isVisible = Visible;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            Console.WriteLine("SharedSceneHost: Initializing scene...");
+            
+            _drawRef = DotNetObjectReference.Create(new Draw(LayoutFunction, GlobalData));
+            
+            var savedState = GlobalData.sceneDataCurrent?.SceneJSON ?? "";
+            
+            try
+            {
+                await JSRuntime.InvokeVoidAsync(
+                    "initializeScene", 
+                    "shared-scene-container", 
+                    savedState, 
+                    _drawRef);
+                
+                _isInitialized = true;
+                _previousProjectId = ProjectId;
+                Console.WriteLine("SharedSceneHost: Scene initialized!");
+                
+                await DrawPlotPlansAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"SharedSceneHost ERROR: {ex.Message}");
+            }
+        }
+    }
+
+    
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!_isInitialized) return;
+
+        // Check if project changed
+        if (ProjectId != _previousProjectId && !string.IsNullOrEmpty(ProjectId))
+        {
+            Console.WriteLine($"SharedSceneHost: Project changed from {_previousProjectId} to {ProjectId}");
+            _previousProjectId = ProjectId;
+            
+            await ClearAndReloadSceneAsync();
+        }
+
+        // Handle page context changes
+        if (!string.IsNullOrEmpty(CurrentPage))
+        {
+            var layers = GetLayersForPage(CurrentPage);
+            try
+            {
+                await JSRuntime.InvokeVoidAsync(
+                    "setPageContext", 
+                    CurrentPage, 
+                    System.Text.Json.JsonSerializer.Serialize(layers));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"SetPageContext error: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ClearAndReloadSceneAsync()
+    {
+        try
+        {
+            Console.WriteLine("SharedSceneHost: Clearing scene for new project...");
+            
+            // Clear all rendered objects
+            await JSRuntime.InvokeVoidAsync("clearAllSceneLayers");
+            
+            // Reload plot plans for new project
+            await DrawPlotPlansAsync();
+            
+            Console.WriteLine("SharedSceneHost: Scene reloaded for new project");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ClearAndReloadScene error: {ex.Message}");
+        }
+    }
+    
+
+    private int[] GetLayersForPage(string pageName)
+    {
+        return pageName switch
+        {
+            "LoadList" => [1, 2],
+            "Segment" => [1, 3, 4, 5, 6, 7, 8, 9],
+            "Cable" => [1, 3, 10],
+            _ => [1]
+        };
+    }
+
+    
+    private async Task DrawPlotPlansAsync()
+    {
+        if (GlobalData.PlotPlans == null || GlobalData.PlotPlans.Count == 0)
+        {
+            Console.WriteLine("SharedSceneHost: No plot plans to draw");
+            return;
+        }
+        
+        Console.WriteLine($"SharedSceneHost: Drawing {GlobalData.PlotPlans.Count} plot plans");
+        
+        foreach (var plot in GlobalData.PlotPlans)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("drawPlane", 
+                    plot.Tag, plot.TagDescription, plot.ImgString,
+                    plot.ScaleX, plot.ScaleY, 
+                    plot.CentreX, plot.CentreY, 
+                    plot.Z, plot.Opacity);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error drawing plot {plot.Tag}: {ex.Message}");
+            }
+        }
+    }
+    
+
+    public async ValueTask DisposeAsync()
+    {
+        _drawRef?.Dispose();
+    }
+}

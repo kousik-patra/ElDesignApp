@@ -25,17 +25,21 @@
 @inject NavigationManager MyNavigationManager
 
 
-<div style="width: @(GlobalData.sceneDataLoad.RendererWidthPX)px">
 
-
+<div style="width: @GlobalData.sceneDataLoad.RendererWidthPX">
     <div class="align-content-center" style="background-color:beige">
         <h4>Load List</h4>
     </div>
+    
+    <!-- Toggle 3D visibility -->
+    <button @onclick="Toggle3DView" class="btn btn-info">
+        @(_show3D ? "Hide" : "Show") 3D View
+    </button>
+    
     @if (_isLoading)
     {
-        <img src="./images/loading-green_dots.gif" asp-append-version="true" width="300" alt="loading...."/>
+        <img src="./images/loading-green_dots.gif" width="300" alt="loading...."/>
     }
-
     else
     {
         <div class="container-fluid tabcontent">
@@ -51,30 +55,66 @@
                    WarningMessage="@_tableWarningMessage"
                    ErrorMessage="@_tableErrorMessage"
                    TableWidthPx="@GlobalData.sceneDataLoad.RendererWidthPX">
-                <Result>
-                    <h6>Result messages here</h6>
-                </Result>
             </Table>
         </div>
-        @if (_isProcessing)
-        {
-            <img src="./images/loading-green_dots.gif" asp-append-version="true" width="300" alt="processing...."/>
-            <p>Processing remaining items in the background...</p>
-        }
-
-        <br/>
-        <br/>
-        <Plot @rendermode="InteractiveServer"
-              Title="Load List"
-              DivString="loadDiv"
-              DisplayItems="_displayItems"
-              SceneInfo="GlobalData.sceneDataLoad">
-        </Plot>
     }
-
-    <br/>
-
 </div>
+
+
+
+
+@* *@
+@* *@
+@* <div style="width: @(GlobalData.sceneDataLoad.RendererWidthPX)px"> *@
+@* *@
+@* *@
+@*     <div class="align-content-center" style="background-color:beige"> *@
+@*         <h4>Load List</h4> *@
+@*     </div> *@
+@*     @if (_isLoading) *@
+@*     { *@
+@*         <img src="./images/loading-green_dots.gif" asp-append-version="true" width="300" alt="loading...."/> *@
+@*     } *@
+@* *@
+@*     else *@
+@*     { *@
+@*         <div class="container-fluid tabcontent"> *@
+@*             <Table List="_list" *@
+@*                    ListOriginal="_listDb" *@
+@*                    T="Load" *@
+@*                    AutoCheck="AutoCheckOnTableChange" *@
+@*                    Update="@UpdateTableChange" *@
+@*                    Discard="@DiscardTableChange" *@
+@*                    Refresh="TableRefresh" *@
+@*                    SuccessMessage="@_tableSuccessMessage" *@
+@*                    InfoMessage="@_tableInfoMessage" *@
+@*                    WarningMessage="@_tableWarningMessage" *@
+@*                    ErrorMessage="@_tableErrorMessage" *@
+@*                    TableWidthPx="@GlobalData.sceneDataLoad.RendererWidthPX"> *@
+@*                 <ResultMessage> *@
+@*                     <h6>Result messages here</h6> *@
+@*                 </ResultMessage> *@
+@*             </Table> *@
+@*         </div> *@
+@*         @if (_isProcessing) *@
+@*         { *@
+@*             <img src="./images/loading-green_dots.gif" asp-append-version="true" width="300" alt="processing...."/> *@
+@*             <p>Processing remaining items in the background...</p> *@
+@*         } *@
+@* *@
+@*         <br/> *@
+@*         <br/> *@
+@*         <Plot @rendermode="InteractiveServer" *@
+@*               Title="Load List" *@
+@*               DivString="loadDiv" *@
+@*               DisplayItems="_displayItems" *@
+@*               SceneInfo="GlobalData.sceneDataLoad"> *@
+@*         </Plot> *@
+@*     } *@
+@* *@
+@*     <br/> *@
+@* *@
+@* </div> *@
 
 @code {
     
@@ -133,11 +173,18 @@
         StateHasChanged();
         base.OnInitialized();
     }
+    
+    
 
     /// <summary></summary>
     protected override async Task OnInitializedAsync()
     {
         //Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name}");
+        
+        GlobalData.selectedPage = "Load List";
+        GlobalData.sceneCurrent = "Load";
+        
+        
         (GlobalData.CableData, _logInfo, _logWarning, _logError)
             = await DataService.ReadFromCacheOrDb<Models.CableData>();
         LogResult(_logInfo, _logWarning, _logError);
@@ -189,19 +236,37 @@
         return base.OnParametersSetAsync();
     }
 
+    
     /// <summary></summary>
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             await Load(firstRender);
-
-            var objPlot = DotNetObjectReference.Create(new Draw(LayoutFunction, GlobalData));
-            await JsRuntime.InvokeVoidAsync("initialiseObjectRef", objPlot);
+            //await Task.Delay(50);
+            //var objPlot = DotNetObjectReference.Create(new Draw(LayoutFunction, GlobalData));
+            //await JsRuntime.InvokeVoidAsync("initialiseObjectRef", objPlot);
             Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
                             $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
             
-            StateHasChanged();
+            //StateHasChanged();
+        }
+        
+        if (firstRender && !_equipmentDrawn)
+        {
+            try
+            {
+                await DrawEquipmentAsync();
+                _equipmentDrawn = true;
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit disconnected, ignore
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"DrawEquipment error: {ex.Message}");
+            }
         }
 
         await base.OnAfterRenderAsync(firstRender);
@@ -364,5 +429,55 @@
         if (warning != null) _logger.LogWarning(warning);
         if (error != null) _logger.LogError(error);
     }
+    
+    
+    
+    
+    private bool _show3D = true;
+    private bool _equipmentDrawn = false;
+    
+    // Layer constant matching JavaScript
+    private const int EQUIPMENT_LAYER = 2;
+
+ 
+
+
+
+    private async Task Toggle3DView()
+    {
+        _show3D = !_show3D;
+        await JsRuntime.InvokeVoidAsync("toggleSceneVisibility", _show3D);
+        StateHasChanged();
+    }
+
+    private async Task DrawEquipmentAsync()
+    {
+        // Clear existing equipment first
+        await JsRuntime.InvokeVoidAsync("clearLayer", EQUIPMENT_LAYER);
+        
+        if (GlobalData.Equipments == null) return;
+        
+        foreach (var equip in GlobalData.Equipments)
+        {
+            // equip.Angle = 0
+            var equipAngle = 0; var equipOpacity = 1; //TODO
+            await JsRuntime.InvokeVoidAsync("drawEquipment",
+                equip.Tag, equip.CentrePoint.X, equip.CentrePoint.Y, equip.CentrePoint.Z,
+                equip.Width, equip.Depth, equip.Height,
+                equipAngle, GlobalData.equipmentColor, equipOpacity, equip.TagDescription);
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        // Your existing data loading logic
+    }
+}
+    
+    
+    
+    
+    
+    
 
 }

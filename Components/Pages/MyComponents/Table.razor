@@ -578,7 +578,7 @@
     }
     
     <div class="row justify-content-md-left">
-        <span style="width:900px; text-overflow:ellipsis; font-weight:lighter">@Result : @ActionMessage</span>
+        <span style="width:900px; text-overflow:ellipsis; font-weight:lighter">@ResultMessage : @ActionMessage</span>
         @if (SuccessMessage != "")
         {
             <div class="alert alert-success" role="alert">
@@ -688,7 +688,7 @@
     [Parameter] public string? InfoMessage { get; set; }
     [Parameter] public string? WarningMessage { get; set; }
     [Parameter] public string? ErrorMessage { get; set; }
-    [Parameter] public RenderFragment? Result { get; set; }
+    [Parameter] public RenderFragment? ResultMessage { get; set; }
     [Parameter] public RenderFragment? Footer { get; set; }
     [Parameter] public RenderFragment<T>? ItemTemplate { get; set; }
     [Parameter] public RenderFragment<PropertyInfo>? FieldTemplate { get; set; }
@@ -915,7 +915,15 @@
         //return base.OnInitializedAsync();
         
         // Initialize SQL field names
-        _sqlFieldsNames = await TableService.GetColumnNamesAsync(typeof(T).Name);
+        try
+        {
+            _sqlFieldsNames = await TableService.GetColumnNamesAsync(typeof(T).Name);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Warning: Could not get column names for {typeof(T).Name}: {ex.Message}");
+            _sqlFieldsNames = new List<string>();
+        }
         
         // Get current user information
         try
@@ -964,6 +972,14 @@
     {
         //Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
         //System.Diagnostics.Debug.WriteLine("Table - Dispose");
+        
+        _iteratedList?.Clear();
+        _filteredList?.Clear();
+        _displayList?.Clear();
+        _importedItemsFromExcel?.Clear();
+        _cellStatusRecord?.Clear();
+    
+        Debug.WriteLine($"Table<{typeof(T).Name}> disposed");
     }
 
 
@@ -1090,8 +1106,15 @@
 
     private void AddRecord()
     {
+        if (_uidProperty == null)
+        {
+            ErrorMessage = "Cannot add record: UID property not found on type.";
+            return;
+        }
+        
         // add a default new record or copy of the last selected record.
         // new blank record
+        
         var newItem = (T)Activator.CreateInstance(typeof(T))!;
         if (_selectedItem == null)
         {
@@ -1104,9 +1127,13 @@
 
         var copyItem = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(_selectedItem));
         var newItemUID = Guid.NewGuid();
+        
         _uidProperty.SetValue(copyItem, newItemUID);
-        var TagProperty = typeof(T).GetProperty("Tag");
-        TagProperty.SetValue(copyItem, $"Copy of {TagProperty.GetValue(copyItem)}");
+        var tagProperty = typeof(T).GetProperty("Tag");
+        if (tagProperty != null)
+        {
+            tagProperty.SetValue(copyItem, $"Copy of {tagProperty.GetValue(copyItem)}");
+        }
         _addedItemUiDs.Add(newItemUID);
         if (_selectedItem != null)
         {
@@ -1127,12 +1154,29 @@
     private void DeleteRecord()
     {
         // delete selected record
-        _deletedItemUiDs.Add((Guid)_uidProperty.GetValue(_selectedItem));
+        if (_selectedItem == null)
+        {
+            ErrorMessage = "No item selected for deletion.";
+            return;
+        }
+    
+        if (_uidProperty == null)
+        {
+            ErrorMessage = "UID property not found.";
+            return;
+        }
+
+        var uid = _uidProperty.GetValue(_selectedItem);
+        if (uid is Guid guidValue)
+        {
+            _deletedItemUiDs.Add(guidValue);
+            WarningMessage = $"Record #{_selectedIndex + 1} will be permanently deleted when table is updated.";
+        }
+       
         // remove later from the list when "Update" button is pressed
         // now only change the CSS
         //IterateList.Remove(selectedItem);
-        WarningMessage = $"Table - record # {_selectedIndex + 1} will be permanetly deleted when table is updated.";
-        Debug.WriteLine(WarningMessage);
+       Debug.WriteLine(WarningMessage);
         DoFilter();
     }
     
@@ -1862,17 +1906,32 @@ private async Task CallUpdateMethodIfExists(T item)
         _deletedItemUiDs.ForEach(deletedItemUid =>
         {
             if (List == null) return;
-            var itemToRemove = List.Single(item => _uidProperty.GetValue(item).ToString() == deletedItemUid.ToString());
-            List.Remove(itemToRemove);
+            
+            var itemToRemove = List?.FirstOrDefault(item => 
+                _uidProperty?.GetValue(item)?.ToString() == deletedItemUid.ToString());
+
+            if (itemToRemove != null)
+            {
+                List.Remove(itemToRemove);
+            }
+            
         });
         _deletedItemUiDs.Clear();
 
         // further validation at Parent Component
         //var args = (_iteratedList[_currentDblClickedCell.Seq], List, ListOriginal);
 
-        var args = (_iteratedList[_currentDblClickedCell.Seq], List, ListOriginal, SuccessMessage, WarningMessage, InfoMessage, ErrorMessage);
-
-        await Update.InvokeAsync(args);
+        
+        T? currentItem = null;
+        if (_currentDblClickedCell.Seq >= 0 && 
+            _iteratedList != null && 
+            _currentDblClickedCell.Seq < _iteratedList.Count)
+        {
+            currentItem = _iteratedList[_currentDblClickedCell.Seq];
+        }
+        
+        var args = (currentItem, List, ListOriginal, SuccessMessage, WarningMessage, InfoMessage, ErrorMessage);
+        await Update.InvokeAsync(args!);
     }
     
     
@@ -1903,8 +1962,17 @@ private async Task CallUpdateMethodIfExists(T item)
         SelectedItemUid = new Guid();
         _deletedItemUiDs.Clear();
         _addedItemUiDs.Clear();
-        var args = (_iteratedList[_currentDblClickedCell.Seq], List, ListOriginal);
-        await Discard.InvokeAsync(args);
+        
+        T? currentItem = null;
+        if (_currentDblClickedCell.Seq >= 0 && 
+            _iteratedList != null && 
+            _currentDblClickedCell.Seq < _iteratedList.Count)
+        {
+            currentItem = _iteratedList[_currentDblClickedCell.Seq];
+        }
+    
+        var args = (currentItem, List, ListOriginal);
+        await Discard.InvokeAsync(args!);
     }
 
     /// <summary>

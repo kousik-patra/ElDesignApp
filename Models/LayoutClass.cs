@@ -85,7 +85,7 @@ public class PlotPlan : BaseInfo, IBaseMethod
 {
     public string? ImgThumbString { get; set; }
     public string? ImgString { get; set; }
-    public bool KeyPlan { get; set; } // true if its the key plan, else false
+    public bool KeyPlan { get; set; } // true if it's the key plan, else false
     public int Width { get; set; } // original image width
     public int Height { get; set; } // original image height
     public float ScaleX { get; set; }

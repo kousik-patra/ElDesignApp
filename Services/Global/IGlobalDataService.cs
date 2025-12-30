@@ -218,6 +218,8 @@ public interface IGlobalDataService
 
     /// <summary>Gets or sets the global data.</summary>
     int[] bendColor { get; set; }
+    
+    int[] equipmentColor { get; set; }
 
     /// <summary>Gets or sets the global data.</summary>
     int[] teeColor { get; set; } 
@@ -575,6 +577,8 @@ public class GlobalDataService : IGlobalDataService
 
     /// <summary>Gets or sets the global data.</summary>
     public int[] bendColor { get; set; } = [150, 150, 200];
+    /// <summary>Gets or sets the global data.</summary>
+    public int[] equipmentColor { get; set; } = [100, 100, 200];
 
     /// <summary>Gets or sets the global data.</summary>
     public int[] teeColor { get; set; } = [150, 150, 200];

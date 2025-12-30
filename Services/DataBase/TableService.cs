@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using Dapper;
+using ElDesignApp.Models;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -31,6 +32,15 @@ public class TableServiceException : Exception
         TableName = tableName;
         Operation = operation;
     }
+}
+
+/// <summary>
+/// Thrown when a table does not exist in the database
+/// </summary>
+public class TableNotFoundException : TableServiceException
+{
+    public TableNotFoundException(string tableName)
+        : base($"Table '{tableName}' does not exist in the database.", tableName, "Query") { }
 }
 
 /// <summary>
@@ -100,6 +110,11 @@ public interface ITableService
     #region Core CRUD Operations
 
     /// <summary>
+    /// Check if a table exists in the database
+    /// </summary>
+    Task<bool> TableExistsAsync(string tableName);
+    
+    /// <summary>
     /// Get all records for a table, optionally filtered by project
     /// </summary>
     Task<List<T>> GetListAsync<T>(string? projectId = null) where T : class, new();
@@ -161,7 +176,7 @@ public interface ITableService
     #endregion
 
     #region Raw SQL Operations
-
+    
     /// <summary>
     /// Execute a query and return results
     /// </summary>
@@ -264,6 +279,9 @@ public class TableService : ITableService
         "MM/dd/yyyy HH:mm:ss", "MM/dd/yyyy", "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy",
         "yyyy/MM/dd HH:mm:ss", "yyyy/MM/dd"
     };
+    
+    private static readonly string[] DefaultImportExcludedFields =
+        { "UID", "UpdatedBy", "UpdatedOn", "CellCSS", "Save2DB" };
 
     private readonly IConfiguration _configuration;
     private readonly ILogger<TableService> _logger;
@@ -338,9 +356,68 @@ public class TableService : ITableService
 
     #region Core CRUD Operations
 
+    /// <summary>
+    /// Check if a table exists in the database
+    /// </summary>
+    public async Task<bool> TableExistsAsync(string tableName)
+    {
+        if (string.IsNullOrWhiteSpace(tableName))
+            return false;
+
+        // Check cache first - if we have columns cached, table exists
+        lock (_cacheLock)
+        {
+            if (_columnCache.ContainsKey(tableName))
+                return true;
+        }
+
+        var sql = @"SELECT CASE WHEN EXISTS (
+                    SELECT 1 FROM INFORMATION_SCHEMA.TABLES 
+                    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @TableName
+                ) THEN 1 ELSE 0 END";
+
+        try
+        {
+            var result = await WithConnectionAsync(async conn =>
+                await conn.ExecuteScalarAsync<int>(sql, new { TableName = tableName }));
+
+            return result == 1;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error checking if table '{TableName}' exists", tableName);
+            return false;
+        }
+    }
+    
+    
     public async Task<List<T>> GetListAsync<T>(string? projectId = null) where T : class, new()
     {
         var tableName = typeof(T).Name;
+        
+        var stopwatch = Stopwatch.StartNew();
+        var actualTableName = tableName;
+        
+        // Special case for LoadMaster -> MasterLoadList mapping
+        if (tableName == "LoadMaster")
+        {
+            actualTableName = "MasterLoadList";
+        }
+        
+        
+        // Check if table exists first
+        var tableExists = await TableExistsAsync(actualTableName);
+        if (!tableExists)
+        {
+            stopwatch.Stop();
+            _logger.LogWarning(
+                "Table '{TableName}' does not exist in database. Returning empty list. " +
+                "Consider creating the table or removing the call to GetListAsync<{TypeName}>().",
+                actualTableName, tableName);
+        
+            return new List<T>();
+        }
+        
 
         // Build SQL with optional project filter
         var sql = $"SELECT * FROM dbo.[{tableName}]";
@@ -354,13 +431,51 @@ public class TableService : ITableService
             sql += $" WHERE [{PROJECT_ID_FIELD}] = @ProjectId";
         }
 
-        // Special case for LoadMaster
-        if (tableName == "LoadMaster")
-        {
-            sql = $"SELECT * FROM dbo.[MasterLoadList] WHERE [{PROJECT_ID_FIELD}] = @ProjectId";
-        }
 
-        return await QueryAsync<T>(sql, new { ProjectId = projectId ?? string.Empty });
+        try
+        {
+            var result = await QueryAsync<T>(sql, new { ProjectId = projectId ?? string.Empty });
+
+            stopwatch.Stop();
+            var source = result.Count > 0 ? "SQL Database" : "SQL Database (empty)";
+            var sizeKb = EstimateListSizeKb(result);
+        
+            _logger.LogInformation(
+                "Data loaded: {Table} | Count: {Count} | Size: {Size}kB | Time: {Time}ms | Source: '{Source}'",
+                tableName, result.Count, sizeKb, stopwatch.ElapsedMilliseconds, source);
+
+            return result;
+        }
+        catch (SqlException ex) when (ex.Number == 208) // Invalid object name
+        {
+            stopwatch.Stop();
+            _logger.LogWarning(
+                "Table '{TableName}' was not found (SQL Error 208). Returning empty list.",
+                actualTableName);
+        
+            return new List<T>();
+        }
+    }
+    
+    /// <summary>
+    /// Estimate the size of a list in KB (rough approximation)
+    /// </summary>
+    private static int EstimateListSizeKb<T>(List<T> list)
+    {
+        if (list == null || list.Count == 0)
+            return 0;
+
+        // Rough estimate: serialize first item and multiply
+        try
+        {
+            var sample = System.Text.Json.JsonSerializer.Serialize(list.Take(Math.Min(10, list.Count)));
+            var avgItemSize = sample.Length / Math.Min(10, list.Count);
+            return (avgItemSize * list.Count) / 1024;
+        }
+        catch
+        {
+            return list.Count; // Fallback: assume 1KB per item
+        }
     }
 
     public async Task<int> InsertAsync<T>(T item) where T : class
@@ -706,6 +821,13 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
             throw new ArgumentException("Project ID is required", nameof(projectId));
 
         var tableName = typeof(T).Name;
+        
+        // Clear cache for this table to ensure fresh column list
+        lock (_cacheLock)
+        {
+            _columnCache.Remove(tableName);
+        }
+
 
         // Set UpdatedBy for all items
         var updatedByProp = typeof(T).GetProperty(UPDATED_BY_FIELD);
@@ -846,6 +968,7 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         {
             _columnCache.Clear();
         }
+        _logger.LogInformation("Column cache cleared");
     }
 
     #endregion
@@ -943,7 +1066,7 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
             using var package = new ExcelPackage();
             await package.LoadAsync(stream);
 
-            return ProcessExcelPackage<T>(package, sheetName);
+            return await ProcessExcelPackageAsync<T>(package, sheetName);
         }
         catch (Exception ex)
         {
@@ -1287,94 +1410,137 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         return table;
     }
 
-    private ImportResult<T> ProcessExcelPackage<T>(ExcelPackage package, string? sheetName) where T : class, new()
+  private async Task<ImportResult<T>> ProcessExcelPackageAsync<T>(ExcelPackage package, string? sheetName) where T : class, new()
+{
+    var items = new List<T>();
+    var errors = new List<string>();
+
+    var ws = string.IsNullOrEmpty(sheetName)
+        ? package.Workbook.Worksheets.FirstOrDefault()
+        : package.Workbook.Worksheets[sheetName] ?? package.Workbook.Worksheets.FirstOrDefault();
+
+    if (ws == null)
     {
-        var items = new List<T>();
-        var errors = new List<string>();
-
-        var ws = string.IsNullOrEmpty(sheetName)
-            ? package.Workbook.Worksheets.FirstOrDefault()
-            : package.Workbook.Worksheets[sheetName] ?? package.Workbook.Worksheets.FirstOrDefault();
-
-        if (ws == null)
-        {
-            return new ImportResult<T>(items, 0, 0, new List<string> { "No worksheet found." });
-        }
-
-        var rowCount = ws.Dimension?.Rows ?? 0;
-        var colCount = ws.Dimension?.Columns ?? 0;
-
-        if (rowCount <= 1 || colCount == 0)
-        {
-            return new ImportResult<T>(items, 0, 0, new List<string> { "No data rows found." });
-        }
-
-        // Map headers to properties
-        var properties = typeof(T).GetProperties();
-        var headerMap = new Dictionary<int, PropertyInfo>();
-
-        for (int col = 1; col <= colCount; col++)
-        {
-            var header = ws.Cells[1, col].Value?.ToString()?.Trim();
-            if (string.IsNullOrWhiteSpace(header)) continue;
-
-            var prop = properties.FirstOrDefault(p =>
-                (p.GetCustomAttribute<DisplayAttribute>()?.Name ?? p.Name)
-                    .Equals(header, StringComparison.OrdinalIgnoreCase)
-                || p.Name.Equals(header, StringComparison.OrdinalIgnoreCase));
-
-            if (prop != null) headerMap[col] = prop;
-        }
-
-        var uidProp = properties.FirstOrDefault(p =>
-            p.Name.Equals(UID_FIELD, StringComparison.OrdinalIgnoreCase));
-
-        // Process rows from row 3 as row 1 has long filed, row 2 has short field
-        for (int row = 3; row <= rowCount; row++)
-        {
-            try
-            {
-                var instance = new T();
-
-                foreach (var (col, prop) in headerMap)
-                {
-                    var cellValue = ws.Cells[row, col].Value;
-                    if (cellValue == null) continue;
-
-                    try
-                    {
-                        var convertedValue = ConvertCellValue(cellValue, prop.PropertyType);
-                        prop.SetValue(instance, convertedValue);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new InvalidOperationException(
-                            $"Cell [{row},{col}] conversion to {prop.PropertyType.Name} failed: {ex.Message}");
-                    }
-                }
-
-                // Ensure UID
-                if (uidProp != null)
-                {
-                    var uidVal = uidProp.GetValue(instance);
-                    if (uidVal == null || uidVal.Equals(Guid.Empty))
-                    {
-                        uidProp.SetValue(instance, Guid.NewGuid());
-                    }
-                }
-
-                items.Add(instance);
-            }
-            catch (Exception ex)
-            {
-                errors.Add($"Row {row}: {ex.Message}");
-                _logger.LogWarning(ex, "Failed to import row {Row}", row);
-            }
-        }
-
-        return new ImportResult<T>(items, items.Count, errors.Count, errors);
+        return new ImportResult<T>(items, 0, 0, new List<string> { "No worksheet found." });
     }
 
+    var rowCount = ws.Dimension?.Rows ?? 0;
+    var colCount = ws.Dimension?.Columns ?? 0;
+
+    if (rowCount <= 1 || colCount == 0)
+    {
+        return new ImportResult<T>(items, 0, 0, new List<string> { "No data rows found." });
+    }
+
+    // Get current user context
+    string currentUser = "Import";
+    string? currentProjectId = null;
+    try
+    {
+        var (projectId, userName) = await _userContext.GetContextAsync();
+        currentUser = userName ?? "Import";
+        currentProjectId = projectId;
+    }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, "Failed to get user context for import. Using default.");
+    }
+
+    // Get all properties, excluding those marked with [ExcludeFromExcelImport] 
+    // or in the default excluded list
+    var properties = typeof(T).GetProperties()
+        .Where(p => !p.GetCustomAttributes<ExcludeFromExcelImportAttribute>().Any())
+        .Where(p => !DefaultImportExcludedFields.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
+        .ToArray();
+
+    // Map headers to properties
+    var headerMap = new Dictionary<int, PropertyInfo>();
+
+    for (int col = 1; col <= colCount; col++)
+    {
+        var header = ws.Cells[1, col].Value?.ToString()?.Trim();
+        if (string.IsNullOrWhiteSpace(header)) continue;
+
+        var prop = properties.FirstOrDefault(p =>
+            (p.GetCustomAttribute<DisplayAttribute>()?.Name ?? p.Name)
+                .Equals(header, StringComparison.OrdinalIgnoreCase)
+            || p.Name.Equals(header, StringComparison.OrdinalIgnoreCase));
+
+        if (prop != null) headerMap[col] = prop;
+    }
+
+    // Get system properties separately (we set these, not from Excel)
+    var uidProp = typeof(T).GetProperty(UID_FIELD, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+    var updatedByProp = typeof(T).GetProperty(UPDATED_BY_FIELD, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+    var updatedOnProp = typeof(T).GetProperty(UPDATED_ON_FIELD, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+    var projectIdProp = typeof(T).GetProperty(PROJECT_ID_FIELD, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+
+    // Process rows from row 3 as row 1 has long field, row 2 has short field
+    for (int row = 3; row <= rowCount; row++)
+    {
+        try
+        {
+            var instance = new T();
+
+            foreach (var (col, prop) in headerMap)
+            {
+                var cellValue = ws.Cells[row, col].Value;
+                if (cellValue == null) continue;
+
+                try
+                {
+                    var convertedValue = ConvertCellValue(cellValue, prop.PropertyType);
+                    prop.SetValue(instance, convertedValue);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Cell [{row},{col}] {prop.Name} : conversion to {prop.PropertyType.Name} failed: {ex.Message}");
+                }
+            }
+
+            // Auto-generate UID (always generate new, ignore any from Excel)
+            if (uidProp != null && uidProp.CanWrite)
+            {
+                uidProp.SetValue(instance, Guid.NewGuid());
+            }
+
+            // Set ProjectId from current context (if not already set from Excel)
+            if (projectIdProp != null && projectIdProp.CanWrite && !string.IsNullOrEmpty(currentProjectId))
+            {
+                var existingProjectId = projectIdProp.GetValue(instance)?.ToString();
+                if (string.IsNullOrEmpty(existingProjectId))
+                {
+                    projectIdProp.SetValue(instance, currentProjectId);
+                }
+            }
+
+            // Set audit fields with current values
+            if (updatedByProp != null && updatedByProp.CanWrite)
+            {
+                updatedByProp.SetValue(instance, currentUser);
+            }
+
+            if (updatedOnProp != null && updatedOnProp.CanWrite)
+            {
+                updatedOnProp.SetValue(instance, DateTime.Now);
+            }
+
+            items.Add(instance);
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"Row {row}: {ex.Message}");
+            _logger.LogWarning(ex, "Failed to import row {Row}", row);
+        }
+    }
+
+    _logger.LogInformation(
+        "Excel import completed for {Type} by {User}: {SuccessCount} succeeded, {ErrorCount} failed",
+        typeof(T).Name, currentUser, items.Count, errors.Count);
+
+    return new ImportResult<T>(items, items.Count, errors.Count, errors);
+}
     private static object? ConvertCellValue(object cellValue, Type targetType)
     {
         var underlyingType = Nullable.GetUnderlyingType(targetType) ?? targetType;
@@ -1481,6 +1647,9 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
     }
 
     #endregion
+    
+    
+    
 }
 
 #endregion
