@@ -270,8 +270,7 @@
             
             if (selectedProject != null)
             {
-                // Update GlobalData (for backward compatibility)
-                GlobalData.SelectedProject = selectedProject;
+                GlobalData.SetSelectedProject(selectedProject);
                 
                 // Update ProjectContextService (for new authorization)
                 await ProjectContext.SetCurrentProjectAsync(selectedProject.UID);
@@ -289,7 +288,7 @@
                 StateHasChanged();
     
                 // Or directly trigger scene refresh via JS
-                await JSRuntime.InvokeVoidAsync("clearAllSceneLayers");
+                //await JSRuntime.InvokeVoidAsync("clearAllSceneLayers");
 
                 
                 
@@ -321,7 +320,8 @@
             // Refreshing cache
             if (GlobalData.SelectedProject != null && !string.IsNullOrEmpty(_selectedProjectTag))
             {
-                GlobalData.SelectedProject = _projects?.FirstOrDefault(proj => proj?.Tag == _selectedProjectTag);
+                var project = _projects?.FirstOrDefault(proj => proj?.Tag == _selectedProjectTag);
+                GlobalData.SetSelectedProject(project); 
                 Debug.WriteLine($"Selected Project: {GlobalData.SelectedProject?.Tag}");
             }
 
