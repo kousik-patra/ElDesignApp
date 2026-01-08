@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace ElDesignApp.Services.Global;
 
@@ -12,6 +13,10 @@ public interface IGlobalDataService
     string? LoginUser { get; set; }
     
     Project? SelectedProject { get; set; } // Or whatever properties GlobalData holds
+    
+    event Action? OnProjectChanged;
+        
+    void SetSelectedProject(Project? project);
         
     int ClickCount { get; set; }
 
@@ -359,9 +364,25 @@ public enum ModalDialogType // <-- Defined directly in the namespace
 public class GlobalDataService : IGlobalDataService
     {
         public string LoginUser { get; set; }
-
+        
+        private Project? _selectedProject;
         /// <summary>Gets or sets the global data.</summary>
-        public Project? SelectedProject { get; set; } 
+        public Project? SelectedProject
+        {
+            get => _selectedProject;
+            set => _selectedProject = value;
+        }
+        public event Action? OnProjectChanged;
+        public void SetSelectedProject(Project? project)
+        {
+            if (_selectedProject?.UID != project?.UID)
+            {
+                _selectedProject = project;
+                OnProjectChanged?.Invoke();  // Fire the event!
+                Debug.WriteLine($"GlobalDataService: OnProjectChanged fired for {project?.Tag}");
+            }
+        }
+        
 
         public int ClickCount { get; set; }
 

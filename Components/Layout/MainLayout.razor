@@ -1,7 +1,9 @@
 ﻿@using Microsoft.AspNetCore.Authorization
 @inherits LayoutComponentBase
+@implements IDisposable
 @inject NavigationManager NavigationManager
 @inject IGlobalDataService GlobalData
+@inject NavigationManager MyNavigationManager
 
 <div class="page">
     <div class="sidebar">
@@ -34,14 +36,31 @@
 @code {
     private string _currentPage = "";
     private string? _currentProjectId => GlobalData.SelectedProject?.UID.ToString();
-    
     private bool _show3D = true;
 
     protected override void OnInitialized()
     {
         _currentPage = GetPageName(NavigationManager.Uri);
         NavigationManager.LocationChanged += OnLocationChanged;
+        
+        // Subscribe to project changes
+        GlobalData.OnProjectChanged += OnProjectChanged;
+        
+        Debug.WriteLine($"Page {MyNavigationManager.Uri} :: Selected Project : {GlobalData.SelectedProject?.Tag}");
     }
+    
+    protected override void OnParametersSet()
+    {
+        Console.WriteLine($"MainLayout.OnParametersSet - ProjectId: {_currentProjectId}");
+    }
+    
+    
+    private void OnProjectChanged()
+    {
+        Console.WriteLine($"MainLayout: Project changed to {_currentProjectId}");
+        InvokeAsync(StateHasChanged);  // Must use InvokeAsync for thread safety
+    }
+    
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
@@ -64,5 +83,7 @@
     public void Dispose()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
+        GlobalData.OnProjectChanged -= OnProjectChanged;
+        
     }
 }

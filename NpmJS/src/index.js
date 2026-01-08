@@ -164,7 +164,3 @@ window.stopModalDrag = stopModalDrag;
 window.getModalDialogRect = getModalDialogRect;
 window.setModalPosition = setModalPosition;
 
-// ============ LOG THAT INDEX.JS LOADED ============
-console.log('index.js loaded successfully');
-console.log('initializeScene defined:', typeof window.initializeScene);
-console.log('consoleLog defined:', typeof window.consoleLog);

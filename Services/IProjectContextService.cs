@@ -286,19 +286,19 @@ public class ProjectContextService : IProjectContextService
         {
             // Log the current project
             var currentProjectId = _currentProjectId;
-            _logger.LogInformation($"IsUserAdminInCurrentProjectAsync - CurrentProjectId: {currentProjectId}, UserId: {userId}");
+            //_logger.LogInformation($"IsUserAdminInCurrentProjectAsync - CurrentProjectId: {currentProjectId}, UserId: {userId}");
         
             // Try to load project if not loaded
             if (currentProjectId == null)
             {
                 await EnsureLoadedAsync();
                 currentProjectId = _currentProjectId;
-                _logger.LogInformation($"IsUserAdminInCurrentProjectAsync - After EnsureLoaded, CurrentProjectId: {currentProjectId}");
+                //_logger.LogInformation($"IsUserAdminInCurrentProjectAsync - After EnsureLoaded, CurrentProjectId: {currentProjectId}");
             }
         
             if (currentProjectId == null)
             {
-                _logger.LogWarning("IsUserAdminInCurrentProjectAsync - No current project set");
+                //_logger.LogWarning("IsUserAdminInCurrentProjectAsync - No current project set");
                 return false;
             }
 
@@ -317,16 +317,16 @@ public class ProjectContextService : IProjectContextService
         {
             var assignments = await _dataService.ReadFromCacheOrDb<ProjectUserAssignment>();
         
-            _logger.LogInformation($"IsUserAdminInProjectAsync - Total assignments: {assignments.Item1.Count}");
-            _logger.LogInformation($"IsUserAdminInProjectAsync - Looking for UserId: {userId}, ProjectId: {projectId}");
+            //_logger.LogInformation($"IsUserAdminInProjectAsync - Total assignments: {assignments.Item1.Count}");
+            //_logger.LogInformation($"IsUserAdminInProjectAsync - Looking for UserId: {userId}, ProjectId: {projectId}");
         
             // Log all assignments for this user
             var userAssignments = assignments.Item1.Where(a => a.UserId == userId).ToList();
-            _logger.LogInformation($"IsUserAdminInProjectAsync - Found {userAssignments.Count} assignments for user");
+            //_logger.LogInformation($"IsUserAdminInProjectAsync - Found {userAssignments.Count} assignments for user");
         
             foreach (var assignment in userAssignments)
             {
-                _logger.LogInformation($"  Assignment: ProjectId={assignment.ProjectId}, IsProjectAdmin={assignment.IsProjectAdmin}, IsActive={assignment.IsActive}");
+                //_logger.LogInformation($"  Assignment: ProjectId={assignment.ProjectId}, IsProjectAdmin={assignment.IsProjectAdmin}, IsActive={assignment.IsActive}");
             }
         
             var result = assignments.Item1.Any(a => 
@@ -335,7 +335,7 @@ public class ProjectContextService : IProjectContextService
                 a.IsProjectAdmin && 
                 a.IsActive);
             
-            _logger.LogInformation($"IsUserAdminInProjectAsync - Result: {result}");
+            //_logger.LogInformation($"IsUserAdminInProjectAsync - Result: {result}");
         
             return result;
         }

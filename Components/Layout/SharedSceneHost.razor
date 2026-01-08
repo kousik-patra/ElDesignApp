@@ -18,9 +18,37 @@
     [Parameter] public string? ProjectId { get; set; }
     [Parameter] public bool Visible { get; set; } = true;
     private string? _previousProjectId;
+    
+    
+    protected override void OnInitialized()
+    {
+        // Subscribe to project changes directly
+        GlobalData.OnProjectChanged += OnProjectChanged;
+    }
+    
+    private void OnProjectChanged()
+    {
+        Console.WriteLine($"SharedSceneHost: OnProjectChanged event received");
+        InvokeAsync(async () =>
+        {
+            if (!_isInitialized) return;
+            
+            var newProjectId = GlobalData.SelectedProject?.UID.ToString();
+            
+            if (newProjectId != _previousProjectId && !string.IsNullOrEmpty(newProjectId))
+            {
+                Console.WriteLine($"SharedSceneHost: Project changed from {_previousProjectId} to {newProjectId}");
+                _previousProjectId = newProjectId;
+                
+                await ClearAndReloadSceneAsync();
+                StateHasChanged();
+            }
+        });
+    }
 
     protected override void OnParametersSet()
     {
+        Console.WriteLine($"SharedSceneHost.OnParametersSet - ProjectId: {ProjectId}, Previous: {_previousProjectId}");
         _isVisible = Visible;
     }
 
@@ -44,7 +72,7 @@
                 
                 _isInitialized = true;
                 _previousProjectId = ProjectId;
-                Console.WriteLine("SharedSceneHost: Scene initialized!");
+                Console.WriteLine($"SharedSceneHost ({ProjectId}): Scene initialized!");
                 
                 await DrawPlotPlansAsync();
             }
@@ -59,15 +87,6 @@
     protected override async Task OnParametersSetAsync()
     {
         if (!_isInitialized) return;
-
-        // Check if project changed
-        if (ProjectId != _previousProjectId && !string.IsNullOrEmpty(ProjectId))
-        {
-            Console.WriteLine($"SharedSceneHost: Project changed from {_previousProjectId} to {ProjectId}");
-            _previousProjectId = ProjectId;
-            
-            await ClearAndReloadSceneAsync();
-        }
 
         // Handle page context changes
         if (!string.IsNullOrEmpty(CurrentPage))
@@ -124,11 +143,11 @@
     {
         if (GlobalData.PlotPlans == null || GlobalData.PlotPlans.Count == 0)
         {
-            Console.WriteLine("SharedSceneHost: No plot plans to draw");
+            Console.WriteLine($"SharedSceneHost: No plot plans to draw for project, {ProjectId}");
             return;
         }
         
-        Console.WriteLine($"SharedSceneHost: Drawing {GlobalData.PlotPlans.Count} plot plans");
+        Console.WriteLine($"SharedSceneHost: Drawing {GlobalData.PlotPlans.Count} plot plans for project, {ProjectId}");
         
         foreach (var plot in GlobalData.PlotPlans)
         {
@@ -150,6 +169,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        GlobalData.OnProjectChanged -= OnProjectChanged;
         _drawRef?.Dispose();
     }
 }

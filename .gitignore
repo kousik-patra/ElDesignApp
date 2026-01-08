@@ -328,8 +328,6 @@ node_modules/
 *.dsp
 
 # Visual Studio 6 technical files
-*.ncb
-*.aps
 
 # Visual Studio LightSwitch build output
 **/*.HTMLClient/GeneratedArtifacts
@@ -430,26 +428,17 @@ FodyWeavers.xsd
 # Blazor / .NET specific
 bin/
 obj/
-*.user
-*.suo
-*.userosscache
-*.sln.docstates
 *.csproj.user
-*.vspscc
 *.vscode/
 *.DS_Store
-*.log
 
 # Rider specific
 .idea/
 *.iml
 
 # Node / JS (if you have wwwroot with node_modules)
-node_modules/
 wwwroot/lib/
 wwwroot/dist/
-node_modules/
-.idea/
 dataprotection-keys/
 
 # Dotnet Setting
@@ -457,11 +446,9 @@ dataprotection-keys/
 
 
 # Rider user settings
-*.DotSettings.user
 *.sln.DotSettings.user
 
 # Data protection keys (never commit!)
-dataprotection-keys/
 
 # Root package-lock (duplicate)
 package-lock.json

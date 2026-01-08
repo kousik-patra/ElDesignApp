@@ -62,6 +62,23 @@ public class SceneInfo
     public string? SceneJSON { get; set; } = "";
     public List<string> Display { get; set; }
 }
+public class SceneInfoJson
+{
+    public Vector3Json? CameraPosition { get; set; }
+    public Vector3Json? CameraRotation { get; set; }
+    public Vector3Json? ControlsTarget { get; set; }
+    public float RendererWidth { get; set; }
+    public float RendererHeight { get; set; }
+}
+
+public class Vector3Json
+{
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float Z { get; set; }
+    
+    public Vector3 ToVector3() => new Vector3(X, Y, Z);
+}
 
 public class ENU
 {

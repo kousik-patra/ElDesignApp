@@ -390,7 +390,7 @@ class SceneManager {
 
         this.isInitialized = false;
     }
-}
+
 
 
 /**
@@ -424,7 +424,7 @@ clearAllLayers()
 
     console.log('SceneManager: All layers cleared');
 }
-
+}
 
 
 // Singleton instance

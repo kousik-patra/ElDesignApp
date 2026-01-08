@@ -29,38 +29,45 @@ public class Draw
     [JSInvokable("SaveSceneInfo")]
     public void SaveSceneInfo(string? sceneInfoJson)
     {
-        if (sceneInfoJson == null) return;
+        if (string.IsNullOrEmpty(sceneInfoJson)) return;
+    
         try
         {
-            var sceneData = JsonSerializer.Deserialize<List<float>>(sceneInfoJson);
-            //
-            if (sceneData == null) return;
-            var rendererWidth = (int)sceneData[0];
-            var rendererHeight = (int)sceneData[1];
-            var cameraPosition = new Vector3(sceneData[2], sceneData[3], sceneData[4]);
-            var cameraRotation = new Vector3(sceneData[5], sceneData[6], sceneData[7]);
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+        
+            // Deserialize to the DTO
+            var jsonData = JsonSerializer.Deserialize<SceneInfoJson>(sceneInfoJson, options);
+        
+            if (jsonData == null) return;
+        
+            var rendererWidth = (int)jsonData.RendererWidth;
+            var rendererHeight = (int)jsonData.RendererHeight;
+            var cameraPosition = jsonData.CameraPosition?.ToVector3() ?? Vector3.Zero;
+            var cameraRotation = jsonData.CameraRotation?.ToVector3() ?? Vector3.Zero;
+        
             var text = $"Renderer Width: {rendererWidth}, Renderer Height: {rendererHeight}, " +
-                       $"Camera position: , {cameraPosition}, Camera rotation.{cameraRotation}";
+                       $"Camera position: {cameraPosition}, Camera rotation: {cameraRotation}";
 
+            // Map to your existing SceneInfo class
             _globalData.sceneDataCurrent.SceneJSON = sceneInfoJson;
-            
-            _globalData.sceneDataCurrent.RendererWidth = sceneData[0];
-            _globalData.sceneDataCurrent.RendererHeight = sceneData[1];
+            _globalData.sceneDataCurrent.RendererWidth = jsonData.RendererWidth;
+            _globalData.sceneDataCurrent.RendererHeight = jsonData.RendererHeight;
             _globalData.sceneDataCurrent.CameraPosition = cameraPosition;
             _globalData.sceneDataCurrent.CameraRotation = cameraRotation;
             _globalData.sceneDataCurrent.RendererWidthPX = $"{rendererWidth}px";
             _globalData.sceneDataCurrent.RendererHeightPX = $"{rendererHeight}px";
 
             UpdateSceneData();
-                   
+               
             Debug.WriteLine($"Draw: SaveSceneInfo: Scene Info changed to {text}");
-            
         }
         catch (Exception e)
         {
             Console.WriteLine(e);
         }
-
     }
     
         [JSInvokable("MouseClick")]
