@@ -1,6 +1,8 @@
 ﻿import 'bootstrap';
 import sceneManager, { LAYERS } from './sceneManager';
 import { drawPlaneMesh } from './threejs/objects/plane';
+import { createInfiniteAxes, createAxisIndicator, createGridHelper } from './threejs/objects/axisHelpers';
+import { MouseEventHandler } from './threejs/events/mouseEvents';
 import { drawLadderMesh } from './threejs/objects/ladder';
 import { drawBendMesh } from './threejs/objects/bend';
 import { drawTeeMesh } from './threejs/objects/tee';
@@ -9,13 +11,7 @@ import { drawNodeMesh } from './threejs/objects/node';
 import { drawSleeveMesh } from './threejs/objects/sleeve';
 import { drawEquipmentMesh } from './threejs/objects/equipment';
 import { drawSLD, updateSLD, updateSLDItem, updateSLDWithStudyResults } from './mySLD';
-import {
-    focusElement,
-    getModalDialogRect,
-    setModalPosition,
-    startModalDrag,
-    stopModalDrag
-} from './modal/modal-interop';
+import { focusElement, getModalDialogRect, setModalPosition, startModalDrag, stopModalDrag} from './modal/modal-interop';
 
 // Expose sceneManager to window
 window.sceneManager = sceneManager;
@@ -89,15 +85,16 @@ window.toggleSceneVisibility = function(visible) {
 };
 
 // ============ DRAWING FUNCTIONS ============
-window.drawPlane = function(planeName, planeTag, imageString, scaleX, scaleY, centreX, centreY, elevation, opacity) {
+window.drawPlane = function(planeTag,planeTagDescription, imageString, scaleX, scaleY, centreX, centreY, elevation, opacity) {
     if (sceneManager && sceneManager.scene) {
         const mesh = drawPlaneMesh(
             sceneManager.renderer?.domElement?.width || 800,
             sceneManager.renderer?.domElement?.height || 600,
-            planeName, planeTag, imageString, scaleX, scaleY, centreX, centreY, elevation, opacity
+            planeTag, planeTagDescription, imageString, scaleX, scaleY, centreX, centreY, elevation, opacity
         );
         if (mesh) {
             sceneManager.addObject(mesh, planeTag, LAYERS.PLOT_PLAN);
+            console.log('window.drawPlane :', planeTag, ' added.');
         }
     }
 };

@@ -1,6 +1,6 @@
 ﻿import * as THREE from 'three';
 
-function drawPlaneMesh(rendererWidth, rendererHeight, planeName, planeTag,
+function drawPlaneMesh(rendererWidth, rendererHeight, planeTag, planeTagDescription,
                        imageString, scaleX, scaleY, centreX, centreY, elevation, opacity) {
     try {
         // Create an image
@@ -25,7 +25,7 @@ function drawPlaneMesh(rendererWidth, rendererHeight, planeName, planeTag,
         var planeGeometry = new THREE.PlaneGeometry(rendererWidth, rendererHeight);
         var planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
         planeMesh.translateOnAxis(new THREE.Vector3(0, 0, 1), elevation);
-        planeMesh.Name = planeName;// "plotplan"; // main background any additional plane to be added to this main background
+        //planeMesh.Name = planeName;// "plotplan"; // main background any additional plane to be added to this main background
         //var planeMeshCount = getObjectByNameArray(scene, 'plotplan').length;
         planeMesh.Tag = planeTag;// "plotplan" + planeMeshCount; //toString();
         planeMesh.Type = 'plotplan';

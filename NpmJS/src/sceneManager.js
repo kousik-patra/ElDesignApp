@@ -2,6 +2,8 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { createInfiniteAxes, createAxisIndicator, createGridHelper } from './threejs/objects/axisHelpers.js';
+import { MouseEventHandler } from './threejs/events/mouseEvents.js';
 
 // Layer constants for object categorization
 export const LAYERS = {
@@ -18,6 +20,10 @@ export const LAYERS = {
     CABLES: 10
 };
 
+// Minimum dimensions for the scene
+const MIN_WIDTH = 800;
+const MIN_HEIGHT = 600;
+
 class SceneManager {
     constructor() {
         this.scene = null;
@@ -29,6 +35,18 @@ class SceneManager {
         this.isInitialized = false;
         this.animationId = null;
         this.currentPage = null;
+        this.resizeObserver = null;
+        this.resizeTimeout = null;
+        this.boundWindowResize = null;
+        this.saveInterval = null;
+
+        // Mouse event handler
+        this.mouseHandler = new MouseEventHandler(this);
+
+        // Axis helpers
+        this.infiniteAxes = null;
+        this.axisIndicator = null;
+        this.gridHelper = null;
 
         // Track objects by tag for efficient lookup
         this.objectRegistry = new Map();
@@ -39,6 +57,38 @@ class SceneManager {
             cameraRotation: { x: 0, y: 0, z: 0 },
             controlsTarget: { x: 0, y: 0, z: 0 }
         };
+    }
+
+    /**
+     * Get dimensions with minimum constraints
+     */
+    getConstrainedDimensions(container) {
+        const canvas = this.renderer?.domElement;
+        let originalDisplay = '';
+
+        if (canvas) {
+            originalDisplay = canvas.style.display;
+            canvas.style.display = 'none';
+        }
+
+        const computedStyle = window.getComputedStyle(container);
+        const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+        const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+        const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+        const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
+
+        const rect = container.getBoundingClientRect();
+        let width = rect.width - paddingLeft - paddingRight;
+        let height = rect.height - paddingTop - paddingBottom;
+
+        if (canvas) {
+            canvas.style.display = originalDisplay;
+        }
+
+        width = Math.max(width || MIN_WIDTH, MIN_WIDTH);
+        height = Math.max(height || MIN_HEIGHT, MIN_HEIGHT);
+
+        return { width, height };
     }
 
     /**
@@ -53,30 +103,57 @@ class SceneManager {
             return false;
         }
 
-        // If already initialized, just reattach to new container
         if (this.isInitialized && this.renderer) {
             this.reattachToContainer(container);
             return true;
         }
 
-        // First-time initialization
         this.createScene();
-        this.createCamera();
+        this.createCamera(container);
         this.createRenderer(container);
         this.createControls();
         this.createLights();
         this.createHelpers();
 
-        // Restore saved state if provided
         if (savedStateJson) {
             this.restoreState(savedStateJson);
         }
 
-        this.setupEventListeners();
+        this.setupEventListeners(container);
+
+        // Initialize mouse event handler
+        this.mouseHandler.initialize(
+            this.renderer,
+            this.camera,
+            this.scene,
+            this.dotNetRef
+        );
+
+        // Setup optional local callbacks
+        this.setupMouseCallbacks();
+
         this.startAnimation();
 
         this.isInitialized = true;
+        console.log('SceneManager: Initialized with axis helpers and mouse events');
         return true;
+    }
+
+    /**
+     * Setup local callbacks for mouse events
+     */
+    setupMouseCallbacks() {
+        // Example: Log hover events
+        this.mouseHandler.setCallback('onHover', (eventData) => {
+            // console.log('Hovering over:', eventData.objectTag);
+            // You could change cursor, highlight object, etc.
+        });
+
+        this.mouseHandler.setCallback('onHoverEnd', (eventData) => {
+            // console.log('Stopped hovering:', eventData.objectTag);
+        });
+
+        // You can add more callbacks as needed
     }
 
     createScene() {
@@ -84,12 +161,14 @@ class SceneManager {
         this.scene.name = 'MainScene';
     }
 
-    createCamera() {
+    createCamera(container) {
+        const { width, height } = this.getConstrainedDimensions(container);
+
         this.camera = new THREE.PerspectiveCamera(
             60,
-            window.innerWidth / window.innerHeight,
+            width / height,
             0.1,
-            20000
+            200000  // Increased far plane for infinite axes
         );
         this.camera.position.set(
             this.sceneState.cameraPosition.x,
@@ -97,12 +176,10 @@ class SceneManager {
             this.sceneState.cameraPosition.z
         );
 
-        // Enable all layers by default
         Object.values(LAYERS).forEach(layer => {
             this.camera.layers.enable(layer);
         });
     }
-
 
     createRenderer(container) {
         this.renderer = new THREE.WebGLRenderer({
@@ -110,23 +187,26 @@ class SceneManager {
             preserveDrawingBuffer: true
         });
 
-        // Use container size, not window size
-        const rect = container.getBoundingClientRect();
-        const width = rect.width || 800;
-        const height = rect.height || 600;
+        const { width, height } = this.getConstrainedDimensions(container);
 
         this.renderer.setSize(width, height);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        container.appendChild(this.renderer.domElement);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        const canvas = this.renderer.domElement;
+        canvas.style.display = 'block';
+        canvas.style.maxWidth = '100%';
+        canvas.style.maxHeight = '100%';
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+
+        container.appendChild(canvas);
         this.canvas = container;
 
-        // Update camera aspect
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
+
+        console.log(`SceneManager: Renderer created with size ${width}x${height}`);
     }
-    
-    
-    
 
     createControls() {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -134,7 +214,7 @@ class SceneManager {
         this.controls.dampingFactor = 0.05;
         this.controls.screenSpacePanning = true;
         this.controls.minDistance = 1;
-        this.controls.maxDistance = 10000;
+        this.controls.maxDistance = 100000;  // Increased for large scenes
     }
 
     createLights() {
@@ -147,22 +227,48 @@ class SceneManager {
     }
 
     createHelpers() {
-        const axesHelper = new THREE.AxesHelper(500);
-        axesHelper.layers.set(LAYERS.DEFAULT);
-        this.scene.add(axesHelper);
+        // Create infinite axis lines
+        this.infiniteAxes = createInfiniteAxes();
+        this.infiniteAxes.layers.set(LAYERS.DEFAULT);
+        this.scene.add(this.infiniteAxes);
+
+        // Create axis indicator for corner display
+        this.axisIndicator = createAxisIndicator();
+
+        // Optional: Add grid helper
+        // this.gridHelper = createGridHelper(10000, 100);
+        // this.gridHelper.rotation.x = Math.PI / 2;  // Rotate to XY plane
+        // this.gridHelper.layers.set(LAYERS.DEFAULT);
+        // this.scene.add(this.gridHelper);
+
+        console.log('SceneManager: Axis helpers created');
     }
 
     /**
      * Reattach existing renderer to a new container
      */
     reattachToContainer(container) {
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+        }
+
+        // Remove and re-add mouse listeners
+        this.mouseHandler.removeEventListeners();
+
         if (this.renderer && this.renderer.domElement.parentNode) {
             this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
         }
-        container.appendChild(this.renderer.domElement);
+
+        const canvas = this.renderer.domElement;
+        canvas.style.display = 'block';
+        canvas.style.maxWidth = '100%';
+        canvas.style.maxHeight = '100%';
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+
+        container.appendChild(canvas);
         this.canvas = container;
 
-        // Update controls
         if (this.controls) {
             this.controls.dispose();
             this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -170,7 +276,17 @@ class SceneManager {
             this.controls.screenSpacePanning = true;
         }
 
-        this.onWindowResize();
+        // Re-initialize mouse handler
+        this.mouseHandler.initialize(
+            this.renderer,
+            this.camera,
+            this.scene,
+            this.dotNetRef
+        );
+        this.setupMouseCallbacks();
+
+        this.setupResizeObserver(container);
+        this.onContainerResize();
     }
 
     /**
@@ -182,7 +298,6 @@ class SceneManager {
         mesh.Tag = tag;
         mesh.layers.set(layer);
 
-        // Store in registry for efficient lookup
         if (!this.objectRegistry.has(layer)) {
             this.objectRegistry.set(layer, new Map());
         }
@@ -225,7 +340,7 @@ class SceneManager {
      * Show/hide entire layer
      */
     setLayerVisibility(layer, visible) {
-        if (!this.camera) {            
+        if (!this.camera) {
             console.warn('SceneManager: Camera not initialized, skipping setLayerVisibility');
             return;
         }
@@ -243,14 +358,12 @@ class SceneManager {
     setPageContext(pageName, visibleLayers) {
         this.currentPage = pageName;
 
-        // Disable all layers first
         Object.values(LAYERS).forEach(layer => {
             this.camera.layers.disable(layer);
         });
 
-        // Enable only specified layers
-        this.camera.layers.enable(LAYERS.DEFAULT); // Always show default
-        this.camera.layers.enable(LAYERS.PLOT_PLAN); // Always show plot plan
+        this.camera.layers.enable(LAYERS.DEFAULT);
+        this.camera.layers.enable(LAYERS.PLOT_PLAN);
 
         visibleLayers.forEach(layer => {
             this.camera.layers.enable(layer);
@@ -326,36 +439,85 @@ class SceneManager {
         }
     }
 
-    setupEventListeners() {
-        window.addEventListener('resize', () => this.onWindowResize());
+    /**
+     * Setup ResizeObserver for container-based resizing
+     */
+    setupResizeObserver(container) {
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+        }
 
-        // Periodic state save to server
-        setInterval(() => {
+        this.resizeObserver = new ResizeObserver((entries) => {
+            if (this.resizeTimeout) {
+                clearTimeout(this.resizeTimeout);
+            }
+            this.resizeTimeout = setTimeout(() => {
+                this.onContainerResize();
+            }, 50);
+        });
+
+        this.resizeObserver.observe(container);
+    }
+
+    setupEventListeners(container) {
+        this.setupResizeObserver(container);
+
+        this.boundWindowResize = () => this.onContainerResize();
+        window.addEventListener('resize', this.boundWindowResize);
+
+        this.saveInterval = setInterval(() => {
             if (this.dotNetRef && this.isInitialized) {
                 this.dotNetRef.invokeMethodAsync('SaveSceneInfo', this.getState());
             }
         }, 10000);
     }
 
-    onWindowResize() {
+    /**
+     * Handle container resize with min dimensions
+     */
+    onContainerResize() {
         if (!this.camera || !this.renderer || !this.canvas) return;
 
-        const rect = this.canvas.getBoundingClientRect();
-        const width = rect.width || 800;
-        const height = rect.height || 600;
+        const { width, height } = this.getConstrainedDimensions(this.canvas);
 
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(width, height);
+
+        this.renderer.setSize(width, height, false);
+
+        const canvas = this.renderer.domElement;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+
+        console.log(`SceneManager: Resized to ${width}x${height}`);
+    }
+
+    onWindowResize() {
+        this.onContainerResize();
     }
 
     startAnimation() {
         const animate = () => {
             this.animationId = requestAnimationFrame(animate);
+
             if (this.controls) {
                 this.controls.update();
             }
+
+            // Update axis indicator to match camera orientation
+            if (this.axisIndicator) {
+                this.axisIndicator.update(this.camera);
+            }
+
+            // Render main scene
+            const { width, height } = this.getConstrainedDimensions(this.canvas);
+            this.renderer.setViewport(0, 0, width, height);
             this.renderer.render(this.scene, this.camera);
+
+            // Render axis indicator overlay
+            if (this.axisIndicator) {
+                this.axisIndicator.render(this.renderer, width, height);
+            }
         };
         animate();
     }
@@ -373,7 +535,31 @@ class SceneManager {
     dispose() {
         this.stopAnimation();
 
-        // Dispose all objects
+        // Dispose mouse handler
+        this.mouseHandler.dispose();
+
+        // Dispose axis indicator
+        if (this.axisIndicator) {
+            this.axisIndicator.dispose();
+        }
+
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+            this.resizeObserver = null;
+        }
+
+        if (this.boundWindowResize) {
+            window.removeEventListener('resize', this.boundWindowResize);
+        }
+
+        if (this.saveInterval) {
+            clearInterval(this.saveInterval);
+        }
+
+        if (this.resizeTimeout) {
+            clearTimeout(this.resizeTimeout);
+        }
+
         for (const [layer, objects] of this.objectRegistry) {
             for (const [tag, mesh] of objects) {
                 this.disposeObject(mesh);
@@ -391,41 +577,42 @@ class SceneManager {
         this.isInitialized = false;
     }
 
+    /**
+     * Clear all objects from all layers except infrastructure
+     */
+    clearAllLayers() {
+        console.log('SceneManager: Clearing all layers');
 
-
-/**
- * Clear all objects from all layers except infrastructure (lights, axes, helpers)
- */
-clearAllLayers() 
-{
-    console.log('SceneManager: Clearing all layers');
-
-    // Clear all registered objects
-    for (const [layer, objects] of this.objectRegistry) {
-        for (const [tag, mesh] of objects) {
-            this.disposeObject(mesh);
-            this.scene.remove(mesh);
+        for (const [layer, objects] of this.objectRegistry) {
+            for (const [tag, mesh] of objects) {
+                this.disposeObject(mesh);
+                this.scene.remove(mesh);
+            }
+            objects.clear();
         }
-        objects.clear();
+
+        const objectsToRemove = [];
+        this.scene.traverse((child) => {
+            if (child.Tag && child.isMesh) {
+                objectsToRemove.push(child);
+            }
+        });
+
+        objectsToRemove.forEach(obj => {
+            this.disposeObject(obj);
+            this.scene.remove(obj);
+        });
+
+        console.log('SceneManager: All layers cleared');
     }
 
-    // Also remove any objects with Tags that aren't in registry
-    const objectsToRemove = [];
-    this.scene.traverse((child) => {
-        if (child.Tag && child.isMesh) {
-            objectsToRemove.push(child);
-        }
-    });
-
-    objectsToRemove.forEach(obj => {
-        this.disposeObject(obj);
-        this.scene.remove(obj);
-    });
-
-    console.log('SceneManager: All layers cleared');
+    /**
+     * Get mouse event handler for external access
+     */
+    getMouseHandler() {
+        return this.mouseHandler;
+    }
 }
-}
-
 
 // Singleton instance
 const sceneManager = new SceneManager();

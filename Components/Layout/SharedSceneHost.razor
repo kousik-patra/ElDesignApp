@@ -2,13 +2,25 @@
 @inject IJSRuntime JSRuntime
 @inject IGlobalDataService GlobalData
 @inject ILayoutFunctionService LayoutFunction
+@inject IPlotPlanService PlotPlanService
 
 <div id="shared-scene-container" 
      style="width: 100%; 
-            height: @(_isVisible ? "800px" : "0px"); 
+            min-width: 800px;
+            height: calc(100vh - 250px);
+            min-height: 600px;
             display: @(_isVisible ? "block" : "none");
-            overflow: hidden;">
+            overflow: hidden;
+            position: relative;">
 </div>
+
+<style>
+    #shared-scene-container canvas {
+        display: block;
+        max-width: 100%;
+        max-height: 100%;
+    }
+</style>
 
 @code {
     private DotNetObjectReference<Draw>? _drawRef;
@@ -141,6 +153,9 @@
     
     private async Task DrawPlotPlansAsync()
     {
+        // Refresh local list
+        GlobalData.PlotPlans = await PlotPlanService.GetAllAsync();
+        
         if (GlobalData.PlotPlans == null || GlobalData.PlotPlans.Count == 0)
         {
             Console.WriteLine($"SharedSceneHost: No plot plans to draw for project, {ProjectId}");

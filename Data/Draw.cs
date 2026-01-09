@@ -70,7 +70,7 @@ public class Draw
         }
     }
     
-        [JSInvokable("MouseClick")]
+    [JSInvokable("MouseClick")]
     public void MouseClick(float posx, float posy, float posz, float eventclientX, float eventclientY,
         float eventpageX, float eventpageY, float eventoffsetX, float eventoffsetY,
         float eventlayerX, float eventlayerY, float eventx, float eventy, float mousex, float mousey,
@@ -272,5 +272,110 @@ public class Draw
     }
 
     
+    [JSInvokable("OnSceneClick")]
+    public void OnSceneClick(string clickDataJson)
+    {
+        try
+        {
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            
+            var clickData = JsonSerializer.Deserialize<SceneClickData>(clickDataJson, options);
+            
+            if (clickData == null) return;
+            
+            Console.WriteLine($"Scene Click: Type={clickData.ClickType}, " +
+                             $"World=({clickData.WorldX:F2}, {clickData.WorldY:F2}, {clickData.WorldZ:F2}), " +
+                             $"Object={clickData.ObjectTag ?? "none"}");
+            
+            switch (clickData.ClickType)
+            {
+                case "single":
+                    HandleSingleClick(clickData);
+                    break;
+                case "double":
+                    HandleDoubleClick(clickData);
+                    break;
+                case "shift":
+                    HandleShiftClick(clickData);
+                    break;
+                case "ctrl":
+                    HandleCtrlClick(clickData);
+                    break;
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"OnSceneClick error: {e.Message}");
+        }
+    }
     
+    private void HandleSingleClick(SceneClickData clickData)
+    {
+        Console.WriteLine($"Single Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        
+        if (!string.IsNullOrEmpty(clickData.ObjectTag))
+        {
+            Console.WriteLine($"  Clicked on object: {clickData.ObjectTag}");
+            // TODO: Select object, show properties, etc.
+        }
+        
+        // Store click point if needed
+        // _globalData.sceneDataCurrent.ClickPoints.Add(new ClickedPoint { ... });
+    }
+    
+    private void HandleDoubleClick(SceneClickData clickData)
+    {
+        Console.WriteLine($"Double Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        
+        if (!string.IsNullOrEmpty(clickData.ObjectTag))
+        {
+            Console.WriteLine($"  Double-clicked on object: {clickData.ObjectTag}");
+            // TODO: Open edit dialog, zoom to object, etc.
+        }
+    }
+    
+    private void HandleShiftClick(SceneClickData clickData)
+    {
+        Console.WriteLine($"Shift+Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        
+        if (!string.IsNullOrEmpty(clickData.ObjectTag))
+        {
+            Console.WriteLine($"  Shift-clicked on object: {clickData.ObjectTag}");
+            // TODO: Add to selection, extend selection, etc.
+        }
+    }
+    
+    private void HandleCtrlClick(SceneClickData clickData)
+    {
+        Console.WriteLine($"Ctrl+Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        
+        if (!string.IsNullOrEmpty(clickData.ObjectTag))
+        {
+            Console.WriteLine($"  Ctrl-clicked on object: {clickData.ObjectTag}");
+            // TODO: Toggle selection, add/remove from multi-select, etc.
+        }
+    }
+    
+    
+}
+
+
+public class SceneClickData
+{
+    public string ClickType { get; set; } = "";  // "single", "double", "shift", "ctrl"
+    public float ScreenX { get; set; }
+    public float ScreenY { get; set; }
+    public float WorldX { get; set; }
+    public float WorldY { get; set; }
+    public float WorldZ { get; set; }
+    public string? ObjectTag { get; set; }
+    public int? ObjectLayer { get; set; }
+    public Vector3Json? IntersectPoint { get; set; }
+    public int IntersectCount { get; set; }
+    public bool ShiftKey { get; set; }
+    public bool CtrlKey { get; set; }
+    public bool AltKey { get; set; }
 }
