@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 
 namespace ElDesignApp.Data;
 
@@ -13,8 +14,30 @@ using ElDesignApp.Services;
 using ElDesignApp.Services.Global;
 
 
+
 public class Draw
 {
+    // Event for UI updates
+    public event Action<SceneMessage>? OnSceneMessage;
+
+    // Helper method to send messages
+    private void SendMessage(SceneMessage message)
+    {
+        Console.WriteLine($"Draw.SendMessage: {message.Text}");
+        Console.WriteLine($"Draw.SendMessage: OnSceneMessage has subscribers: {OnSceneMessage != null}");
+    
+        if (OnSceneMessage != null)
+        {
+            Console.WriteLine($"Draw.SendMessage: Invoking event...");
+            OnSceneMessage.Invoke(message);
+            Console.WriteLine($"Draw.SendMessage: Event invoked successfully");
+        }
+        else
+        {
+            Console.WriteLine($"Draw.SendMessage: WARNING - No subscribers to OnSceneMessage!");
+        }
+    }
+    
     
     private readonly ILayoutFunctionService _layoutFunction; 
     private IGlobalDataService _globalData; 
@@ -286,7 +309,7 @@ public class Draw
             
             if (clickData == null) return;
             
-            Console.WriteLine($"Scene Click: Type={clickData.ClickType}, " +
+            Console.WriteLine($"Draw: Scene Click: Type={clickData.ClickType}, " +
                              $"World=({clickData.WorldX:F2}, {clickData.WorldY:F2}, {clickData.WorldZ:F2}), " +
                              $"Object={clickData.ObjectTag ?? "none"}");
             
@@ -304,6 +327,9 @@ public class Draw
                 case "ctrl":
                     HandleCtrlClick(clickData);
                     break;
+                case "pinPlaced":  // handle pin placement
+                    HandlePinPlaced(clickData);
+                    break;
             }
         }
         catch (Exception e)
@@ -314,11 +340,20 @@ public class Draw
     
     private void HandleSingleClick(SceneClickData clickData)
     {
-        Console.WriteLine($"Single Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        var text = $"Draw: Single Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})";
+        Console.WriteLine(text);
+        
+        var message = SceneMessage.Coordinates(
+            clickData.WorldX, 
+            clickData.WorldY, 
+            clickData.ObjectTag
+        );
+        SendMessage(message);
         
         if (!string.IsNullOrEmpty(clickData.ObjectTag))
         {
-            Console.WriteLine($"  Clicked on object: {clickData.ObjectTag}");
+            Console.WriteLine($"Draw: Clicked on object: {clickData.ObjectTag}");
+            SendMessage(SceneMessage.Info($"Object Type: {GetObjectType(clickData.ObjectTag)}"));
             // TODO: Select object, show properties, etc.
         }
         
@@ -328,11 +363,15 @@ public class Draw
     
     private void HandleDoubleClick(SceneClickData clickData)
     {
-        Console.WriteLine($"Double Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        Console.WriteLine($"Draw: Double Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        
+        SendMessage(SceneMessage.Coordinates(clickData.WorldX, clickData.WorldY, clickData.ObjectTag));
         
         if (!string.IsNullOrEmpty(clickData.ObjectTag))
         {
-            Console.WriteLine($"  Double-clicked on object: {clickData.ObjectTag}");
+            Console.WriteLine($"Draw: Double-clicked on object: {clickData.ObjectTag}");
+            SendMessage(SceneMessage.Info($"Double-clicked: {clickData.ObjectTag} - Opening details..."));
+
             // TODO: Open edit dialog, zoom to object, etc.
         }
     }
@@ -344,7 +383,12 @@ public class Draw
         if (!string.IsNullOrEmpty(clickData.ObjectTag))
         {
             Console.WriteLine($"  Shift-clicked on object: {clickData.ObjectTag}");
+            SendMessage(SceneMessage.Info($"Added to selection: {clickData.ObjectTag}"));
             // TODO: Add to selection, extend selection, etc.
+        }
+        else
+        {
+            SendMessage(SceneMessage.Coordinates(clickData.WorldX, clickData.WorldY));
         }
     }
     
@@ -354,9 +398,46 @@ public class Draw
         
         if (!string.IsNullOrEmpty(clickData.ObjectTag))
         {
-            Console.WriteLine($"  Ctrl-clicked on object: {clickData.ObjectTag}");
+            var text = $"  Ctrl-clicked on object: {clickData.ObjectTag}";
+            Console.WriteLine(text);
             // TODO: Toggle selection, add/remove from multi-select, etc.
         }
+    }
+    
+    private void HandlePinPlaced(SceneClickData clickData)
+    {
+        var tag = clickData.ObjectTag;
+        var x = clickData.WorldX;
+        var y = clickData.WorldY;
+        var z = clickData.WorldZ;
+    
+        Console.WriteLine($"Pin placed: {tag} at ({x:F2}, {y:F2}, {z:F2})");
+    
+        // Calculate E/N if needed
+        var enu = _layoutFunction.XY2EN(new Vector3(x, y, z));
+    
+        // Send message to UI
+        var message = SceneMessage.Info($"📍 Placed '{tag}' at E:{enu.E:F2}, N:{enu.N:F2}");
+        message.WorldX = x;
+        message.WorldY = y;
+        message.ObjectTag = tag;
+        SendMessage(message);
+    
+        // Store in global data if needed
+        // _globalData.RefPoints?.Add(new Vector3(x, y, z));
+    }
+    
+    
+    
+    
+    private string GetObjectType(string tag)
+    {
+        // Parse your tag format to get type
+        if (tag.StartsWith("EQP_")) return "Equipment";
+        if (tag.StartsWith("PIPE_")) return "Pipe";
+        if (tag.StartsWith("STR_")) return "Structure";
+        if (tag.StartsWith("PLT_")) return "PlotPlan";
+        return "Unknown";
     }
     
     
@@ -365,6 +446,7 @@ public class Draw
 
 public class SceneClickData
 {
+    [JsonPropertyName("eventType")]
     public string ClickType { get; set; } = "";  // "single", "double", "shift", "ctrl"
     public float ScreenX { get; set; }
     public float ScreenY { get; set; }

@@ -1,10 +1,76 @@
 @implements IAsyncDisposable
+@using ElDesignApp.Data
+@using ElDesignApp.Models
+@using ElDesignApp.Services
+@using ElDesignApp.Services.Global
 @inject IJSRuntime JSRuntime
 @inject IGlobalDataService GlobalData
 @inject ILayoutFunctionService LayoutFunction
 @inject IPlotPlanService PlotPlanService
+@inject PinPlacementService PinService
+
+@* ===== Message Bar ===== *@
+<div id="shared-scene-container-message-line"
+     class="scene-message-bar @GetMessageClass()"
+     style="width: 100%; 
+            min-width: 800px;
+            height: 50px;
+            display: @(_isVisible ? "flex" : "none");
+            overflow: hidden;
+            position: relative;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-bottom: 1px solid #0f3460;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 14px;">
+    
+    <div class="message-icon" style="font-size: 18px; flex-shrink: 0;">
+        @GetMessageIcon()
+    </div>
+    
+    <div class="message-content" style="flex: 1; display: flex; align-items: center; gap: 16px; overflow: hidden;">
+        <span class="message-text" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            @(_currentMessage?.Text ?? "Ready")
+        </span>
+        @if (_currentMessage?.WorldX.HasValue == true)
+        {
+            <span class="message-coordinates" 
+                  style="font-family: 'Consolas', monospace; 
+                         background: rgba(255,255,255,0.1); 
+                         padding: 4px 8px; 
+                         border-radius: 4px; 
+                         font-size: 13px; 
+                         color: #4fc3f7;">
+                X: @_currentMessage.WorldX.Value.ToString("F2") | 
+                Y: @_currentMessage.WorldY!.Value.ToString("F2")
+            </span>
+        }
+    </div>
+    
+    @if (!string.IsNullOrEmpty(_currentMessage?.ObjectTag))
+    {
+        <div class="message-tag">
+            <span style="background: #0f3460; 
+                         color: #4fc3f7; 
+                         padding: 4px 12px; 
+                         border-radius: 12px; 
+                         font-size: 12px; 
+                         font-weight: 500;">
+                @_currentMessage.ObjectTag
+            </span>
+        </div>
+    }
+    
+    <div class="message-timestamp" style="font-size: 12px; color: #888; flex-shrink: 0;">
+        @(_currentMessage?.Timestamp.ToString("HH:mm:ss") ?? "")
+    </div>
+</div>
 
 <div id="shared-scene-container" 
+     class="@(PinService.ShowPinCursor ? "pin-mode" : "")"
      style="width: 100%; 
             min-width: 800px;
             height: calc(100vh - 250px);
@@ -13,6 +79,35 @@
             overflow: hidden;
             position: relative;">
 </div>
+@* ===== Pin Mode Indicator ===== *@
+@if (PinService.IsActive)
+{
+    <div class="pin-mode-indicator @(PinService.ShiftKeyPressed ? "shift-active" : "") @(PinService.AllTagsPlaced ? "completed" : "")">
+        <span class="pin-icon">📍</span>
+        <div class="pin-info">
+            <span class="pin-title">Pin Placement Mode</span>
+            <span class="pin-subtitle">
+                @if (PinService.AllTagsPlaced)
+                {
+                    <text>All pins placed!</text>
+                }
+                else if (PinService.ShiftKeyPressed)
+                {
+                    <text>Click to place: <strong>@PinService.CurrentTag</strong></text>
+                }
+                else
+                {
+                    <text>Hold SHIFT and click to place pins</text>
+                }
+            </span>
+            <div class="pin-progress">
+                <div class="pin-progress-bar" style="width: @GetProgressPercent()%;"></div>
+            </div>
+        </div>
+        <span class="pin-count">@(PinService.TotalTags - PinService.RemainingTags) / @PinService.TotalTags</span>
+        <button class="pin-mode-cancel" @onclick="CancelPinMode">✕ Cancel</button>
+    </div>
+}
 
 <style>
     #shared-scene-container canvas {
@@ -23,39 +118,35 @@
 </style>
 
 @code {
-    private DotNetObjectReference<Draw>? _drawRef;
+    // ===== Fields =====
+    private Draw? _draw;                           // The Draw instance (created here, not injected)
+    private DotNetObjectReference<Draw>? _drawRef; // Reference for JS interop
+    private DotNetObjectReference<SharedSceneHost>? _thisRef;
     private bool _isInitialized;
     private bool _isVisible = true;
+    private string? _previousProjectId;
+    private SceneMessage? _currentMessage;
+    private List<PinMarker> _placedPins = new();
+
+    // ===== Parameters =====
     [Parameter] public string CurrentPage { get; set; } = "";
     [Parameter] public string? ProjectId { get; set; }
     [Parameter] public bool Visible { get; set; } = true;
-    private string? _previousProjectId;
-    
+
+    // ===== Lifecycle Methods =====
     
     protected override void OnInitialized()
     {
-        // Subscribe to project changes directly
+        Console.WriteLine("SharedSceneHost.OnInitialized: Creating Draw instance...");
+        // Create the Draw instance
+        _draw = new Draw(LayoutFunction, GlobalData);
+        
+        // Subscribe to messages from Draw - THIS IS THE KEY!
+        _draw.OnSceneMessage += HandleSceneMessage;
+        Console.WriteLine("SharedSceneHost.OnInitialized: Subscribed to OnSceneMessage");
+        // Subscribe to project changes
         GlobalData.OnProjectChanged += OnProjectChanged;
-    }
-    
-    private void OnProjectChanged()
-    {
-        Console.WriteLine($"SharedSceneHost: OnProjectChanged event received");
-        InvokeAsync(async () =>
-        {
-            if (!_isInitialized) return;
-            
-            var newProjectId = GlobalData.SelectedProject?.UID.ToString();
-            
-            if (newProjectId != _previousProjectId && !string.IsNullOrEmpty(newProjectId))
-            {
-                Console.WriteLine($"SharedSceneHost: Project changed from {_previousProjectId} to {newProjectId}");
-                _previousProjectId = newProjectId;
-                
-                await ClearAndReloadSceneAsync();
-                StateHasChanged();
-            }
-        });
+        PinService.OnStateChanged += OnPinServiceStateChanged;
     }
 
     protected override void OnParametersSet()
@@ -70,7 +161,10 @@
         {
             Console.WriteLine("SharedSceneHost: Initializing scene...");
             
-            _drawRef = DotNetObjectReference.Create(new Draw(LayoutFunction, GlobalData));
+            // Create DotNetObjectReference from the SAME Draw instance
+            _drawRef = DotNetObjectReference.Create(_draw!);
+            _thisRef = DotNetObjectReference.Create(this);
+            Console.WriteLine("SharedSceneHost.OnAfterRenderAsync: Created DotNetObjectReference");
             
             var savedState = GlobalData.sceneDataCurrent?.SceneJSON ?? "";
             
@@ -81,6 +175,9 @@
                     "shared-scene-container", 
                     savedState, 
                     _drawRef);
+                
+                // Initialize pin cursor handling
+                await JSRuntime.InvokeVoidAsync("initPinPlacementMode", _thisRef);
                 
                 _isInitialized = true;
                 _previousProjectId = ProjectId;
@@ -95,12 +192,10 @@
         }
     }
 
-    
     protected override async Task OnParametersSetAsync()
     {
         if (!_isInitialized) return;
 
-        // Handle page context changes
         if (!string.IsNullOrEmpty(CurrentPage))
         {
             var layers = GetLayersForPage(CurrentPage);
@@ -118,26 +213,199 @@
         }
     }
 
-    private async Task ClearAndReloadSceneAsync()
+    // ===== Event Handlers =====
+    
+    /// <summary>
+    /// This method is called when Draw.SendMessage() is invoked (from JS click handlers)
+    /// </summary>
+    private void HandleSceneMessage(SceneMessage message)
+    {
+        
+        Console.WriteLine($"SharedSceneHost.HandleSceneMessage: RECEIVED - {message.Text}");
+        
+        _currentMessage = message;
+       
+        
+        // Handle pin placement from shift+click
+        if (PinService.IsActive && 
+            PinService.ShiftKeyPressed && 
+            message.WorldX.HasValue && 
+            message.WorldY.HasValue)
+        {
+            // Get next tag from service
+            var tag = PinService.CurrentTag;
+            
+            if (!string.IsNullOrEmpty(tag))
+            {
+                // Place the pin with the tag
+                _ = PlacePinAsync(tag, message.WorldX.Value, message.WorldY.Value, message.WorldZ ?? 0);
+            }
+        }
+        
+               
+        Console.WriteLine($"SharedSceneHost.HandleSceneMessage: Calling InvokeAsync(StateHasChanged)...");
+        // Must use InvokeAsync because this event comes from a JS callback thread
+        InvokeAsync(() =>
+        {
+            Console.WriteLine($"SharedSceneHost.HandleSceneMessage: Inside InvokeAsync, calling StateHasChanged");
+            StateHasChanged();
+            Console.WriteLine($"SharedSceneHost.HandleSceneMessage: StateHasChanged completed");
+        });
+    }
+
+    private void OnProjectChanged()
+    {
+        Console.WriteLine($"SharedSceneHost: OnProjectChanged event received");
+        InvokeAsync(async () =>
+        {
+            if (!_isInitialized) return;
+            
+            var newProjectId = GlobalData.SelectedProject?.UID.ToString();
+            
+            if (newProjectId != _previousProjectId && !string.IsNullOrEmpty(newProjectId))
+            {
+                Console.WriteLine($"SharedSceneHost: Project changed from {_previousProjectId} to {newProjectId}");
+                _previousProjectId = newProjectId;
+                await ClearAndReloadSceneAsync();
+                StateHasChanged();
+            }
+        });
+    }
+    
+    private void OnPinServiceStateChanged()
+    {
+        InvokeAsync(async () =>
+        {
+            // Update JS cursor state
+            if (_isInitialized)
+            {
+                await JSRuntime.InvokeVoidAsync("setPinModeActive", 
+                    PinService.IsActive, 
+                    PinService.CurrentTag);
+            }
+            StateHasChanged();
+        });
+    }
+    
+    
+    // ===== JSInvokable Methods (called from JavaScript) =====
+    
+    [JSInvokable]
+    public void OnShiftKeyChanged(bool pressed)
+    {
+        PinService.ShiftKeyPressed = pressed;
+    }
+
+    [JSInvokable]
+    public void OnPinModeCancelled()
+    {
+        PinService.StopPlacement();
+    }
+
+    [JSInvokable]
+    public string? GetNextPinTag()
+    {
+        return PinService.GetNextTag();
+    }
+
+    // ===== Pin Management =====
+    
+    private async Task PlacePinAsync(string tag, double x, double y, double z)
     {
         try
         {
-            Console.WriteLine("SharedSceneHost: Clearing scene for new project...");
+            // Add pin via JS
+            await JSRuntime.InvokeVoidAsync("addPinMarker", x, y, z, tag);
             
-            // Clear all rendered objects
-            await JSRuntime.InvokeVoidAsync("clearAllSceneLayers");
+            // Store locally
+            _placedPins.Add(new PinMarker
+            {
+                Tag = tag,
+                X = x,
+                Y = y,
+                Z = z,
+                CreatedAt = DateTime.Now
+            });
             
-            // Reload plot plans for new project
-            await DrawPlotPlansAsync();
+            // Notify service
+            PinService.NotifyPinPlaced(tag, x, y, z);
             
-            Console.WriteLine("SharedSceneHost: Scene reloaded for new project");
+            // Advance to next tag
+            var nextTag = PinService.GetNextTag();
+            
+            // Update JS with new tag
+            await JSRuntime.InvokeVoidAsync("updatePinModeTag", nextTag);
+            
+            // Update message
+            if (nextTag != null)
+            {
+                _currentMessage = SceneMessage.Info($"✓ Placed '{tag}' - Next: '{nextTag}'");
+            }
+            else
+            {
+                _currentMessage = SceneMessage.Info($"✓ All pins placed! Last: '{tag}'");
+            }
+            
+            Console.WriteLine($"Pin placed: {tag} at ({x:F2}, {y:F2})");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"ClearAndReloadScene error: {ex.Message}");
+            Console.WriteLine($"PlacePinAsync error: {ex.Message}");
         }
     }
+
+    public async Task ClearAllPinsAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("clearAllPinMarkers");
+            _placedPins.Clear();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ClearAllPinsAsync error: {ex.Message}");
+        }
+    }
+
+    private void CancelPinMode()
+    {
+        PinService.StopPlacement();
+    }
+
     
+
+    // ===== Helper Methods =====
+    
+    private string GetMessageClass()
+    {
+        return _currentMessage?.Type switch
+        {
+            SceneMessageType.Warning => "message-warning",
+            SceneMessageType.Error => "message-error",
+            SceneMessageType.ObjectSelected => "message-selected",
+            SceneMessageType.Coordinates => "message-coordinates",
+            _ => "message-info"
+        };
+    }
+
+    private string GetMessageIcon()
+    {
+        return _currentMessage?.Type switch
+        {
+            SceneMessageType.Warning => "⚠️",
+            SceneMessageType.Error => "❌",
+            SceneMessageType.ObjectSelected => "🎯",
+            SceneMessageType.Coordinates => "📍",
+            _ => "ℹ️"
+        };
+    }
+    
+    private int GetProgressPercent()
+    {
+        if (PinService.TotalTags == 0) return 0;
+        return (int)((PinService.TotalTags - PinService.RemainingTags) * 100.0 / PinService.TotalTags);
+    }
+
 
     private int[] GetLayersForPage(string pageName)
     {
@@ -150,10 +418,23 @@
         };
     }
 
-    
+    private async Task ClearAndReloadSceneAsync()
+    {
+        try
+        {
+            Console.WriteLine("SharedSceneHost: Clearing scene for new project...");
+            await JSRuntime.InvokeVoidAsync("clearAllSceneLayers");
+            await DrawPlotPlansAsync();
+            Console.WriteLine("SharedSceneHost: Scene reloaded for new project");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ClearAndReloadScene error: {ex.Message}");
+        }
+    }
+
     private async Task DrawPlotPlansAsync()
     {
-        // Refresh local list
         GlobalData.PlotPlans = await PlotPlanService.GetAllAsync();
         
         if (GlobalData.PlotPlans == null || GlobalData.PlotPlans.Count == 0)
@@ -180,11 +461,46 @@
             }
         }
     }
-    
 
+    // ===== Cleanup =====
+    
     public async ValueTask DisposeAsync()
     {
+        // Unsubscribe from events to prevent memory leaks
+        if (_draw != null)
+        {
+            _draw.OnSceneMessage -= HandleSceneMessage;
+        }
+        
+        // Unsubscribe to project changes
         GlobalData.OnProjectChanged -= OnProjectChanged;
+        PinService.OnStateChanged -= OnPinServiceStateChanged;
+        
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("disposePinPlacementMode");
+        }
+        catch
+        {
+            // ignored
+        }
+
         _drawRef?.Dispose();
+        _thisRef?.Dispose();
     }
+    
+    
+    // ===== Models =====
+
+    public class PinMarker
+    {
+        public string Tag { get; set; } = "";
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Z { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
+    }
+    
 }
+
+

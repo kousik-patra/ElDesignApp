@@ -55,7 +55,10 @@ public interface IPlotPlanService
     Task RefreshAsync();
     
     Task<PlotPlan> LoadPdfAsync(InputFileChangeEventArgs e, int pageNumber = 0, int dpi = 150);
-    
+
+
+    public CoordinateDisplayModel GetCoordinatesForDisplay(double sceneX, double sceneY);
+
 }
 
 public class PlotPlanService : IPlotPlanService
@@ -374,82 +377,103 @@ public class PlotPlanService : IPlotPlanService
 
     #endregion
 
-/// <summary>
-/// Load a PDF file and convert to image for Three.js
-/// </summary>
-public async Task<PlotPlan> LoadPdfAsync(InputFileChangeEventArgs e, int pageNumber = 0, int dpi = 150)
-{
-    try
+    /// <summary>
+    /// Load a PDF file and convert to image for Three.js
+    /// </summary>
+    public async Task<PlotPlan> LoadPdfAsync(InputFileChangeEventArgs e, int pageNumber = 0, int dpi = 150)
     {
-        var newImage = new PlotPlan
+        try
         {
-            UID = Guid.NewGuid()
-        };
-
-        // Validate file type
-        if (e.File.ContentType.ToLower() != "application/pdf")
-        {
-            throw new InvalidOperationException("Only PDF files are supported by this method.");
+            var newImage = new PlotPlan
+            {
+                UID = Guid.NewGuid()
+            };
+    
+            // Validate file type
+            if (e.File.ContentType.ToLower() != "application/pdf")
+            {
+                throw new InvalidOperationException("Only PDF files are supported by this method.");
+            }
+    
+            // Check file size (50MB max for PDFs)
+            const long maxPdfSize = 50 * 1024 * 1024;
+            if (e.File.Size > maxPdfSize)
+            {
+                throw new InvalidOperationException("PDF file size exceeds 50MB limit.");
+            }
+    
+            // Read PDF into memory
+            using var pdfStream = new MemoryStream();
+            await e.File.OpenReadStream(maxPdfSize).CopyToAsync(pdfStream);
+            pdfStream.Position = 0;
+            var pdfBytes = pdfStream.ToArray();
+    
+            // Get page count
+            int pageCount = Conversion.GetPageCount(pdfBytes);
+            if (pageNumber >= pageCount)
+            {
+                throw new InvalidOperationException($"PDF has {pageCount} pages. Page {pageNumber + 1} does not exist.");
+            }
+    
+            // FIXED: Use RenderOptions for DPI setting
+            var renderOptions = new RenderOptions
+            {
+                Dpi = dpi,
+                WithAnnotations = true,
+                WithFormFill = true
+            };
+    
+            // Render PDF page to SKBitmap
+            using var bitmap = Conversion.ToImage(pdfBytes, (Index)pageNumber, null, renderOptions);
+    
+            // Convert SKBitmap to PNG bytes
+            using var pngData = bitmap.Encode(SKEncodedImageFormat.Png, 90);
+            var pngBytes = pngData.ToArray();
+    
+            // Create base64 image string
+            newImage.ImgString = $"data:image/png;base64,{Convert.ToBase64String(pngBytes)}";
+    
+            // Create thumbnail
+            var thumbInfo = new SKImageInfo(400, 250);
+            using var thumbBitmap = new SKBitmap(thumbInfo);
+            bitmap.ScalePixels(thumbBitmap, SKFilterQuality.Medium);
+            
+            using var thumbData = thumbBitmap.Encode(SKEncodedImageFormat.Png, 80);
+            newImage.ImgThumbString = $"data:image/png;base64,{Convert.ToBase64String(thumbData.ToArray())}";
+    
+            // Store dimensions
+            newImage.Width = bitmap.Width;
+            newImage.Height = bitmap.Height;
+    
+            Debug.WriteLine($"PDF loaded: Page {pageNumber + 1}/{pageCount}, {bitmap.Width}x{bitmap.Height}px at {dpi}dpi");
+            return newImage;
         }
-
-        // Check file size (50MB max for PDFs)
-        const long maxPdfSize = 50 * 1024 * 1024;
-        if (e.File.Size > maxPdfSize)
+        catch (Exception ex)
         {
-            throw new InvalidOperationException("PDF file size exceeds 50MB limit.");
+            Debug.WriteLine($"Error processing PDF: {ex.Message}");
+            throw;
         }
-
-        // Read PDF into memory
-        using var pdfStream = new MemoryStream();
-        await e.File.OpenReadStream(maxPdfSize).CopyToAsync(pdfStream);
-        pdfStream.Position = 0;
-        var pdfBytes = pdfStream.ToArray();
-
-        // Get page count
-        int pageCount = Conversion.GetPageCount(pdfBytes);
-        if (pageNumber >= pageCount)
-        {
-            throw new InvalidOperationException($"PDF has {pageCount} pages. Page {pageNumber + 1} does not exist.");
-        }
-
-        // FIXED: Use RenderOptions for DPI setting
-        var renderOptions = new RenderOptions
-        {
-            Dpi = dpi,
-            WithAnnotations = true,
-            WithFormFill = true
-        };
-
-        // Render PDF page to SKBitmap
-        using var bitmap = Conversion.ToImage(pdfBytes, (Index)pageNumber, null, renderOptions);
-
-        // Convert SKBitmap to PNG bytes
-        using var pngData = bitmap.Encode(SKEncodedImageFormat.Png, 90);
-        var pngBytes = pngData.ToArray();
-
-        // Create base64 image string
-        newImage.ImgString = $"data:image/png;base64,{Convert.ToBase64String(pngBytes)}";
-
-        // Create thumbnail
-        var thumbInfo = new SKImageInfo(400, 250);
-        using var thumbBitmap = new SKBitmap(thumbInfo);
-        bitmap.ScalePixels(thumbBitmap, SKFilterQuality.Medium);
+    }
+    
+    
+    public CoordinateSystemManager CoordinateManager { get; } = new();
+    public CoordinateDisplayModel GetCoordinatesForDisplay(double sceneX, double sceneY)
+    {
+        var allCoords = CoordinateManager.GetAllCoordinates(sceneX, sceneY);
         
-        using var thumbData = thumbBitmap.Encode(SKEncodedImageFormat.Png, 80);
-        newImage.ImgThumbString = $"data:image/png;base64,{Convert.ToBase64String(thumbData.ToArray())}";
-
-        // Store dimensions
-        newImage.Width = bitmap.Width;
-        newImage.Height = bitmap.Height;
-
-        Debug.WriteLine($"PDF loaded: Page {pageNumber + 1}/{pageCount}, {bitmap.Width}x{bitmap.Height}px at {dpi}dpi");
-        return newImage;
+        return new CoordinateDisplayModel
+        {
+            SceneX = sceneX,
+            SceneY = sceneY,
+            SystemCoordinates = allCoords.Select(kv => new SystemCoordinate
+            {
+                SystemName = kv.Key,
+                X = kv.Value.X,
+                Y = kv.Value.Y,
+                Unit = CoordinateManager.Get(kv.Key)?.Unit ?? "m"
+            }).ToList()
+        };
     }
-    catch (Exception ex)
-    {
-        Debug.WriteLine($"Error processing PDF: {ex.Message}");
-        throw;
-    }
-}
+    
     
 }

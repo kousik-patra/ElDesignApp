@@ -15,6 +15,7 @@
 @inject ITableService Table
 @inject IGlobalDataService GlobalData
 @inject IPlotPlanService PlotPlanService
+@inject PinPlacementService PinService
 
 @* ============ Messages Section ============ *@
 @if (!string.IsNullOrEmpty(_errorMessage))
@@ -212,8 +213,33 @@ else
                     @* Step 1: Scale *@
                     @if (showScaleSubmit)
                     {
-                        refPointTexts = ["X-Left", "X-Right", "Y-Bottom", "Y-Top"];
+                        _refPinTagList = ["X-Left", "X-Right", "Y-Bottom", "Y-Top"];
                         _ = UpdateRefPointTexts();
+                        @* Tag List Display *@
+                        <div class="tag-list">
+                            <h5>Tags to Place (@_refPinTagList.Count)</h5>
+            
+                            @if (_refPinTagList.Count == 0)
+                            {
+                                <p class="empty-message">No tags defined. Add tags above to begin.</p>
+                            }
+                            else
+                            {
+                                <div class="tag-chips">
+                                    @foreach (var (tag, index) in _refPinTagList.Select((t, i) => (t, i)))
+                                    {
+                                        <div class="tag-chip @(index < _currentIndex ? "placed" : "") @(index == _currentIndex && _refPinActive ? "current" : "")">
+                                            <span class="tag-number">@(index + 1)</span>
+                                            <span class="tag-name">@tag</span>
+                                            @if (index < _currentIndex)
+                                            {
+                                                <span class="tag-status">✓</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
                         
                         @if (_plotPlans.Count==0)
                         {
@@ -229,6 +255,8 @@ else
                         }else
                         {
                             @* For Subsequent Plots, rotation required to match the Key Plan orientation *@
+                            @* Rotation can either be multiples of 90 deg or any other angle *@
+                            @* Currently only multiples of 90 deg is implemented *@
                             <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="RotatePlotPlan"
                                     title="Rotate 90°">↩
                             </button>
@@ -251,11 +279,106 @@ else
                         <span class="badge bg-info ms-2"
                               title="Reference points clicked">@(GlobalData.RefPoints?.Count ?? 0)/4 pts</span>
                     }
+                    
+                    @* ===== Pin Placement Control Section ===== *@
+                    <div class="section">
+                        <h4>Step 2: Place Pins on Map</h4>
+                        
+                        <div class="control-buttons">
+                            @if (!_refPinActive)
+                            {
+                                <button @onclick="StartPinPlacement" 
+                                        class="btn btn-success btn-lg"
+                                        disabled="@(_refPinTagList.Count == 0)">
+                                    📍 Start Pin Placement
+                                </button>
+                            }
+                            else
+                            {
+                                <button @onclick="StopPinPlacement" class="btn btn-danger btn-lg">
+                                    ⏹ Stop Pin Placement
+                                </button>
+                            }
+                            
+                            <button @onclick="ResetPlacement" class="btn btn-secondary" disabled="@(!_hasPlacedPins)">
+                                🔄 Reset All
+                            </button>
+                        </div>
+                        
+                        @if (_refPinActive)
+                        {
+                            <div class="placement-instructions">
+                                <div class="instruction-step">
+                                    <span class="step-number">1</span>
+                                    <span>Hold <kbd>SHIFT</kbd> key</span>
+                                </div>
+                                <div class="instruction-step">
+                                    <span class="step-number">2</span>
+                                    <span>Click on the map to place: <strong>@PinService.CurrentTag</strong></span>
+                                </div>
+                                <div class="instruction-step">
+                                    <span class="step-number">3</span>
+                                    <span>Release SHIFT to navigate, hold again to place next pin</span>
+                                </div>
+                            </div>
+                            
+                            <div class="progress-section">
+                                <div class="progress-text">
+                                    Progress: @_currentIndex / @_refPinTagList.Count pins placed
+                                </div>
+                                <div class="progress-bar-container">
+                                    <div class="progress-bar-fill" style="width: @GetProgressPercent()%"></div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    
+                    @* ===== Placed Pins Summary ===== *@
+                    @if (_placedPins.Count > 0)
+                    {
+                        <div class="section">
+                            <h4>Placed Reference Points</h4>
+                            
+                            <table class="pins-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Tag</th>
+                                        <th>X</th>
+                                        <th>Y</th>
+                                        <th>E (Easting)</th>
+                                        <th>N (Northing)</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var (pin, index) in _placedPins.Select((p, i) => (p, i)))
+                                    {
+                                        <tr>
+                                            <td>@(index + 1)</td>
+                                            <td><strong>@pin.Tag</strong></td>
+                                            <td>@pin.X.ToString("F2")</td>
+                                            <td>@pin.Y.ToString("F2")</td>
+                                            <td>@(pin.E?.ToString("F2") ?? "-")</td>
+                                            <td>@(pin.N?.ToString("F2") ?? "-")</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-danger" @onclick="() => RemovePlacedPin(pin.Tag)">
+                                                    Remove
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    
 
                     @* Step 2: Centre - Key Plan *@
                     @if (showCentreSubmit && _plotPlans.Count == 0)
                     {
-                        refPointTexts = ["Centre (0,0)"];
+                        _refPinTagList = ["Centre (0,0)"];
                         _ = UpdateRefPointTexts();
                         <span class="toolbar-label">Local:</span>
                         <InputNumber class="form-control form-control-sm toolbar-input"
@@ -279,7 +402,7 @@ else
                     @* Step 2: Centre - Subsequent Plan *@
                     @if (showCentreSubmit && _plotPlans.Count > 0)
                     {
-                        refPointTexts = ["Ref-New", "Ref-Key"];
+                        _refPinTagList = ["Ref-New", "Ref-Key"];
                         _ = UpdateRefPointTexts();
                         <span class="text-muted small">
                             <i class="bi bi-info-circle"></i> Ctrl+Click: New plan → Key plan ref
@@ -358,6 +481,15 @@ else
 
     [Parameter]
     public Plot? PlotComponent { get; set; }
+    
+    // ===== State =====
+    private bool _refPinActive = false;
+    private int _currentIndex = 0;
+    private string _newTag = "";
+    private List<PlacedPin> _placedPins = new();
+    private bool _hasPlacedPins => _placedPins.Count > 0;
+    
+    
 
     // Data
     private PlotPlan newImage = new();
@@ -387,7 +519,7 @@ else
     private bool shouldRenderUIChanges = true;
     protected override bool ShouldRender() => shouldRenderUIChanges;
 
-    private List<string> refPointTexts = [];
+    private List<string> _refPinTagList = [];
 
     // Messages
     private string? _errorMessage;
@@ -409,6 +541,15 @@ else
     #endregion
 
     #region Lifecycle
+    
+    protected override void OnInitialized()
+    {
+        // Subscribe to pin service events
+        PinService.OnStateChanged += OnPinServiceChanged;
+        PinService.OnPinPlaced += OnPinPlaced;
+        PinService.OnAllPinsPlaced += OnAllPinsPlaced;
+    }
+
 
     protected override async Task OnInitializedAsync()
     {
@@ -431,6 +572,13 @@ else
         
         await base.OnInitializedAsync();
     }
+    public void Dispose()
+    {
+        PinService.OnStateChanged -= OnPinServiceChanged;
+        PinService.OnPinPlaced -= OnPinPlaced;
+        PinService.OnAllPinsPlaced -= OnAllPinsPlaced;
+    }
+    
 
     #endregion
 
@@ -665,9 +813,11 @@ else
 
     private async Task RotatePlotPlan()
     {
+        var previousRotationAngleDeg = Math.Round(newImage.Rotation * 90 / Math.PI,0);
         newImage.Rotation += (float)Math.PI / 2;
-        Debug.WriteLine($"Rotating plot plan to {Math.Round(newImage.Rotation * 90 / Math.PI, 0)} degrees");
-        await SafeJsInvoke("rotatePlane", newImage.Rotation);
+        var newRotationAngleDeg = Math.Round(newImage.Rotation * 90 / Math.PI,0);
+        Debug.WriteLine($"Rotating plot plan from {previousRotationAngleDeg} to {newRotationAngleDeg} degrees");
+        await SafeJsInvoke("rotatePlane", (float)Math.PI / 2);
     }
 
 
@@ -675,14 +825,16 @@ else
 
     private async Task UpdateRefPointTexts()
     {
-        //refPointTexts = ["X-Left", "X-Right", "Y-Bottom", "Y-Top", "Centre (0,0)","Ref-New Plan", "Ref-Key Plan"];
-        if (!await SafeJsInvoke("updateRefPointTexts", refPointTexts))
+        if (_refPinTagList.Count == 0) return;
+        
+        //_refPinTagList = ["X-Left", "X-Right", "Y-Bottom", "Y-Top", "Centre (0,0)","Ref-New Plan", "Ref-Key Plan"];
+        if (!await SafeJsInvoke("updateRefPointTexts", _refPinTagList))
         {
-            _errorMessage = $"Unable to update refPointTexts = '{refPointTexts}'.";
+            _errorMessage = $"Unable to update _refPinTagList = '{_refPinTagList}'.";
         }
         else
         {
-            Debug.WriteLine($"Successfully updated refPointTexts = '{refPointTexts}'.");
+            Debug.WriteLine($"Successfully updated _refPinTagList = '{_refPinTagList}'.");
         }
     }
 
@@ -942,11 +1094,35 @@ else
             customValidation?.ClearErrors();
             filenme = null;
             
+            // Save Project with default coordinate system for the Key Plot Plan
+            // Additional coordinate systems will be saved separately
+            if (newImage.KeyPlan)
+            {
+                var defaultCoordinateSystem = new CoordinateSystem()
+                {
+                    Name = "", //Default
+                    Description = "Default for KeyPlan",
+                    Unit = "m",
+                    ReferenceSceneX = 0,
+                    ReferenceSceneY = 0,
+                    ReferenceX = newImage.CentreX, // Key Plot Plan Easting
+                    ReferenceY = newImage.CentreY, // Key Plot Plan Northing
+                    RotationDegrees = 0, // Key Plot Plan True North offset
+                    ScaleX = newImage.X2>newImage.X1?1:-1,
+                    ScaleY = newImage.Y2>newImage.Y1?1:-1
+                };
+                GlobalData.SelectedProject?.CoordinateSystems.Clear();
+                GlobalData.SelectedProject?.CoordinateSystems.Add(defaultCoordinateSystem);
+                GlobalData.SelectedProject?.CoordinateSystemJson = 
+                    JsonSerializer.Serialize(GlobalData.SelectedProject.CoordinateSystems);
+                await SaveProject();
+            }
+            
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error saving plot plan: {ex.Message}");
             _errorMessage = $"Failed to save plot plan: {ex.Message}";
+            Debug.WriteLine($"Error saving plot plan: {ex.Message}");
         }
         finally
         {
@@ -956,8 +1132,21 @@ else
             
         }
     }
-    
-    
+
+    private async Task SaveProject()
+    {
+        // Save Project with added coordinate system
+        // This includes default and/or any additional coordinate systems added separately
+        try
+        {
+            var saveProject = await Table.UpdateAsync(GlobalData.SelectedProject);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error in saving project with coordinate details: {ex.Message}";
+            Debug.WriteLine(_errorMessage); Console.WriteLine(_errorMessage);
+        }
+    }
     
     /// <summary>
     /// Confirm and discard the current plot plan import, resetting back to file selection
@@ -1070,6 +1259,12 @@ else
     
     // ============ Helper Methods ============
     
+    private int GetProgressPercent()
+    {
+        if (_refPinTagList.Count == 0) return 0;
+        return (int)(_currentIndex * 100.0 / _refPinTagList.Count);
+    }
+    
     /// <summary>
     /// Returns CSS class to show/hide file upload (using CSS, not conditional rendering)
     /// </summary>
@@ -1083,5 +1278,99 @@ else
     }
     
     
+    // ===== Event Handlers =====
+    
+    private void OnPinServiceChanged()
+    {
+        _currentIndex = PinService.CurrentTagIndex;
+        _refPinActive = PinService.IsActive;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnPinPlaced(string tag, double x, double y, double z)
+    {
+        _placedPins.Add(new PlacedPin
+        {
+            Tag = tag,
+            X = x,
+            Y = y,
+            Z = z,
+            // Calculate E/N if you have the function available
+            // E = ..., N = ...
+        });
+        _currentIndex = PinService.CurrentTagIndex;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnAllPinsPlaced()
+    {
+        _refPinActive = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    // ===== Tag Management =====
+    
+    private void AddTag()
+    {
+        if (string.IsNullOrWhiteSpace(_newTag)) return;
+        
+        var tag = _newTag.Trim().ToUpper();
+        if (!_refPinTagList.Contains(tag))
+        {
+            _refPinTagList.Add(tag);
+        }
+        _newTag = "";
+    }
+
+
+
+
+
+    // ===== Pin Placement Control =====
+    
+    private void StartPinPlacement()
+    {
+        if (_refPinTagList.Count == 0) return;
+        
+        // Start placement with our tag list
+        PinService.StartPlacement(_refPinTagList);
+        _refPinActive = true;
+        _currentIndex = 0;
+    }
+
+    private void StopPinPlacement()
+    {
+        PinService.StopPlacement();
+        _refPinActive = false;
+    }
+
+    private void ResetPlacement()
+    {
+        PinService.Reset();
+        _placedPins.Clear();
+        _currentIndex = 0;
+        // TODO: Call JS to clear pins from scene
+    }
+
+    private void RemovePlacedPin(string tag)
+    {
+        _placedPins.RemoveAll(p => p.Tag == tag);
+        // TODO: Call JS to remove pin from scene
+    }
+    
+    
+    
+    
+    // ===== Models =====
+    
+    private class PlacedPin
+    {
+        public string Tag { get; set; } = "";
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Z { get; set; }
+        public double? E { get; set; }
+        public double? N { get; set; }
+    }
     
 }

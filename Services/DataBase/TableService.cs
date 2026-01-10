@@ -127,7 +127,7 @@ public interface ITableService
     /// <summary>
     /// Update all fields of an item (identified by UID or unique fields)
     /// </summary>
-    Task<int> UpdateAsync<T>(T item) where T : class;
+    Task<int> UpdateAsync<T>(T item) where T : class?;
 
     /// <summary>
     /// Update specific fields of an item (auto-detects by UID or unique fields)

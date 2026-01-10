@@ -95,6 +95,8 @@ builder.Services.AddDistributedMemoryCache();
     builder.Services.AddScoped<IDefaultRoleSeederService, DefaultRoleSeederService>();
     builder.Services.AddScoped<IUserContextService, UserContextService>();
     builder.Services.AddScoped<IPlotPlanService, PlotPlanService>();
+    builder.Services.AddScoped<Draw>();
+    builder.Services.AddScoped<PinPlacementService>();
 
     builder.Services.AddScoped<IDbConnection>(sp => 
         new SqlConnection(sp.GetRequiredService<IConfiguration>()

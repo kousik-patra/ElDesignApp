@@ -277,7 +277,8 @@ public class Project
     [Display(Name = "Y2>Y1", Order = 17)]
     public bool PositiveScaleY { get; set; } = true; // While scaling the Key Plot Plan Y2>Y1?
     
-    
+    public string CoordinateSystemJson { get; set; } //JSON of list of CoordinateSystems (base and any other like GLOBAL, etc.), 
+    public List<CoordinateSystem> CoordinateSystems { get; set; }
     public int Order { get; set; }
     
     // Navigation properties
@@ -285,6 +286,8 @@ public class Project
     public virtual ICollection<RoleMapping> RoleMappings { get; set; } = new List<RoleMapping>();
     public virtual ICollection<ProjectUserRole> UserRoles { get; set; } = new List<ProjectUserRole>();
 }
+
+
 
 // Base class with the Basic Info to be inherited by ALL classes
 public class BaseInfo

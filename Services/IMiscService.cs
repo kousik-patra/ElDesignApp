@@ -8,6 +8,8 @@ namespace ElDesignApp.Services;
 public interface IMiscService
 {
     Task<(string? UserId, string? UserName)> GetCurrentUserInfoAsync();
+    public event Action<string>? OnTextUpdated;
+    void NotifyTextUpdate(string newText);
 }
 
 
@@ -39,4 +41,11 @@ public class MiscService : IMiscService
 
         return (null, null);
     }
+    
+    public event Action<string>? OnTextUpdated;
+    public void NotifyTextUpdate(string newText) {
+        OnTextUpdated?.Invoke(newText);
+    }
+    
+    
 }

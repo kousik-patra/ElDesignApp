@@ -2,6 +2,10 @@
 
 import * as THREE from 'three';
 
+// Import pin functions (add these imports)
+import { addPin, showPinHelpers, hidePinHelpers } from '../objects/refPoint'
+import * as PinCursor from './pinCursor.js';
+
 /**
  * Configuration for mouse events
  */
@@ -52,7 +56,8 @@ export class MouseEventHandler {
             onDragStart: null,
             onDrag: null,
             onDragEnd: null,
-            onRightClick: null
+            onRightClick: null,
+            onPinPlaced: null
         };
     }
 
@@ -412,6 +417,17 @@ export class MouseEventHandler {
     executeClick(eventData) {
         console.log(`MouseEventHandler: ${eventData.eventType} click`, eventData);
 
+        // ============ PIN PLACEMENT MODE CHECK ============
+        // Check if we should place a pin (shift+click when pin mode is active)
+        if (eventData.eventType === 'shift' && PinCursor.isPinModeActive()) {
+            const pinPlaced = this.handlePinPlacement(eventData);
+            if (pinPlaced) {
+                // Pin was placed, don't process as normal shift+click
+                return;
+            }
+        }
+
+        // ============ NORMAL CLICK HANDLING ============
         // Trigger local callback
         const callbackName = `on${eventData.eventType.charAt(0).toUpperCase()}${eventData.eventType.slice(1)}Click`;
         if (this.callbacks[callbackName]) {
@@ -427,6 +443,59 @@ export class MouseEventHandler {
         this.notifyBlazor(eventData);
     }
 
+
+    /**
+     * Handle pin placement when in pin mode
+     * @param {object} eventData - The event data with world coordinates
+     * @returns {boolean} - True if pin was placed, false otherwise
+     */
+    handlePinPlacement(eventData) {
+        // Get current tag from pin cursor state
+        const tag = PinCursor.getCurrentPinTag();
+
+        if (!tag) {
+            console.log('MouseEventHandler: No pin tag available');
+            return false;
+        }
+
+        const point = {
+            x: eventData.worldX,
+            y: eventData.worldY,
+            z: eventData.worldZ || 0
+        };
+
+        console.log(`MouseEventHandler: Placing pin '${tag}' at (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`);
+
+        // Place the pin
+        const placedTag = addPin(
+            this.scene,
+            tag,
+            point,
+            true,   // useSprite
+            true    // showHelpers
+        );
+
+        if (placedTag) {
+            // Update event data with the pin tag
+            eventData.objectTag = placedTag;
+            eventData.eventType = 'pinPlaced';
+
+            // Trigger pin placed callback
+            if (this.callbacks.onPinPlaced) {
+                this.callbacks.onPinPlaced(eventData);
+            }
+
+            // Notify Blazor about the pin placement
+            this.notifyBlazor(eventData);
+
+            return true;
+        }
+
+        return false;
+    }
+
+
+
     /**
      * Send event data to Blazor
      */
@@ -436,7 +505,7 @@ export class MouseEventHandler {
                 .catch(err => console.error('Error calling Blazor OnSceneClick:', err));
         }
     }
-
+    
     /**
      * Set a callback for a specific event type
      */

@@ -2,8 +2,10 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { createInfiniteAxes, createAxisIndicator, createGridHelper } from './threejs/objects/axisHelpers.js';
-import { MouseEventHandler } from './threejs/events/mouseEvents.js';
+import { createInfiniteAxes, createAxisIndicator, createGridHelper } from './objects/axisHelpers.js';
+import { MouseEventHandler } from './events/mouseEvents.js';
+import {initPinManager, updatePinScales} from "./objects/refPoint";
+import * as PinCursor from "./events/pinCursor";
 
 // Layer constants for object categorization
 export const LAYERS = {
@@ -122,12 +124,16 @@ class SceneManager {
         this.setupEventListeners(container);
 
         // Initialize mouse event handler
-        this.mouseHandler.initialize(
-            this.renderer,
-            this.camera,
-            this.scene,
-            this.dotNetRef
-        );
+        this.mouseHandler.initialize(this.renderer, this.camera, this.scene, this.dotNetRef);
+
+        // After scene is created, initialize pin manager
+        initPinManager(this.scene);
+
+ 
+        // Initialize pin cursor with the same Blazor reference
+        // This enables keyboard handling (Shift key detection, ESC to cancel)
+        PinCursor.initPinPlacementMode(dotNetObjRef);
+        
 
         // Setup optional local callbacks
         this.setupMouseCallbacks();
@@ -509,6 +515,9 @@ class SceneManager {
                 this.axisIndicator.update(this.camera);
             }
 
+            // Update pin scales to maintain constant screen size
+            updatePinScales(this.camera, this.renderer);
+
             // Render main scene
             const { width, height } = this.getConstrainedDimensions(this.canvas);
             this.renderer.setViewport(0, 0, width, height);
@@ -537,6 +546,9 @@ class SceneManager {
 
         // Dispose mouse handler
         this.mouseHandler.dispose();
+        
+        // Dispose pin cursor
+        PinCursor.disposePinPlacementMode();
 
         // Dispose axis indicator
         if (this.axisIndicator) {
