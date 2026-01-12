@@ -6,6 +6,8 @@ import { createInfiniteAxes, createAxisIndicator, createGridHelper } from './obj
 import { MouseEventHandler } from './events/mouseEvents.js';
 import {initPinManager, updatePinScales} from "./objects/refPoint";
 import * as PinCursor from "./events/pinCursor";
+import { initPlaneFunctions } from "./functions/planeFunctions";
+import { initPinFunctions } from "./functions/pinFunctions";
 
 // Layer constants for object categorization
 export const LAYERS = {
@@ -52,6 +54,7 @@ class SceneManager {
 
         // Track objects by tag for efficient lookup
         this.objectRegistry = new Map();
+        this.lastAddedPlaneTag = null;
 
         // Scene state for persistence
         this.sceneState = {
@@ -129,11 +132,17 @@ class SceneManager {
         // After scene is created, initialize pin manager
         initPinManager(this.scene);
 
- 
-        // Initialize pin cursor with the same Blazor reference
+         // Initialize pin cursor with the same Blazor reference
         // This enables keyboard handling (Shift key detection, ESC to cancel)
         PinCursor.initPinPlacementMode(dotNetObjRef);
-        
+
+        // Initialize plane functions (drawPlane, rotatePlane, scalePlane, etc.)
+        // This registers all window.* functions for Blazor JSInterop
+        initPlaneFunctions(this);
+
+        // Initialize pin functions (addPin, removePin, clearAllPins, etc.)
+        // This registers all pin-related window.* functions for Blazor JSInterop
+        initPinFunctions(this);
 
         // Setup optional local callbacks
         this.setupMouseCallbacks();
@@ -141,6 +150,7 @@ class SceneManager {
         this.startAnimation();
 
         this.isInitialized = true;
+        this.onContainerResize();
         console.log('SceneManager: Initialized with axis helpers and mouse events');
         return true;
     }
@@ -293,6 +303,8 @@ class SceneManager {
 
         this.setupResizeObserver(container);
         this.onContainerResize();
+
+        console.log('SceneManager: Reattached to container');
     }
 
     /**
@@ -301,8 +313,8 @@ class SceneManager {
     addObject(mesh, tag, layer = LAYERS.DEFAULT) {
         if (!mesh) return;
 
-        mesh.Tag = tag;
         mesh.layers.set(layer);
+        mesh.Tag = tag;
 
         if (!this.objectRegistry.has(layer)) {
             this.objectRegistry.set(layer, new Map());
@@ -310,6 +322,13 @@ class SceneManager {
         this.objectRegistry.get(layer).set(tag, mesh);
 
         this.scene.add(mesh);
+
+        // Track last added plane for auto-resolution
+        if (layer === LAYERS.PLOT_PLAN && mesh.Type === 'plotplan') {
+            this.lastAddedPlaneTag = tag;
+        }
+
+        console.log(`SceneManager: Added object '${tag}' to layer ${layer}`);
     }
 
     /**
@@ -322,6 +341,13 @@ class SceneManager {
                 this.disposeObject(mesh);
                 this.scene.remove(mesh);
                 objects.delete(tag);
+
+                // Clear last added if it was this one
+                if (this.lastAddedPlaneTag === tag) {
+                    this.lastAddedPlaneTag = null;
+                }
+
+                console.log(`SceneManager: Removed object '${tag}'`);
                 return true;
             }
         }
@@ -329,17 +355,32 @@ class SceneManager {
     }
 
     /**
-     * Remove all objects in a specific layer
+     * Get an object by tag
+     */
+    getObject(tag) {
+        for (const [layer, objects] of this.objectRegistry) {
+            if (objects.has(tag)) {
+                return objects.get(tag);
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Clear objects from a specific layer
      */
     clearLayer(layer) {
-        const objects = this.objectRegistry.get(layer);
-        if (!objects) return;
+        if (!this.objectRegistry.has(layer)) return;
 
+        const objects = this.objectRegistry.get(layer);
         for (const [tag, mesh] of objects) {
             this.disposeObject(mesh);
             this.scene.remove(mesh);
         }
         objects.clear();
+
+        console.log(`SceneManager: Cleared layer ${layer}`);
     }
 
     /**
@@ -385,8 +426,12 @@ class SceneManager {
         }
         if (obj.material) {
             if (Array.isArray(obj.material)) {
-                obj.material.forEach(m => m.dispose());
+                obj.material.forEach(m => {
+                    if (m.map) m.map.dispose();
+                    m.dispose();
+                });
             } else {
+                if (obj.material.map) obj.material.map.dispose();
                 obj.material.dispose();
             }
         }
@@ -471,11 +516,11 @@ class SceneManager {
         this.boundWindowResize = () => this.onContainerResize();
         window.addEventListener('resize', this.boundWindowResize);
 
-        this.saveInterval = setInterval(() => {
-            if (this.dotNetRef && this.isInitialized) {
-                this.dotNetRef.invokeMethodAsync('SaveSceneInfo', this.getState());
-            }
-        }, 10000);
+        // this.saveInterval = setInterval(() => {
+        //     if (this.dotNetRef && this.isInitialized) {
+        //         this.dotNetRef.invokeMethodAsync('SaveSceneInfo', this.getState());
+        //     }
+        // }, 10000);
     }
 
     /**
@@ -496,6 +541,9 @@ class SceneManager {
         canvas.style.height = height + 'px';
 
         console.log(`SceneManager: Resized to ${width}x${height}`);
+        if (this.dotNetRef && this.isInitialized) {
+            this.dotNetRef.invokeMethodAsync('OnWindowResize', width, height);
+        }
     }
 
     onWindowResize() {

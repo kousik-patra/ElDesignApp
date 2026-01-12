@@ -1,8 +1,26 @@
+@* ============================================================================
+   PlotEdit.razor - Plot Plan Editor Component (Revised)
+   ============================================================================
+   Purpose:
+   1. List existing plot plans in a table and render them in the 3D scene
+   2. Provide UI for users to add new plot plans through a 5-step workflow
+   3. Manage coordinate systems for the project
+   
+   Step Workflow:
+   A - Upload: Select and preview PDF/JPG/PNG file
+   B - Orientation: Align plot with scene (X-axis direction for Key Plan, rotation for others)
+   C - Scale: Pin 4 reference points and enter X1,X2,Y1,Y2 values
+   D - Position: Pin origin point(s) and set elevation
+   E - Save: Enter metadata and save to database
+   ============================================================================ *@
+
 @rendermode InteractiveServer
 @attribute [StreamRendering]
+@implements IDisposable
 
 @using System.Diagnostics
-@using System.Reflection
+@using System.Numerics
+@using System.Text.Json
 @using ElDesignApp.Data
 @using ElDesignApp.Models
 @using ElDesignApp.Services
@@ -17,7 +35,9 @@
 @inject IPlotPlanService PlotPlanService
 @inject PinPlacementService PinService
 
-@* ============ Messages Section ============ *@
+@* ============================================================================
+   SECTION: Messages (Error/Success Alerts)
+   ============================================================================ *@
 @if (!string.IsNullOrEmpty(_errorMessage))
 {
     <div class="alert alert-danger alert-dismissible fade show" role="alert">
@@ -33,9 +53,9 @@
     </div>
 }
 
-@* ============ Plot Plans Section with Loading State ============ *@
-
-@* ============ Loading State ============ *@
+@* ============================================================================
+   SECTION: Plot Plans Section with Loading State
+   ============================================================================ *@
 @if (_isLoadingPlans)
 {
     <div class="loading-container">
@@ -93,7 +113,9 @@
 }
 else
 {
-    @* ============ Existing Plot Plans Table ============ *@
+    @* ============================================================================
+       SECTION: Existing Plot Plans Table
+       ============================================================================ *@
     @if (_plotPlans.Count > 0)
     {
         <div class="table-responsive">
@@ -157,299 +179,346 @@ else
         <div class="empty-state">
             <div class="empty-icon">📋</div>
             <p class="empty-text">No plot plans yet</p>
-            <p class="empty-subtext">Add your first plot plan to get started</p>
+            <p class="empty-subtext">Add your first plot plan to get started. It will become the Key Plan.</p>
         </div>
     }
 
-    @* ============ Add Plan Section - Only shows after loading complete ============ *@
-    @* ============ Ultra-Compact Toolbar Style with Validation ============ *@
-    @if (!_isLoadingPlans)
-    {
-        <EditForm Model="@newImage" OnValidSubmit="@HandleSubmit" class="plot-toolbar-form">
+    @* ============================================================================
+       SECTION: Add New Plot Plan - 5-Step Workflow
+       ============================================================================ *@
+        <EditForm Model="@_newPlan" OnValidSubmit="@HandleSaveSubmit" class="plot-toolbar-form">
             <DataAnnotationsValidator/>
-            <CustomValidation @ref="customValidation"/>
+            <CustomValidation @ref="_customValidation"/>
+
+            @* Step Progress Indicator *@
+            @if (_currentStep != ImportStep.None)
+            {
+                <div class="step-progress mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        @foreach (var step in Enum.GetValues<ImportStep>().Where(s => s != ImportStep.None))
+                        {
+                            var stepNum = (int)step;
+                            var isActive = step == _currentStep;
+                            var isComplete = stepNum < (int)_currentStep;
+                            <div class="step-indicator @(isActive ? "active" : "") @(isComplete ? "complete" : "")">
+                                <span class="step-letter">@step.ToString()[0]</span>
+                                <span class="step-name d-none d-md-inline">@GetStepName(step)</span>
+                            </div>
+                            @if (step != ImportStep.Save)
+                            {
+                                <div class="step-connector @(isComplete ? "complete" : "")"></div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
 
             <div class="plot-toolbar">
-                @* Left: Step Badge *@
-                <div class="toolbar-section">
-                    @if (showScaleSubmit || showCentreSubmit || showSaveSubmit)
-                    {
-                        <span class="step-badge step-@CurrentStep">
-                            Step @CurrentStep/3: @(CurrentStep == 1 ? "Scale" : CurrentStep == 2 ? "Centre" : "Save")
-                        </span>
-                    }
-                </div>
-
-                @* Middle: Dynamic Content *@
-                <div class="toolbar-section toolbar-main">
-
-                    @* Initial: File Upload *@
-                    @* File Upload - Use CSS to hide instead of removing from DOM *@
-                    <div class="@GetFileUploadVisibility()">
-                        <span class="toolbar-label">📁 Add Plan:</span>
+                @* ================================================================
+               STEP A: Upload File
+               ================================================================ *@
+                @if (_currentStep == ImportStep.None)
+                {
+                    <div class="toolbar-section">
+                        <span class="toolbar-label">📁 Add Plot Plan:</span>
                         <InputFile class="form-control form-control-sm toolbar-file"
-                                   OnChange="@LoadPlotPlan" accept=".png,.jpg,.jpeg,.pdf"/>
+                                   OnChange="@HandleFileUpload"
+                                   accept=".png,.jpg,.jpeg,.pdf"/>
+                    </div>
+                }
+
+                @* Processing Indicator *@
+                @if (_isProcessingFile)
+                {
+                    <div class="toolbar-section">
+                        <span class="spinner-border spinner-border-sm"></span>
+                        <span class="ms-2">Processing file...</span>
+                    </div>
+                }
+
+                @* Preview After Upload *@
+                @if (_showPreview && _currentStep == ImportStep.None)
+                {
+                    <div class="toolbar-section">
+                        <img src="@_newPlan.ImgThumbString" class="toolbar-thumb" alt="Preview"/>
+                        <span class="text-muted small">@_uploadedFileName</span>
+                        <button type="button" class="btn btn-sm btn-success" @onclick="AcceptUploadAndProceed">
+                            ✓ Accept
+                        </button>
+                        <button type="button" class="btn btn-sm btn-light" @onclick="CancelUpload">
+                            ✕ Cancel
+                        </button>
+                    </div>
+                }
+
+                @* ================================================================
+               STEP B: Orientation / Alignment
+               ================================================================ *@
+                @if (_currentStep == ImportStep.Orientation)
+                {
+                    <div class="toolbar-section">
+                        <span class="step-badge step-b">Step B: Orientation</span>
                     </div>
 
-                    @* Processing indicator shown separately *@
-                    @if (showProcessing)
-                    {
-                        <span class="spinner-border spinner-border-sm"></span>
-                        <span class="ms-2">Processing...</span>
-                    }
+                    <div class="toolbar-section toolbar-main">
+                        @if (IsKeyPlan)
+                        {
+                            @* Key Plan: X-Axis Direction Selection *@
+                            <span class="toolbar-label">X-Axis Direction:</span>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <input type="radio" class="btn-check" name="xAxisDir" id="xAxisEW"
+                                       checked="@_newPlan.XEW" @onchange="() => SetXAxisDirection(true)">
+                                <label class="btn btn-outline-primary" for="xAxisEW">
+                                    East-West ↔
+                                </label>
+                                <input type="radio" class="btn-check" name="xAxisDir" id="xAxisNS"
+                                       checked="@(!_newPlan.XEW)" @onchange="() => SetXAxisDirection(false)">
+                                <label class="btn btn-outline-primary" for="xAxisNS">
+                                    North-South ↕
+                                </label>
+                            </div>
+                            <span class="text-muted small ms-2">
+                                @(_newPlan.XEW ? "+X = East, +Y = North" : "+X = North, +Y = East")
+                            </span>
+                        }
+                        else
+                        {
+                            @* Subsequent Plans: Rotation Controls *@
+                            <span class="toolbar-label">Rotate:</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    @onclick="RotatePlotPlan90" title="Rotate 90° clockwise">
+                                ↻ 90°
+                            </button>
+                            <span class="toolbar-label ms-2">or</span>
+                            <InputNumber class="form-control form-control-sm toolbar-input"
+                                         @bind-Value="_customRotationAngle"
+                                         placeholder="Angle"
+                                         title="Custom angle (-180° to +180°)"/>
+                            <span class="text-muted small">°</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    @onclick="ApplyCustomRotation" title="Apply custom rotation">
+                                Apply
+                            </button>
+                            <span class="badge bg-secondary ms-2">
+                                Current: @($"{_newPlan.Rotation * 180 / Math.PI:F1}")°
+                            </span>
+                        }
+                    </div>
 
+                    <div class="toolbar-section toolbar-actions">
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="CompleteOrientationStep">
+                            Next: Scale →
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ConfirmAndDiscard">
+                            ✕
+                        </button>
+                    </div>
+                }
 
+                @* ================================================================
+               STEP C: Scale (4 Pins)
+               ================================================================ *@
+                @if (_currentStep == ImportStep.Scale)
+                {
+                    <div class="toolbar-section">
+                        <span class="step-badge step-c">Step C: Scale</span>
+                    </div>
 
-
-
-                    @* Preview *@
-                    @if (showThumbImage)
-                    {
-                        <img src="@newImage.ImgThumbString" class="toolbar-thumb" alt=""/>
-                        <button type="button" class="btn btn-sm btn-success" @onclick="DrawPlotPlan">✓ Use</button>
-                        <button type="button" class="btn btn-sm btn-light" @onclick="CancelUpload">✕</button>
-                    }
-
-                    @* Step 1: Scale *@
-                    @if (showScaleSubmit)
-                    {
-                        _refPinTagList = ["X-Left", "X-Right", "Y-Bottom", "Y-Top"];
-                        _ = UpdateRefPointTexts();
-                        @* Tag List Display *@
-                        <div class="tag-list">
-                            <h5>Tags to Place (@_refPinTagList.Count)</h5>
-            
-                            @if (_refPinTagList.Count == 0)
+                    <div class="toolbar-section toolbar-main">
+                        @* Pin Placement Status *@
+                        <div class="pin-status">
+                            @foreach (var pinTag in _scalePinTags)
                             {
-                                <p class="empty-message">No tags defined. Add tags above to begin.</p>
-                            }
-                            else
-                            {
-                                <div class="tag-chips">
-                                    @foreach (var (tag, index) in _refPinTagList.Select((t, i) => (t, i)))
-                                    {
-                                        <div class="tag-chip @(index < _currentIndex ? "placed" : "") @(index == _currentIndex && _refPinActive ? "current" : "")">
-                                            <span class="tag-number">@(index + 1)</span>
-                                            <span class="tag-name">@tag</span>
-                                            @if (index < _currentIndex)
-                                            {
-                                                <span class="tag-status">✓</span>
-                                            }
-                                        </div>
-                                    }
-                                </div>
+                                var pin = _placedPins.FirstOrDefault(p => p.Tag == pinTag);
+                                var isPlaced = pin != null;
+                                var isCurrent = _pinService_CurrentTag == pinTag;
+                                <span class="pin-chip @(isPlaced ? "placed" : "") @(isCurrent ? "current" : "")"
+                                      title="@(isPlaced ? $"X:{pin!.X:F2}, Y:{pin.Y:F2}" : "Not placed")">
+                                    @pinTag @(isPlaced ? "✓" : "")
+                                </span>
                             }
                         </div>
-                        
-                        @if (_plotPlans.Count==0)
-                        {
-                            @* For Key Plot Plan, no neeed for rotation since the user eneters the image/pdf 
-                            in the same orientation that is expected to be rendered. User shall be asked to confirm if 
-                            the X-Axis id for East-West orientation or North-South orientation thru check box *@
-                            <div class="form-check table-check-item">
-                                <span class="toolbar-label">X-Axis: Est-West</span>
-                                <InputCheckbox class="form-check-input" 
-                                               @bind-Value="@newImage.XEW" 
-                                               @bind-Value:after="SetXEWForKeyPlan"/>
-                            </div>
-                        }else
-                        {
-                            @* For Subsequent Plots, rotation required to match the Key Plan orientation *@
-                            @* Rotation can either be multiples of 90 deg or any other angle *@
-                            @* Currently only multiples of 90 deg is implemented *@
-                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="RotatePlotPlan"
-                                    title="Rotate 90°">↩
-                            </button>
-                        }
 
-                        <span class="toolbar-label">X:</span>
+                        @* Coordinate Inputs *@
+                        <span class="toolbar-label ms-2">X:</span>
                         <InputNumber class="form-control form-control-sm toolbar-input"
-                                     @bind-Value="@newImage.X1" placeholder="L" title="X-Left (m)"/>
-                        <span class="text-muted">-</span>
+                                     @bind-Value="_newPlan.X1" placeholder="Left" title="X-Left (m)"/>
+                        <span class="text-muted">→</span>
                         <InputNumber class="form-control form-control-sm toolbar-input"
-                                     @bind-Value="@newImage.X2" placeholder="R" title="X-Right (m)"/>
+                                     @bind-Value="_newPlan.X2" placeholder="Right" title="X-Right (m)"/>
 
                         <span class="toolbar-label ms-2">Y:</span>
                         <InputNumber class="form-control form-control-sm toolbar-input"
-                                     @bind-Value="@newImage.Y1" placeholder="B" title="Y-Bottom (m)"/>
-                        <span class="text-muted">-</span>
+                                     @bind-Value="_newPlan.Y1" placeholder="Bot" title="Y-Bottom (m)"/>
+                        <span class="text-muted">→</span>
                         <InputNumber class="form-control form-control-sm toolbar-input"
-                                     @bind-Value="@newImage.Y2" placeholder="T" title="Y-Top (m)"/>
+                                     @bind-Value="_newPlan.Y2" placeholder="Top" title="Y-Top (m)"/>
 
-                        <span class="badge bg-info ms-2"
-                              title="Reference points clicked">@(GlobalData.RefPoints?.Count ?? 0)/4 pts</span>
-                    }
-                    
-                    @* ===== Pin Placement Control Section ===== *@
-                    <div class="section">
-                        <h4>Step 2: Place Pins on Map</h4>
-                        
-                        <div class="control-buttons">
-                            @if (!_refPinActive)
-                            {
-                                <button @onclick="StartPinPlacement" 
-                                        class="btn btn-success btn-lg"
-                                        disabled="@(_refPinTagList.Count == 0)">
-                                    📍 Start Pin Placement
-                                </button>
-                            }
-                            else
-                            {
-                                <button @onclick="StopPinPlacement" class="btn btn-danger btn-lg">
-                                    ⏹ Stop Pin Placement
-                                </button>
-                            }
-                            
-                            <button @onclick="ResetPlacement" class="btn btn-secondary" disabled="@(!_hasPlacedPins)">
-                                🔄 Reset All
-                            </button>
+                        <span class="badge bg-info ms-2">@_placedPins.Count(p => _scalePinTags.Contains(p.Tag))/4 pins</span>
+                    </div>
+
+                    @* Pin Placement Instructions *@
+                    @if (_isPinPlacementActive)
+                    {
+                        <div class="pin-instructions mt-2">
+                            <span class="text-warning">
+                                <strong>📍 Placing: @_pinService_CurrentTag</strong> -
+                                Hold <kbd>SHIFT</kbd> and click on the plot plan
+                            </span>
                         </div>
-                        
-                        @if (_refPinActive)
+                    }
+
+                    <div class="toolbar-section toolbar-actions">
+                        @if (!_isPinPlacementActive)
                         {
-                            <div class="placement-instructions">
-                                <div class="instruction-step">
-                                    <span class="step-number">1</span>
-                                    <span>Hold <kbd>SHIFT</kbd> key</span>
-                                </div>
-                                <div class="instruction-step">
-                                    <span class="step-number">2</span>
-                                    <span>Click on the map to place: <strong>@PinService.CurrentTag</strong></span>
-                                </div>
-                                <div class="instruction-step">
-                                    <span class="step-number">3</span>
-                                    <span>Release SHIFT to navigate, hold again to place next pin</span>
-                                </div>
+                            <button type="button" class="btn btn-sm btn-warning" @onclick="StartScalePinPlacement">
+                                📍 Place Pins
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-sm btn-secondary" @onclick="StopPinPlacement">
+                                ⏹ Stop
+                            </button>
+                        }
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                @onclick="ResetScalePins" disabled="@(_placedPins.Count == 0)">
+                            🔄 Reset
+                        </button>
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="TryApplyScale"
+                                disabled="@(!CanApplyScale)">
+                            Apply Scale →
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ConfirmAndDiscard">
+                            ✕
+                        </button>
+                    </div>
+                }
+
+                @* ================================================================
+               STEP D: Position (Centre)
+               ================================================================ *@
+                @if (_currentStep == ImportStep.Position)
+                {
+                    <div class="toolbar-section">
+                        <span class="step-badge step-d">Step D: Position</span>
+                    </div>
+
+                    <div class="toolbar-section toolbar-main">
+                        @if (IsKeyPlan)
+                        {
+                            @* Key Plan: Single Origin Pin + Reference E/N *@
+                            <div class="pin-status">
+                                @{
+                                    var originPin = _placedPins.FirstOrDefault(p => p.Tag == "Origin");
+                                    var isOriginPlaced = originPin != null;
+                                }
+                                <span class="pin-chip @(isOriginPlaced ? "placed" : "") @(_pinService_CurrentTag == "Origin" ? "current" : "")">
+                                    Origin (0,0) @(isOriginPlaced ? "✓" : "")
+                                </span>
                             </div>
-                            
-                            <div class="progress-section">
-                                <div class="progress-text">
-                                    Progress: @_currentIndex / @_refPinTagList.Count pins placed
-                                </div>
-                                <div class="progress-bar-container">
-                                    <div class="progress-bar-fill" style="width: @GetProgressPercent()%"></div>
-                                </div>
+
+                            <span class="toolbar-label ms-2">Reference E:</span>
+                            <InputNumber class="form-control form-control-sm toolbar-input"
+                                         @bind-Value="_newPlan.LocalE" placeholder="E1" title="Reference Easting"/>
+                            <span class="toolbar-label ms-1">N:</span>
+                            <InputNumber class="form-control form-control-sm toolbar-input"
+                                         @bind-Value="_newPlan.LocalN" placeholder="N1" title="Reference Northing"/>
+
+                            <span class="toolbar-label ms-2">Z:</span>
+                            <InputNumber class="form-control form-control-sm" style="width:60px"
+                                         @bind-Value="_newPlan.Z" title="Elevation (m)"/>
+                        }
+                        else
+                        {
+                            @* Subsequent Plans: Two Reference Pins *@
+                            <div class="pin-status">
+                                @foreach (var pinTag in _positionPinTags)
+                                {
+                                    var pin = _placedPins.FirstOrDefault(p => p.Tag == pinTag);
+                                    var isPlaced = pin != null;
+                                    <span class="pin-chip @(isPlaced ? "placed" : "") @(_pinService_CurrentTag == pinTag ? "current" : "")">
+                                        @pinTag @(isPlaced ? "✓" : "")
+                                    </span>
+                                }
                             </div>
+                            <span class="text-muted small ms-2">
+                                Pin matching points on new plan → key plan
+                            </span>
+
+                            <span class="toolbar-label ms-2">Z:</span>
+                            <InputNumber class="form-control form-control-sm" style="width:60px"
+                                         @bind-Value="_newPlan.Z" title="Elevation (m)"/>
+                        }
+
+                        <span class="badge bg-info ms-2">
+                            @_placedPins.Count(p => (IsKeyPlan ? new[] { "Origin" } : _positionPinTags).Contains(p.Tag))/@(IsKeyPlan ? 1 : 2) pins
+                        </span>
+                    </div>
+
+                    @* Pin Placement Instructions *@
+                    @if (_isPinPlacementActive)
+                    {
+                        <div class="pin-instructions mt-2">
+                            <span class="text-warning">
+                                <strong>📍 Placing: @_pinService_CurrentTag</strong> -
+                                Hold <kbd>SHIFT</kbd> and click on the @(IsKeyPlan ? "plot plan" : (_pinService_CurrentTag == "Ref-New" ? "NEW plan" : "KEY plan"))
+                            </span>
+                        </div>
+                    }
+
+                    <div class="toolbar-section toolbar-actions">
+                        @if (!_isPinPlacementActive)
+                        {
+                            <button type="button" class="btn btn-sm btn-warning" @onclick="StartPositionPinPlacement">
+                                📍 Place Pin@(IsKeyPlan ? "" : "s")
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-sm btn-secondary" @onclick="StopPinPlacement">
+                                ⏹ Stop
+                            </button>
+                        }
+                        <button type="button" class="btn btn-sm btn-primary" @onclick="TryApplyPosition"
+                                disabled="@(!CanApplyPosition)">
+                            Apply Position →
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ConfirmAndDiscard">
+                            ✕
+                        </button>
+                    </div>
+                }
+
+                @* ================================================================
+               STEP E: Save
+               ================================================================ *@
+                @if (_currentStep == ImportStep.Save)
+                {
+                    <div class="toolbar-section">
+                        <span class="step-badge step-e">Step E: Save</span>
+                        @if (IsKeyPlan)
+                        {
+                            <span class="badge bg-warning text-dark ms-1">⭐ Key Plan</span>
                         }
                     </div>
-                    
-                    @* ===== Placed Pins Summary ===== *@
-                    @if (_placedPins.Count > 0)
-                    {
-                        <div class="section">
-                            <h4>Placed Reference Points</h4>
-                            
-                            <table class="pins-table">
-                                <thead>
-                                    <tr>
-                                        <th>#</th>
-                                        <th>Tag</th>
-                                        <th>X</th>
-                                        <th>Y</th>
-                                        <th>E (Easting)</th>
-                                        <th>N (Northing)</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var (pin, index) in _placedPins.Select((p, i) => (p, i)))
-                                    {
-                                        <tr>
-                                            <td>@(index + 1)</td>
-                                            <td><strong>@pin.Tag</strong></td>
-                                            <td>@pin.X.ToString("F2")</td>
-                                            <td>@pin.Y.ToString("F2")</td>
-                                            <td>@(pin.E?.ToString("F2") ?? "-")</td>
-                                            <td>@(pin.N?.ToString("F2") ?? "-")</td>
-                                            <td>
-                                                <button class="btn btn-sm btn-danger" @onclick="() => RemovePlacedPin(pin.Tag)">
-                                                    Remove
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
 
-                    
-
-                    @* Step 2: Centre - Key Plan *@
-                    @if (showCentreSubmit && _plotPlans.Count == 0)
-                    {
-                        _refPinTagList = ["Centre (0,0)"];
-                        _ = UpdateRefPointTexts();
-                        <span class="toolbar-label">Local:</span>
-                        <InputNumber class="form-control form-control-sm toolbar-input"
-                                     @bind-Value="@newImage.LocalE" placeholder="E" title="Local Reference E"/>
-                        <InputNumber class="form-control form-control-sm toolbar-input"
-                                     @bind-Value="@newImage.LocalN" placeholder="N" title="Local Reference N"/>
-
-                        <span class="toolbar-label ms-2">Global:</span>
-                        <InputNumber class="form-control form-control-sm toolbar-input"
-                                     @bind-Value="@newImage.GlobalE" placeholder="E" title="Global Reference E"/>
-                        <InputNumber class="form-control form-control-sm toolbar-input"
-                                     @bind-Value="@newImage.GlobalN" placeholder="N" title="Global Reference N"/>
-                        <InputNumber class="form-control form-control-sm toolbar-input"
-                                     @bind-Value="@newImage.AngleTrueNorth" placeholder="Deg" title="True North Angle (Clockwise)"/>
-
-                        <span class="toolbar-label ms-2">Z:</span>
-                        <InputNumber class="form-control form-control-sm" style="width:50px"
-                                     @bind-Value="@newImage.Z" title="Elevation"/>
-                    }
-
-                    @* Step 2: Centre - Subsequent Plan *@
-                    @if (showCentreSubmit && _plotPlans.Count > 0)
-                    {
-                        _refPinTagList = ["Ref-New", "Ref-Key"];
-                        _ = UpdateRefPointTexts();
-                        <span class="text-muted small">
-                            <i class="bi bi-info-circle"></i> Ctrl+Click: New plan → Key plan ref
-                        </span>
-                        <span class="badge bg-info ms-2"
-                              title="Reference points clicked">@(GlobalData.RefPoints?.Count ?? 0)/2 pts</span>
-                    }
-
-                    @* Step 3: Save *@
-                    @if (showSaveSubmit)
-                    {
-                        @if (_plotPlans.Count == 0)
-                        {
-                            <span class="badge bg-warning text-dark" title="This will be the primary reference plan">⭐ Key Plan</span>
-                        }
-
+                    <div class="toolbar-section toolbar-main">
                         <span class="toolbar-label">Name:</span>
                         <InputText class="form-control form-control-sm" style="width:140px"
-                                   @bind-Value="@newImage.Tag" placeholder="Required"/>
-                        <ValidationMessage For="@(() => newImage.Tag)" class="validation-inline"/>
+                                   @bind-Value="_newPlan.Tag" placeholder="Required"/>
+                        <ValidationMessage For="@(() => _newPlan.Tag)" class="validation-inline"/>
 
-                        <span class="toolbar-label">Desc:</span>
+                        <span class="toolbar-label ms-2">Description:</span>
                         <InputText class="form-control form-control-sm" style="width:180px"
-                                   @bind-Value="@newImage.TagDescription" placeholder="Optional"/>
+                                   @bind-Value="_newPlan.TagDescription" placeholder="Optional"/>
 
-                        <span class="toolbar-label">Remark:</span>
+                        <span class="toolbar-label ms-2">Remark:</span>
                         <InputText class="form-control form-control-sm" style="width:100px"
-                                   @bind-Value="@newImage.Remark"/>
-                    }
-                </div>
+                                   @bind-Value="_newPlan.Remark"/>
+                    </div>
 
-                @* Right: Action Buttons *@
-                <div class="toolbar-section toolbar-actions">
-                    @if (showScaleSubmit)
-                    {
-                        <button type="button" class="btn btn-sm btn-primary" @onclick="TryScalePlotPlan">
-                            Apply →
-                        </button>
-                    }
-                    @if (showCentreSubmit)
-                    {
-                        <button type="button" class="btn btn-sm btn-primary" @onclick="TryCentrePlotPlan">
-                            Apply →
-                        </button>
-                    }
-                    @if (showSaveSubmit)
-                    {
+                    <div class="toolbar-section toolbar-actions">
                         <button type="submit" class="btn btn-sm btn-success" disabled="@_isSaving">
                             @if (_isSaving)
                             {
@@ -457,76 +526,204 @@ else
                             }
                             else
                             {
-                                <span>💾 Save</span>
+                                <span>💾 Save Plot Plan</span>
                             }
                         </button>
-                    }
-                    @if (showScaleSubmit || showCentreSubmit || showSaveSubmit)
-                    {
                         <button type="button" class="btn btn-sm btn-outline-danger" @onclick="ConfirmAndDiscard"
-                                disabled="@_isSaving" title="Discard and start over">✕</button>
-                    }
-                </div>
+                                disabled="@_isSaving">
+                            ✕
+                        </button>
+                    </div>
+                }
             </div>
 
-            @* Validation Summary - shown below toolbar when errors exist *@
             <ValidationSummary class="validation-summary"/>
-
         </EditForm>
+
+ 
+    @* ============================================================================
+       SECTION: Coordinate Systems Management
+       ============================================================================ *@
+    if (_plotPlans.Any(p => p.KeyPlan))
+    {
+        <div class="coordinate-systems-section mt-4">
+            <h5 class="section-title">
+                🌐 Coordinate Systems
+                <button type="button" class="btn btn-sm btn-outline-primary ms-2" 
+                        @onclick="ToggleCoordinateSystemForm">
+                    @(_showCoordSystemForm ? "Cancel" : "+ Add System")
+                </button>
+            </h5>
+
+            @* Existing Coordinate Systems List *@
+            @if (_coordinateSystems.Count > 0)
+            {
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Unit</th>
+                                <th>Ref E</th>
+                                <th>Ref N</th>
+                                <th>Rotation°</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var cs in _coordinateSystems)
+                            {
+                                <tr class="@(string.IsNullOrEmpty(cs.Name) ? "table-warning" : "")">
+                                    <td>
+                                        @(string.IsNullOrEmpty(cs.Name) ? "(Default)" : cs.Name)
+                                        @if (string.IsNullOrEmpty(cs.Name))
+                                        {
+                                            <span class="badge bg-secondary ms-1">Auto</span>
+                                        }
+                                    </td>
+                                    <td>@cs.Description</td>
+                                    <td>@cs.Unit</td>
+                                    <td>@cs.ReferenceX.ToString("F2")</td>
+                                    <td>@cs.ReferenceY.ToString("F2")</td>
+                                    <td>@cs.RotationDegrees.ToString("F2")</td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(cs.Name))
+                                        {
+                                            <button class="btn btn-danger btn-sm" 
+                                                    @onclick="() => DeleteCoordinateSystem(cs.Name)">
+                                                🗑️
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted small">No coordinate systems defined yet. The default system will be created with the Key Plan.</p>
+            }
+
+            @* Add New Coordinate System Form *@
+            @if (_showCoordSystemForm)
+            {
+                <div class="coord-system-form card card-body bg-light">
+                    <h6>Add New Coordinate System</h6>
+                    
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-2">
+                            <label class="form-label small">Name</label>
+                            <input type="text" class="form-control form-control-sm" 
+                                   @bind="_newCoordSystem.Name" placeholder="e.g., UTM, Global"/>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Description</label>
+                            <input type="text" class="form-control form-control-sm" 
+                                   @bind="_newCoordSystem.Description" placeholder="Optional"/>
+                        </div>
+                        <div class="col-md-1">
+                            <label class="form-label small">Unit</label>
+                            <select class="form-select form-select-sm" @bind="_newCoordSystem.Unit">
+                                <option value="m">m</option>
+                                <option value="km">km</option>
+                                <option value="mm">mm</option>
+                                <option value="ft">ft</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small">Reference E</label>
+                            <input type="number" step="0.01" class="form-control form-control-sm" 
+                                   @bind="_newCoordSystem.ReferenceX" placeholder="Easting"/>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small">Reference N</label>
+                            <input type="number" step="0.01" class="form-control form-control-sm" 
+                                   @bind="_newCoordSystem.ReferenceY" placeholder="Northing"/>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small">Rotation (CW°)</label>
+                            <input type="number" step="0.1" class="form-control form-control-sm" 
+                                   @bind="_newCoordSystem.RotationDegrees" placeholder="0"/>
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mt-2">
+                        <div class="col-12">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="text-muted small">
+                                    📍 Pin location on map: 
+                                    @if (_coordSystemPin != null)
+                                    {
+                                        <span class="badge bg-success">
+                                            X: @_coordSystemPin.Value.X.ToString("F2"), Y: @_coordSystemPin.Value.Y.ToString("F2")
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary">Not set</span>
+                                    }
+                                </span>
+                                <button type="button" class="btn btn-sm btn-warning" 
+                                        @onclick="StartCoordSystemPinPlacement"
+                                        disabled="@_isPinPlacementActive">
+                                    📍 Pin Reference Point
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button type="button" class="btn btn-sm btn-success" 
+                                @onclick="SaveCoordinateSystem"
+                                disabled="@(!CanSaveCoordinateSystem)">
+                            💾 Save Coordinate System
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary ms-2" 
+                                @onclick="ToggleCoordinateSystemForm">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
     }
 }
 
+@* ============================================================================
+   CODE-BEHIND
+   ============================================================================ *@
 @code {
-    #region Parameters & Fields
+    #region Enums & Constants
+
+    /// <summary>
+    /// Represents the current step in the plot plan import workflow
+    /// </summary>
+    private enum ImportStep
+    {
+        None = 0,      // Initial state / file selection
+        Orientation,   // Step B: Align/rotate
+        Scale,         // Step C: Pin 4 points and enter coordinates
+        Position,      // Step D: Set origin/position
+        Save           // Step E: Enter metadata and save
+    }
+
+    // Pin tags for each step
+    private readonly string[] _scalePinTags = { "X-Left", "X-Right", "Y-Bottom", "Y-Top" };
+    private readonly string[] _positionPinTags = { "Ref-New", "Ref-Key" };
+
+    #endregion
+
+    #region Parameters
 
     [Parameter]
     public Plot? PlotComponent { get; set; }
-    
-    // ===== State =====
-    private bool _refPinActive = false;
-    private int _currentIndex = 0;
-    private string _newTag = "";
-    private List<PlacedPin> _placedPins = new();
-    private bool _hasPlacedPins => _placedPins.Count > 0;
-    
-    
 
-    // Data
-    private PlotPlan newImage = new();
-    private List<PlotPlan> _plotPlans = new();
-    private readonly List<ClickedPoint> ClickedPoints = new();
+    #endregion
 
-    // UI State
-    private readonly bool hideFileOpen = false;
-    private bool showThumbImage = false;
-    private bool showProcessing = false;
-    private bool showCentreSubmit = false;
-    private bool showScaleSubmit = false;
-    private bool showSaveSubmit = false;
-    private bool _isLoading = false;
-    private bool _isSaving = false;
-    private bool _isDeleting = false;
-    private string? _deletingTag;
-    private string? filenme;
-    private bool _isPdfFile = false;
-    private int _pdfPageCount = 1;
-    private int _selectedPdfPage = 0;
-    
-    // ============ Loading State Variables ============
-    private bool _isLoadingPlans = true;
-
-    // Rendering control
-    private bool shouldRenderUIChanges = true;
-    protected override bool ShouldRender() => shouldRenderUIChanges;
-
-    private List<string> _refPinTagList = [];
-
-    // Messages
-    private string? _errorMessage;
-    private string? _successMessage;
-
-    // Validation
-    private CustomValidation? customValidation;
+    #region State Fields
 
     // Display fields
     private readonly List<string> displayFields = new()
@@ -535,70 +732,714 @@ else
         "Width", "Height", "ScaleX", "ScaleY", "CentreX", "CentreY",
         "GlobalE", "GlobalN", "KeyPlan"
     };
+    
+    // Data
+    private PlotPlan _newPlan = new();
+    private List<PlotPlan> _plotPlans = new();
+    private List<CoordinateSystem> _coordinateSystems = new();
+    private CoordinateSystem _newCoordSystem = new() { Unit = "m" };
 
-    private int CurrentStep => showScaleSubmit ? 1 : showCentreSubmit ? 2 : showSaveSubmit ? 3 : 0;
+    // Workflow State
+    private ImportStep _currentStep = ImportStep.None;
+    private bool _showPreview;
+    private string? _uploadedFileName;
+    private float _customRotationAngle;
+
+    // Pin Placement State
+    private List<PlacedPin> _placedPins = new();
+    private bool _isPinPlacementActive;
+    private string _pinService_CurrentTag = "";
+    private Vector3? _coordSystemPin;
+
+    // UI State
+    private bool _isLoadingPlans = true;
+    private bool _isProcessingFile;
+    private bool _isSaving;
+    private bool _isDeleting;
+    private string? _deletingTag;
+    private bool _showCoordSystemForm;
+
+    // Messages
+    private string? _errorMessage;
+    private string? _successMessage;
+
+    // Validation
+    private CustomValidation? _customValidation;
 
     #endregion
 
-    #region Lifecycle
-    
+    #region Computed Properties
+
+    /// <summary>
+    /// Returns true if this is the first plot plan (will become Key Plan)
+    /// </summary>
+    private bool IsKeyPlan => _plotPlans.Count == 0;
+
+    /// <summary>
+    /// Returns true if all 4 scale pins are placed and coordinates are valid
+    /// </summary>
+    private bool CanApplyScale =>
+        _placedPins.Count(p => _scalePinTags.Contains(p.Tag)) == 4 &&
+        Math.Abs(_newPlan.X2 - _newPlan.X1) >= 0.01f &&
+        Math.Abs(_newPlan.Y2 - _newPlan.Y1) >= 0.01f;
+
+    /// <summary>
+    /// Returns true if position pins are placed and (for key plan) reference coordinates are set
+    /// </summary>
+    private bool CanApplyPosition
+    {
+        get
+        {
+            if (IsKeyPlan)
+            {
+                return _placedPins.Any(p => p.Tag == "Origin") &&
+                       (_newPlan.LocalE != 0 || _newPlan.LocalN != 0);
+            }
+            return _placedPins.Count(p => _positionPinTags.Contains(p.Tag)) == 2;
+        }
+    }
+
+    /// <summary>
+    /// Returns true if coordinate system form is valid
+    /// </summary>
+    private bool CanSaveCoordinateSystem =>
+        !string.IsNullOrWhiteSpace(_newCoordSystem.Name) &&
+        _coordSystemPin.HasValue;
+
+    #endregion
+
+    #region Lifecycle Methods
+
     protected override void OnInitialized()
     {
         // Subscribe to pin service events
-        PinService.OnStateChanged += OnPinServiceChanged;
+        PinService.OnStateChanged += OnPinServiceStateChanged;
         PinService.OnPinPlaced += OnPinPlaced;
         PinService.OnAllPinsPlaced += OnAllPinsPlaced;
     }
 
-
     protected override async Task OnInitializedAsync()
     {
         _isLoadingPlans = true;
-        
+
         try
         {
-            // Load plot plans from database/service
             _plotPlans = await PlotPlanService.GetAllAsync() ?? new List<PlotPlan>();
+            await LoadCoordinateSystems();
         }
         catch (Exception ex)
         {
             _errorMessage = $"Failed to load plot plans: {ex.Message}";
+            Debug.WriteLine($"OnInitializedAsync error: {ex}");
         }
         finally
         {
-            // Images will load progressively in the browser (better UX)
             _isLoadingPlans = false;
         }
-        
+
         await base.OnInitializedAsync();
     }
+
     public void Dispose()
     {
-        PinService.OnStateChanged -= OnPinServiceChanged;
+        PinService.OnStateChanged -= OnPinServiceStateChanged;
         PinService.OnPinPlaced -= OnPinPlaced;
         PinService.OnAllPinsPlaced -= OnAllPinsPlaced;
     }
-    
 
     #endregion
 
-   #region Delete Operations
+    #region Step A: File Upload
 
-    /// <summary>
-    /// Confirm and delete a plot plan with appropriate warnings
-    /// </summary>
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        _isProcessingFile = true;
+        _showPreview = false;
+        _currentStep = ImportStep.None;
+        ClearMessages();
+        _uploadedFileName = e.File.Name;
+        StateHasChanged();
+
+        try
+        {
+            bool isPdf = e.File.ContentType.ToLower() == "application/pdf";
+
+            if (isPdf)
+            {
+                _newPlan = await PlotPlanService.LoadPdfAsync(e, 0, 150);
+            }
+            else
+            {
+                _newPlan = await PlotPlanService.LoadImageAsync(e);
+            }
+
+            // Initialize default values
+            _newPlan.ProjectId = GlobalData.SelectedProject?.Tag ?? "";
+            _newPlan.OptionId = "base";
+            _newPlan.Opacity = 1;
+            _newPlan.UpdatedOn = DateTime.Now;
+            _newPlan.Remark = "";
+            _newPlan.XEW = true;
+            _newPlan.Z = 0; // Default elevation
+            _newPlan.Rotation = 0;
+
+            _showPreview = true;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to process file: {ex.Message}";
+            Debug.WriteLine($"HandleFileUpload error: {ex}");
+        }
+        finally
+        {
+            _isProcessingFile = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CancelUpload()
+    {
+        _showPreview = false;
+        _newPlan = new PlotPlan();
+        _uploadedFileName = null;
+        _currentStep = ImportStep.None;
+    }
+
+    private async Task AcceptUploadAndProceed()
+    {
+        // Generate temporary tag
+        _newPlan.Tag = $"plotplan_{DateTime.Now:yyyyMMdd_HHmmss}";
+
+        // Initialize transform values
+        _newPlan.X1 = 0;
+        _newPlan.X2 = 0;
+        _newPlan.Y1 = 0;
+        _newPlan.Y2 = 0;
+        _newPlan.Width = 0;
+        _newPlan.Height = 0;
+        _newPlan.ScaleX = 1;
+        _newPlan.ScaleY = 1;
+        _newPlan.CentreX = 0;
+        _newPlan.CentreY = 0;
+
+        // Set Z slightly above existing plans to avoid z-fighting
+        if (_plotPlans.Count > 0)
+        {
+            var keyPlan = _plotPlans.Find(p => p.KeyPlan);
+            _newPlan.Z = (keyPlan?.Z ?? 0) + 0.01f;
+        }
+
+        // Draw the plan in the 3D scene
+        await DrawPlanInScene(_newPlan);
+
+        // Hide Plot component if needed
+        if (PlotComponent != null)
+        {
+            await PlotComponent.HidePlotPlan();
+        }
+
+        _showPreview = false;
+        _currentStep = ImportStep.Orientation;
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region Step B: Orientation
+
+    private void SetXAxisDirection(bool eastWest)
+    {
+        _newPlan.XEW = eastWest;
+
+        // Update project settings if this is the key plan
+        if (IsKeyPlan && GlobalData.SelectedProject != null)
+        {
+            GlobalData.SelectedProject.XEW = eastWest;
+        }
+
+        Debug.WriteLine($"X-Axis direction set to: {(eastWest ? "East-West" : "North-South")}");
+    }
+
+    private async Task RotatePlotPlan90()
+    {
+        _newPlan.Rotation += (float)(Math.PI / 2);
+
+        // Normalize to -π to π range
+        while (_newPlan.Rotation > Math.PI) _newPlan.Rotation -= (float)(2 * Math.PI);
+
+        await SafeJsInvoke("rotatePlane", (float)(Math.PI / 2));
+        Debug.WriteLine($"Rotated plot plan by 90°. Total rotation: {_newPlan.Rotation * 180 / Math.PI:F1}°");
+    }
+
+    private async Task ApplyCustomRotation()
+    {
+        if (_customRotationAngle < -180 || _customRotationAngle > 180)
+        {
+            _errorMessage = "Rotation angle must be between -180° and +180°";
+            return;
+        }
+
+        float angleRad = (float)(_customRotationAngle * Math.PI / 180);
+        float deltaAngle = angleRad - _newPlan.Rotation;
+
+        _newPlan.Rotation = angleRad;
+        await SafeJsInvoke("rotatePlane", deltaAngle);
+
+        Debug.WriteLine($"Applied custom rotation: {_customRotationAngle}°");
+    }
+
+    private async Task CompleteOrientationStep()
+    {
+        // Clear any pins from previous attempts
+        await ClearAllPins();
+
+        _currentStep = ImportStep.Scale;
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region Step C: Scale
+
+    private void StartScalePinPlacement()
+    {
+        _placedPins.RemoveAll(p => _scalePinTags.Contains(p.Tag));
+        PinService.StartPlacement(_scalePinTags.ToList());
+        _isPinPlacementActive = true;
+        _pinService_CurrentTag = PinService.CurrentTag ?? "";
+        UpdateRefPointTextsInScene(_scalePinTags.ToList());
+    }
+
+    private async Task TryApplyScale()
+    {
+        _customValidation?.ClearErrors();
+        var errors = new Dictionary<string, List<string>>();
+
+        // Validate pins
+        var xLeftPin = _placedPins.FirstOrDefault(p => p.Tag == "X-Left");
+        var xRightPin = _placedPins.FirstOrDefault(p => p.Tag == "X-Right");
+        var yBottomPin = _placedPins.FirstOrDefault(p => p.Tag == "Y-Bottom");
+        var yTopPin = _placedPins.FirstOrDefault(p => p.Tag == "Y-Top");
+
+        if (xLeftPin == null || xRightPin == null || yBottomPin == null || yTopPin == null)
+        {
+            errors.Add("Pins", new List<string> { "Please place all 4 reference pins (X-Left, X-Right, Y-Bottom, Y-Top)." });
+        }
+
+        // Validate coordinates
+        if (Math.Abs(_newPlan.X2 - _newPlan.X1) < 0.01f)
+        {
+            errors.Add("X1", new List<string> { "X1 and X2 must have a meaningful difference (at least 0.01m)." });
+        }
+
+        if (Math.Abs(_newPlan.Y2 - _newPlan.Y1) < 0.01f)
+        {
+            errors.Add("Y1", new List<string> { "Y1 and Y2 must have a meaningful difference (at least 0.01m)." });
+        }
+
+        if (errors.Any())
+        {
+            _customValidation?.DisplayErrors(errors);
+            return;
+        }
+
+        // Calculate scale factors
+        // dx = X value of X-Right - X value of X-Left (in scene coordinates)
+        // dy = Y value of Y-Top - Y value of Y-Bottom (in scene coordinates)
+        float dx = xRightPin!.X - xLeftPin!.X;
+        float dy = yTopPin!.Y - yBottomPin!.Y;
+
+        if (Math.Abs(dx) < 1 || Math.Abs(dy) < 1)
+        {
+            _errorMessage = "Pin positions are too close together. Please place pins further apart.";
+            return;
+        }
+
+        float scaleX = (_newPlan.X2 - _newPlan.X1) / dx;
+        float scaleY = (_newPlan.Y2 - _newPlan.Y1) / dy;
+
+        // Store polarity for coordinate system (before taking absolute value)
+        if (IsKeyPlan && GlobalData.SelectedProject != null)
+        {
+            GlobalData.SelectedProject.PositiveScaleX = scaleX > 0;
+            GlobalData.SelectedProject.PositiveScaleY = scaleY > 0;
+        }
+
+        // Image scale must be positive for proper rendering
+        _newPlan.ScaleX = Math.Abs(scaleX);
+        _newPlan.ScaleY = Math.Abs(scaleY);
+
+        // Store renderer dimensions
+        if (GlobalData.sceneDataCurrent != null)
+        {
+            _newPlan.RendererWidth = GlobalData.sceneDataCurrent.RendererWidth;
+            _newPlan.RendererHeight = GlobalData.sceneDataCurrent.RendererHeight;
+        }
+
+        // Apply scale in 3D scene
+        await SafeJsInvoke("scalePlane", _newPlan.ScaleX, _newPlan.ScaleY);
+
+        Debug.WriteLine($"Applied scale: X={_newPlan.ScaleX:F4}, Y={_newPlan.ScaleY:F4}");
+
+        // IMPORTANT: Stop pin placement mode and clear all pins before moving to next step
+        StopPinPlacement();
+        await ClearAllPins();
+        
+        _currentStep = ImportStep.Position;
+        StateHasChanged();
+    }
+
+    private async Task ResetScalePins()
+    {
+        _placedPins.RemoveAll(p => _scalePinTags.Contains(p.Tag));
+        await ClearAllPins();
+        StopPinPlacement();
+    }
+
+    #endregion
+
+    #region Step D: Position
+
+    private void StartPositionPinPlacement()
+    {
+        StopPinPlacement();  // Ensure any previous pin placement is stopped
+
+        if (IsKeyPlan)
+        {
+            _placedPins.RemoveAll(p => p.Tag == "Origin");
+            PinService.StartPlacement(new List<string> { "Origin" });
+            UpdateRefPointTextsInScene(new List<string> { "Origin" });
+        }
+        else
+        {
+            _placedPins.RemoveAll(p => _positionPinTags.Contains(p.Tag));
+            PinService.StartPlacement(_positionPinTags.ToList());
+            UpdateRefPointTextsInScene(_positionPinTags.ToList());
+        }
+
+        _isPinPlacementActive = true;
+        _pinService_CurrentTag = PinService.CurrentTag ?? "";
+    }
+
+    private async Task TryApplyPosition()
+    {
+        _customValidation?.ClearErrors();
+        var errors = new Dictionary<string, List<string>>();
+
+        float centreX = 0, centreY = 0;
+
+        if (IsKeyPlan)
+        {
+            var originPin = _placedPins.FirstOrDefault(p => p.Tag == "Origin");
+            if (originPin == null)
+            {
+                errors.Add("Origin", new List<string> { "Please place the Origin pin on the plot plan." });
+            }
+
+            if (_newPlan.LocalE == 0 && _newPlan.LocalN == 0)
+            {
+                errors.Add("LocalE", new List<string> { "Reference E and N coordinates are required." });
+            }
+
+            if (errors.Any())
+            {
+                _customValidation?.DisplayErrors(errors);
+                return;
+            }
+
+            // For key plan, centre the scene origin on the pinned point
+            centreX = originPin!.X;
+            centreY = originPin.Y;
+            _newPlan.KeyPlan = true;
+
+            // Store reference coordinates in project
+            if (GlobalData.SelectedProject != null)
+            {
+                GlobalData.SelectedProject.LocalE = _newPlan.LocalE;
+                GlobalData.SelectedProject.LocalN = _newPlan.LocalN;
+                GlobalData.SelectedProject.XEW = _newPlan.XEW;
+            }
+        }
+        else
+        {
+            var refNewPin = _placedPins.FirstOrDefault(p => p.Tag == "Ref-New");
+            var refKeyPin = _placedPins.FirstOrDefault(p => p.Tag == "Ref-Key");
+
+            if (refNewPin == null || refKeyPin == null)
+            {
+                errors.Add("Pins", new List<string> { "Please place both reference pins (Ref-New on new plan, Ref-Key on key plan)." });
+                _customValidation?.DisplayErrors(errors);
+                return;
+            }
+
+            // Move new plan so Ref-New aligns with Ref-Key
+            centreX = refNewPin.X - refKeyPin.X;
+            centreY = refNewPin.Y - refKeyPin.Y;
+            _newPlan.KeyPlan = false;
+        }
+
+        _newPlan.CentreX = centreX;
+        _newPlan.CentreY = centreY;
+
+        // Apply position in 3D scene
+        await SafeJsInvoke("centrePlane", centreX, centreY, _newPlan.Z);
+
+        Debug.WriteLine($"Applied position: CentreX={centreX:F2}, CentreY={centreY:F2}, Z={_newPlan.Z:F2}");
+
+        // Clear pins and proceed
+        await ClearAllPins();
+        _placedPins.Clear();
+        _currentStep = ImportStep.Save;
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region Step E: Save
+
+    private async Task HandleSaveSubmit()
+    {
+        if (_currentStep != ImportStep.Save) return;
+
+        _customValidation?.ClearErrors();
+        var errors = new Dictionary<string, List<string>>();
+
+        if (string.IsNullOrWhiteSpace(_newPlan.Tag))
+        {
+            errors.Add("Tag", new List<string> { "Name is required." });
+        }
+        else if (_plotPlans.Any(p => p.Tag?.Equals(_newPlan.Tag, StringComparison.OrdinalIgnoreCase) == true))
+        {
+            errors.Add("Tag", new List<string> { "A plot plan with this name already exists." });
+        }
+
+        if (errors.Any())
+        {
+            _customValidation?.DisplayErrors(errors);
+            return;
+        }
+
+        await SavePlotPlan();
+    }
+
+    private async Task SavePlotPlan()
+    {
+        _isSaving = true;
+        ClearMessages();
+        StateHasChanged();
+
+        try
+        {
+            // Determine if this is the key plan BEFORE clearing
+            bool isKeyPlan = _newPlan.KeyPlan;
+
+            await PlotPlanService.SavePlotPlanAsync(_newPlan);
+
+            // Create default coordinate system for key plan
+            if (isKeyPlan)
+            {
+                await CreateDefaultCoordinateSystem();
+            }
+
+            _successMessage = $"Plot plan '{_newPlan.Tag}' saved successfully.";
+            
+            // Refresh list
+            _plotPlans = await PlotPlanService.GetAllAsync();
+            await LoadCoordinateSystems();
+
+            // Reset for next import
+            ResetImportState();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to save plot plan: {ex.Message}";
+            Debug.WriteLine($"SavePlotPlan error: {ex}");
+        }
+        finally
+        {
+            _isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CreateDefaultCoordinateSystem()
+    {
+        var defaultCS = new CoordinateSystem
+        {
+            Name = "",  // Empty name = default
+            Description = "Default for Key Plan",
+            Unit = "m",
+            ReferenceSceneX = 0,
+            ReferenceSceneY = 0,
+            ReferenceX = _newPlan.LocalE,
+            ReferenceY = _newPlan.LocalN,
+            RotationDegrees = 0,
+            ScaleX = _newPlan.X2 > _newPlan.X1 ? 1 : -1,
+            ScaleY = _newPlan.Y2 > _newPlan.Y1 ? 1 : -1
+        };
+
+        // Handle X-axis direction
+        if (!_newPlan.XEW)
+        {
+            // If X-axis is North-South, swap the scale factors
+            (defaultCS.ScaleX, defaultCS.ScaleY) = (defaultCS.ScaleY, defaultCS.ScaleX);
+        }
+
+        if (GlobalData.SelectedProject != null)
+        {
+            GlobalData.SelectedProject.CoordinateSystems?.Clear();
+            GlobalData.SelectedProject.CoordinateSystems?.Add(defaultCS);
+            GlobalData.SelectedProject.CoordinateSystemJson =
+                JsonSerializer.Serialize(GlobalData.SelectedProject.CoordinateSystems);
+
+            await Table.UpdateAsync(GlobalData.SelectedProject);
+        }
+
+        Debug.WriteLine($"Created default coordinate system: E={defaultCS.ReferenceX}, N={defaultCS.ReferenceY}");
+    }
+
+    #endregion
+
+    #region Coordinate System Management
+
+    private async Task LoadCoordinateSystems()
+    {
+        _coordinateSystems.Clear();
+
+        if (GlobalData.SelectedProject?.CoordinateSystems != null)
+        {
+            _coordinateSystems = GlobalData.SelectedProject.CoordinateSystems.ToList();
+        }
+        else if (!string.IsNullOrEmpty(GlobalData.SelectedProject?.CoordinateSystemJson))
+        {
+            try
+            {
+                var systems = JsonSerializer.Deserialize<List<CoordinateSystem>>(
+                    GlobalData.SelectedProject.CoordinateSystemJson);
+                if (systems != null)
+                {
+                    _coordinateSystems = systems;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to deserialize coordinate systems: {ex.Message}");
+            }
+        }
+    }
+
+    private void ToggleCoordinateSystemForm()
+    {
+        _showCoordSystemForm = !_showCoordSystemForm;
+        if (_showCoordSystemForm)
+        {
+            _newCoordSystem = new CoordinateSystem { Unit = "m" };
+            _coordSystemPin = null;
+        }
+        else
+        {
+            StopPinPlacement();
+        }
+    }
+
+    private void StartCoordSystemPinPlacement()
+    {
+        PinService.StartPlacement(new List<string> { "CoordRef" });
+        _isPinPlacementActive = true;
+        _pinService_CurrentTag = "CoordRef";
+    }
+
+    private async Task SaveCoordinateSystem()
+    {
+        if (string.IsNullOrWhiteSpace(_newCoordSystem.Name))
+        {
+            _errorMessage = "Coordinate system name is required.";
+            return;
+        }
+
+        if (_coordinateSystems.Any(cs => cs.Name.Equals(_newCoordSystem.Name, StringComparison.OrdinalIgnoreCase)))
+        {
+            _errorMessage = "A coordinate system with this name already exists.";
+            return;
+        }
+
+        if (!_coordSystemPin.HasValue)
+        {
+            _errorMessage = "Please pin a reference point on the map.";
+            return;
+        }
+
+        _newCoordSystem.ReferenceSceneX = _coordSystemPin.Value.X;
+        _newCoordSystem.ReferenceSceneY = _coordSystemPin.Value.Y;
+
+        _coordinateSystems.Add(_newCoordSystem);
+
+        // Save to project
+        if (GlobalData.SelectedProject != null)
+        {
+            GlobalData.SelectedProject.CoordinateSystems = _coordinateSystems;
+            GlobalData.SelectedProject.CoordinateSystemJson = JsonSerializer.Serialize(_coordinateSystems);
+
+            try
+            {
+                await Table.UpdateAsync(GlobalData.SelectedProject);
+                _successMessage = $"Coordinate system '{_newCoordSystem.Name}' saved successfully.";
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"Failed to save coordinate system: {ex.Message}";
+                return;
+            }
+        }
+
+        _showCoordSystemForm = false;
+        _newCoordSystem = new CoordinateSystem { Unit = "m" };
+        _coordSystemPin = null;
+        StateHasChanged();
+    }
+
+    private async Task DeleteCoordinateSystem(string name)
+    {
+        bool confirmed = await JsRuntime.InvokeAsync<bool>("confirm",
+            $"Delete coordinate system '{name}'?");
+
+        if (!confirmed) return;
+
+        _coordinateSystems.RemoveAll(cs => cs.Name == name);
+
+        if (GlobalData.SelectedProject != null)
+        {
+            GlobalData.SelectedProject.CoordinateSystems = _coordinateSystems;
+            GlobalData.SelectedProject.CoordinateSystemJson = JsonSerializer.Serialize(_coordinateSystems);
+
+            try
+            {
+                await Table.UpdateAsync(GlobalData.SelectedProject);
+                _successMessage = $"Coordinate system '{name}' deleted.";
+            }
+            catch (Exception ex)
+            {
+                _errorMessage = $"Failed to delete coordinate system: {ex.Message}";
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    #endregion
+
+    #region Delete Plot Plan
+
     private async Task ConfirmAndDeletePlotPlan(string tag)
     {
         var plan = _plotPlans.FirstOrDefault(p => p.Tag == tag);
         if (plan == null) return;
 
-        // Initial confirmation
         string message = plan.KeyPlan
-            ? "⚠️ This is the KEY PLAN (reference for all other plans).\n\nDeleting it will reposition all other plans. Continue?"
+            ? "⚠️ This is the KEY PLAN.\n\nDeleting it will affect all other plans. Continue?"
             : $"Delete plot plan '{tag}'?";
 
-        bool confirmed = await JsRuntime.InvokeAsync<bool>("confirm", message);
-        if (!confirmed) return;
+        if (!await JsRuntime.InvokeAsync<bool>("confirm", message)) return;
 
         _isDeleting = true;
         _deletingTag = tag;
@@ -607,54 +1448,22 @@ else
 
         try
         {
-            bool wasKeyPlan = plan.KeyPlan;
-            float deltaE = 0, deltaN = 0;
-
-            // Handle key plan deletion
-            if (wasKeyPlan)
+            if (plan.KeyPlan && _plotPlans.Count > 1)
             {
-                if (_plotPlans.Count > 1)
+                // Promote another plan to key plan
+                var newKeyPlan = _plotPlans.FirstOrDefault(p => p.Tag != tag);
+                if (newKeyPlan != null)
                 {
-                    // Additional confirmation for key plan deletion
-                    bool confirmedKeyPlan = await ConfirmKeyPlanDeletion();
-                    if (!confirmedKeyPlan)
-                    {
-                        return; // User cancelled
-                    }
+                    float deltaE = plan.GlobalE - newKeyPlan.GlobalE;
+                    float deltaN = plan.GlobalN - newKeyPlan.GlobalN;
 
-                    // Find and promote the next plan
-                    var newKeyPlan = _plotPlans.FirstOrDefault(p => p.Tag != tag);
-                    if (newKeyPlan != null)
-                    {
-                        // Calculate deltas for JS repositioning (before service call updates values)
-                        deltaE = plan.GlobalE - newKeyPlan.GlobalE;
-                        deltaN = plan.GlobalN - newKeyPlan.GlobalN;
-
-                        // Promote new key plan via service
-                        await PlotPlanService.PromoteToKeyPlanAsync(newKeyPlan, plan);
-
-                        // Update Three.js scene - reposition all planes
-                        await SafeJsInvoke("repositionAllPlanes", deltaE, deltaN);
-                    }
-                }
-                else
-                {
-                    // Deleting the only/last plan
-                    bool confirmedLastPlan = await ConfirmLastPlanDeletion();
-                    if (!confirmedLastPlan)
-                    {
-                        return; // User cancelled
-                    }
+                    await PlotPlanService.PromoteToKeyPlanAsync(newKeyPlan, plan);
+                    await SafeJsInvoke("repositionAllPlanes", deltaE, deltaN);
                 }
             }
 
-            // Remove from 3D scene
             await SafeJsInvoke("removePlane", plan.Tag);
-
-            // Delete from database via service
             await PlotPlanService.DeletePlotPlanAsync(plan);
-
-            // Refresh local list
             _plotPlans = await PlotPlanService.GetAllAsync();
 
             _successMessage = $"Plot plan '{tag}' deleted successfully.";
@@ -662,7 +1471,6 @@ else
         catch (Exception ex)
         {
             _errorMessage = $"Failed to delete plot plan: {ex.Message}";
-            Debug.WriteLine($"DeletePlotPlan error: {ex}");
         }
         finally
         {
@@ -672,553 +1480,66 @@ else
         }
     }
 
-    /// <summary>
-    /// Confirm deletion of the key plan (will trigger repositioning)
-    /// </summary>
-    private async Task<bool> ConfirmKeyPlanDeletion()
-    {
-        return await JsRuntime.InvokeAsync<bool>("confirm",
-            "⚠️ IMPORTANT: You are deleting the KEY PLAN.\n\n" +
-            "This will:\n" +
-            "• Promote another plan to be the new key plan\n" +
-            "• Update the project's global reference coordinates\n" +
-            "• Reposition all other plans relative to the new key plan\n\n" +
-            "This action cannot be undone. Continue?");
-    }
-
-    /// <summary>
-    /// Confirm deletion of the last/only plan
-    /// </summary>
-    private async Task<bool> ConfirmLastPlanDeletion()
-    {
-        return await JsRuntime.InvokeAsync<bool>("confirm",
-            "⚠️ WARNING: This is the ONLY plot plan for this project.\n\n" +
-            "Deleting it will remove all spatial reference for this project.\n\n" +
-            "Are you sure you want to delete it?");
-    }
-
     #endregion
 
-    #region Upload & Processing
+    #region Pin Placement Event Handlers
 
-    private async Task LoadPlotPlan(InputFileChangeEventArgs e)
+    private void OnPinServiceStateChanged()
     {
-        showProcessing = true;
-        showThumbImage = false;
-        ResetSteps();
-        ClearMessages();
-        filenme = e.File.Name;
-        StateHasChanged();
-
-        try
-        {
-            _isPdfFile = e.File.ContentType.ToLower() == "application/pdf";
-
-            if (_isPdfFile)
-            {
-                //TODO : PDF render currently not working 
-                newImage = await PlotPlanService.LoadPdfAsync(e, _selectedPdfPage, 150);
-            }
-            else
-            {
-                newImage = await PlotPlanService.LoadImageAsync(e);
-            }
-            
-            newImage.ProjectId = GlobalData.SelectedProject?.Tag ?? "";
-            newImage.OptionId = "base";
-            newImage.Opacity = 1;
-            newImage.UpdatedOn = DateTime.Now;
-            newImage.Remark = "";
-            newImage.XEW = true;
-
-            showThumbImage = true;
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = $"Failed to process image: {ex.Message}";
-            Debug.WriteLine($"LoadPlotPlan error: {ex}");
-        }
-        finally
-        {
-            showProcessing = false;
-            StateHasChanged();
-        }
+        _pinService_CurrentTag = PinService.CurrentTag ?? "";
+        _isPinPlacementActive = PinService.IsActive;
+        InvokeAsync(StateHasChanged);
     }
 
-    private void CancelUpload()
+    private void OnPinPlaced(string tag, double x, double y, double z)
     {
-        showThumbImage = false;
-        ResetSteps();
-        newImage = new PlotPlan();
-        filenme = null;
-    }
+        Debug.WriteLine($"Pin placed: {tag} at ({x:F2}, {y:F2}, {z:F2})");
 
-    #endregion
-
-    #region Draw & Configure
-
-    private async Task DrawPlotPlan()
-    {
-        newImage.Tag = $"plotplan_{DateTime.Now:yyyyMMdd_HHmmss}";
-        newImage.X1 = 0;
-        newImage.X2 = 0;
-        newImage.Y1 = 0;
-        newImage.Y2 = 0;
-        newImage.Width = 0;
-        newImage.Height = 0;
-        newImage.ScaleX = 1;
-        newImage.ScaleY = 1;
-        newImage.CentreX = 0;
-        newImage.CentreY = 0;
-        newImage.Rotation = 0;
-
-        // Set Z level above existing plans
-        if (_plotPlans.Count > 0)
+        // Handle coordinate system pin separately
+        if (tag == "CoordRef")
         {
-            var keyPlan = _plotPlans.Find(plot => plot.KeyPlan);
-            newImage.Z = (keyPlan?.Z ?? 0) + 0.01f;
+            _coordSystemPin = new Vector3((float)x, (float)y, (float)z);
+            StopPinPlacement();
+            InvokeAsync(StateHasChanged);
+            return;
         }
 
-        await DrawPlan(newImage);
+        // Remove existing pin with same tag
+        _placedPins.RemoveAll(p => p.Tag == tag);
 
-        showThumbImage = false;
-        showScaleSubmit = true;
-        await ShowHidePlotinPlotDotRazor();
-    }
-
-    private async Task ShowHidePlotinPlotDotRazor()
-    {
-        if (PlotComponent != null)
+        _placedPins.Add(new PlacedPin
         {
-            await PlotComponent.HidePlotPlan();
-        }
+            Tag = tag,
+            X = (float)x,
+            Y = (float)y,
+            Z = (float)z
+        });
+
+        _pinService_CurrentTag = PinService.CurrentTag ?? "";
+        InvokeAsync(StateHasChanged);
     }
 
-    private async Task DrawPlan(PlotPlan plotPlan)
+    private void OnAllPinsPlaced()
     {
-        var planeName = "plotplan";
-        var planeTag = plotPlan.Tag;
-
-        if (!await SafeJsInvoke("drawPlane", planeName, planeTag, newImage.ImgString,
-                plotPlan.ScaleX, plotPlan.ScaleY, plotPlan.CentreX, plotPlan.CentreY,
-                newImage.Z, newImage.Opacity))
-        {
-            _errorMessage = "Failed to draw plot plan in 3D view.";
-        }
-        else
-        {
-            Debug.WriteLine($"Plot plan '{planeName}' drawn.");
-        }
-    }
-
-    private async Task RotatePlotPlan()
-    {
-        var previousRotationAngleDeg = Math.Round(newImage.Rotation * 90 / Math.PI,0);
-        newImage.Rotation += (float)Math.PI / 2;
-        var newRotationAngleDeg = Math.Round(newImage.Rotation * 90 / Math.PI,0);
-        Debug.WriteLine($"Rotating plot plan from {previousRotationAngleDeg} to {newRotationAngleDeg} degrees");
-        await SafeJsInvoke("rotatePlane", (float)Math.PI / 2);
-    }
-
-
-
-
-    private async Task UpdateRefPointTexts()
-    {
-        if (_refPinTagList.Count == 0) return;
+        // PinPlacementService now auto-stops, but we update local state too
+        _isPinPlacementActive = false;
+        _pinService_CurrentTag = "";
         
-        //_refPinTagList = ["X-Left", "X-Right", "Y-Bottom", "Y-Top", "Centre (0,0)","Ref-New Plan", "Ref-Key Plan"];
-        if (!await SafeJsInvoke("updateRefPointTexts", _refPinTagList))
-        {
-            _errorMessage = $"Unable to update _refPinTagList = '{_refPinTagList}'.";
-        }
-        else
-        {
-            Debug.WriteLine($"Successfully updated _refPinTagList = '{_refPinTagList}'.");
-        }
+        Console.WriteLine("PlotEdit: All pins placed - pin mode deactivated");
+        InvokeAsync(StateHasChanged);
     }
 
-    #endregion
-
-    #region Scale & Centre
-
-
-    private void SetXEWForKeyPlan()
+    private void StopPinPlacement()
     {
-        // if there was no Key Plan yet, temporary assign the X Axis East-West / North-South orientation as per this loaded plot plan
-        if (_plotPlans.Count == 0)
-        {
-            GlobalData.SelectedProject.XEW = newImage.XEW;
-            Debug.WriteLine($"XEW changed to: {newImage.XEW}");
-        }
-    }
-
-    private async Task TryScalePlotPlan()
-    {
-        customValidation?.ClearErrors();
-        var errors = new Dictionary<string, List<string>>();
-
-        // Check reference points
-        if (GlobalData.RefPoints == null || GlobalData.RefPoints.Count != 4)
-        {
-            errors.Add("RefPoints", new List<string> { "Please click 4 reference points on the image (2 for X-axis, 2 for Y-axis)." });
-        }
-
-        // Validate coordinate values
-        if (Math.Abs(newImage.X2 - newImage.X1) < 0.01f)
-        {
-            errors.Add(nameof(newImage.X1), new List<string> { "X1 and X2 must have a meaningful difference (at least 0.01m)." });
-        }
-
-        if (Math.Abs(newImage.Y2 - newImage.Y1) < 0.01f)
-        {
-            errors.Add(nameof(newImage.Y1), new List<string> { "Y1 and Y2 must have a meaningful difference (at least 0.01m)." });
-        }
-
-        // if (newImage.X1 >= newImage.X2 || newImage.Y1 >= newImage.Y2)
-        // {
-        //     errors.Add(nameof(newImage.X1), new List<string> { "X1 must be less than X2, and Y1 must be less than Y2." });
-        // }
-
-        if (errors.Any())
-        {
-            customValidation?.DisplayErrors(errors);
-        }
-        else
-        {
-            await ScalePlotPlan();
-            showScaleSubmit = false;
-            showCentreSubmit = true;
-        }
-    }
-
-    private async Task ScalePlotPlan()
-    {
-        if (GlobalData.RefPoints == null || GlobalData.RefPoints.Count != 4) return;
-
-        var LX = GlobalData.RefPoints[1].X - GlobalData.RefPoints[0].X;
-        var LY = GlobalData.RefPoints[3].Y - GlobalData.RefPoints[2].Y;
-
-        if (Math.Abs(LX) < 1 || Math.Abs(LY) < 1 ||
-            Math.Abs(newImage.X1 - newImage.X2) < 1 ||
-            Math.Abs(newImage.Y1 - newImage.Y2) < 1) return;
-
-        var scaleX = (newImage.X2 - newImage.X1) / LX;
-        var scaleY = (newImage.Y2 - newImage.Y1) / LY;
-        
-        // For Key Plot Plan, temporarily assign the polarity of the scale
-        // for calculating the Local EN correctly
-        if (_plotPlans.Count == 0)
-        {
-            GlobalData.SelectedProject.PositiveScaleX = scaleX > 0;
-            GlobalData.SelectedProject.PositiveScaleY = scaleY > 0;
-        }
-
-        // Image scale has to be positive, otherwise the image would get rendered reversed
-        scaleX = Math.Abs(scaleX);
-        scaleY = Math.Abs(scaleY);
-
-        newImage.ScaleX = scaleX;
-        newImage.ScaleY = scaleY;
-
-        if (GlobalData.sceneDataCurrent != null)
-        {
-            newImage.RendererWidth = GlobalData.sceneDataCurrent.RendererWidth;
-            newImage.RendererHeight = GlobalData.sceneDataCurrent.RendererHeight;
-        }
-
-        Debug.WriteLine("Scaling the plot plan");
-        await SafeJsInvoke("scalePlane", scaleX, scaleY);
-
-        showScaleSubmit = false;
-        showCentreSubmit = true;
-        showSaveSubmit = false;
-
-        GlobalData.RefPoints?.Clear();
-        
-    }
-
-    private async Task TryCentrePlotPlan()
-    {
-        customValidation?.ClearErrors();
-        var errors = new Dictionary<string, List<string>>();
-        
-        
-                
-        // for the Key Plot Plan
-        if (_plotPlans.Count == 0)
-        {
-            // Check reference points
-            if (GlobalData.RefPoints == null || GlobalData.RefPoints.Count != 1)
-            {
-                errors.Add("RefPoints", new List<string> { "Please click the reference points on the image as the Centre (0,0) of the Key Plot Plan)." });
-            }
-            // For Key Plot Plan, Local EN (newImage.LocalE, newImage.LocalN) are must.
-            // There can be a separate Global coordinate Reference (newImage.GlobalE, newImage.GlobalN), else the Global EN is considered as same as Local EN
-            // Elevation, by default newImage.Z = 0
-            
-
-            if (newImage.LocalE == 0 && newImage.LocalN == 0)
-            {
-                errors.Add(nameof(newImage.GlobalE), new List<string> { "Both E and N of local coordinates are required. Global EN coordinates are optional." });
-            }
-
-            if (errors.Any())
-            {
-                customValidation?.DisplayErrors(errors);
-            }
-            else
-            {
-                await CentrePlotPlan();
-                showCentreSubmit = false;
-                showSaveSubmit = true;
-            }
-        }
-        else
-        {
-            // For subsequent plot plans
-            // Check reference points
-            if (GlobalData.RefPoints == null || GlobalData.RefPoints.Count != 2)
-            {
-                errors.Add("RefPoints", new List<string> { "Please click 2 reference points on the image (1 for Ref-New, 2 for Ref-Key Plan)." });
-            }
-
-            if (errors.Any())
-            {
-                customValidation?.DisplayErrors(errors);
-            }
-            else
-            {
-                await CentrePlotPlan();
-                showCentreSubmit = false;
-                showSaveSubmit = true;
-            }
-            
-        }
-    }
-
-    private async Task CentrePlotPlan()
-    {
-        Debug.WriteLine("Centering the plot plan");
-        if (GlobalData.RefPoints?.Count == 0) return;
-        
-        var centreX = 0f;
-        var centreY = 0f;
-
-        if (_plotPlans.Count > 0 && GlobalData.RefPoints is { Count: 2 })
-        {
-            // For subsequent plot plans
-            centreX = GlobalData.RefPoints[0].X-GlobalData.RefPoints[1].X;
-            centreY = GlobalData.RefPoints[0].Y -GlobalData.RefPoints[1].Y;
-            
-            newImage.KeyPlan = false;
-        }
-        else if (_plotPlans.Count == 0 && GlobalData.RefPoints is { Count: 1 })
-        {
-            // For Key Plot Plan
-            centreX = GlobalData.RefPoints[0].X;
-            centreY = GlobalData.RefPoints[0].Y;
-            
-            newImage.KeyPlan = true;
-        }
-
-        newImage.CentreX = centreX;
-        newImage.CentreY = centreY;
-
-        await SafeJsInvoke("centrePlane", centreX, centreY, newImage.Z);
-
-        showCentreSubmit = false;
-        showSaveSubmit = true;
-        ClickedPoints.Clear();
-        GlobalData.RefPoints?.Clear();
-        
-                   
-        // if there was no Key Plan yet, temporary assign the Local and Global EN values as per this loaded plot plan
-        if (_plotPlans.Count == 0)
-        {
-            GlobalData.SelectedProject.LocalE = newImage.LocalE;
-            GlobalData.SelectedProject.LocalN = newImage.LocalN;
-            GlobalData.SelectedProject.LocalE = newImage.GlobalE;
-            GlobalData.SelectedProject.GlobalN = newImage.GlobalN;
-            GlobalData.SelectedProject.XEW = newImage.XEW;
-            GlobalData.SelectedProject.AngleTrueNorth = newImage.AngleTrueNorth;
-        }
-
-        
-    }
-
-    #endregion
-
-    #region Save
-
-    private async Task HandleSubmit()
-    {
-        customValidation?.ClearErrors();
-        var errors = new Dictionary<string, List<string>>();
-
-        if (string.IsNullOrWhiteSpace(newImage.Tag))
-        {
-            errors.Add(nameof(newImage.Tag), new List<string> { "Name is required." });
-        }
-        else if (_plotPlans.Any(p => p.Tag?.Equals(newImage.Tag, StringComparison.OrdinalIgnoreCase) == true))
-        {
-            errors.Add(nameof(newImage.Tag), new List<string> { "A plot plan with this name already exists." });
-        }
-
-        if (errors.Any())
-        {
-            customValidation?.DisplayErrors(errors);
-        }
-        else
-        {
-            await SavePlotPlan();
-        }
-    }
-
-    private async Task SavePlotPlan()
-    {
-        Debug.WriteLine($"Saving plot plan. KeyPlan: {newImage.KeyPlan}");
-        _isSaving = true;
-        ClearMessages();
-        StateHasChanged();
-        
-        try
-        {
-            await PlotPlanService.SavePlotPlanAsync(newImage);
-            _successMessage = $"Plot plan '{newImage.Tag}' saved successfully.";
-            _plotPlans = await PlotPlanService.GetAllAsync();
-            newImage = new PlotPlan();
-            ResetSteps();
-            ClickedPoints.Clear();
-            GlobalData.RefPoints?.Clear();
-            customValidation?.ClearErrors();
-            filenme = null;
-            
-            // Save Project with default coordinate system for the Key Plot Plan
-            // Additional coordinate systems will be saved separately
-            if (newImage.KeyPlan)
-            {
-                var defaultCoordinateSystem = new CoordinateSystem()
-                {
-                    Name = "", //Default
-                    Description = "Default for KeyPlan",
-                    Unit = "m",
-                    ReferenceSceneX = 0,
-                    ReferenceSceneY = 0,
-                    ReferenceX = newImage.CentreX, // Key Plot Plan Easting
-                    ReferenceY = newImage.CentreY, // Key Plot Plan Northing
-                    RotationDegrees = 0, // Key Plot Plan True North offset
-                    ScaleX = newImage.X2>newImage.X1?1:-1,
-                    ScaleY = newImage.Y2>newImage.Y1?1:-1
-                };
-                GlobalData.SelectedProject?.CoordinateSystems.Clear();
-                GlobalData.SelectedProject?.CoordinateSystems.Add(defaultCoordinateSystem);
-                GlobalData.SelectedProject?.CoordinateSystemJson = 
-                    JsonSerializer.Serialize(GlobalData.SelectedProject.CoordinateSystems);
-                await SaveProject();
-            }
-            
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = $"Failed to save plot plan: {ex.Message}";
-            Debug.WriteLine($"Error saving plot plan: {ex.Message}");
-        }
-        finally
-        {
-            _isSaving = false;
-            ClickedPoints.Clear();
-            StateHasChanged();
-            
-        }
-    }
-
-    private async Task SaveProject()
-    {
-        // Save Project with added coordinate system
-        // This includes default and/or any additional coordinate systems added separately
-        try
-        {
-            var saveProject = await Table.UpdateAsync(GlobalData.SelectedProject);
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = $"Error in saving project with coordinate details: {ex.Message}";
-            Debug.WriteLine(_errorMessage); Console.WriteLine(_errorMessage);
-        }
-    }
-    
-    /// <summary>
-    /// Confirm and discard the current plot plan import, resetting back to file selection
-    /// </summary>
-    private async Task ConfirmAndDiscard()
-    {
-        bool confirmed = await JsRuntime.InvokeAsync<bool>("confirm",
-            "⚠️ Discard this plot plan?\n\n" +
-            "All changes will be lost and you'll need to import the image again.\n\n" +
-            "Continue?");
-
-        if (confirmed)
-        {
-            await DiscardAndReset();
-        }
-    }
-
-    /// <summary>
-    /// Discard the current import and reset to initial state
-    /// </summary>
-    private async Task DiscardAndReset()
-    {
-        // Remove the plane from 3D scene if it was drawn
-        if (!string.IsNullOrEmpty(newImage.Tag))
-        {
-            await SafeJsInvoke("removePlane", newImage.Tag);
-        }
-
-        // Reset all state
-        newImage = new PlotPlan();
-        filenme = null;
-        ResetSteps();
-        ClickedPoints.Clear();
-        GlobalData.RefPoints?.Clear();
-        customValidation?.ClearErrors();
-        ClearMessages();
-
-        // Show the Plot component again if it was hidden
-        if (PlotComponent != null)
-        {
-            await PlotComponent.HidePlotPlan();
-        }
-
-        _successMessage = "Plot plan discarded. You can import a new image.";
-        StateHasChanged();
+        PinService.StopPlacement();
+        _isPinPlacementActive = false;
+        _pinService_CurrentTag = "";
     }
 
     #endregion
 
     #region Helper Methods
-
-    private async Task RefreshAndReadPlotPlanFromDB()
-    {
-        (GlobalData.PlotPlans, _, _, _) = await DataService.RefreshCacheAndReadFromDb<PlotPlan>();
-        _plotPlans = GlobalData.PlotPlans ?? new List<PlotPlan>();
-    }
-
-    private async Task<bool> SafeJsInvoke(string identifier, params object[] args)
-    {
-        try
-        {
-            await JsRuntime.InvokeVoidAsync(identifier, args);
-            return true;
-        }
-        catch (JSException ex)
-        {
-            _errorMessage = $"3D rendering error: {ex.Message}";
-            Debug.WriteLine($"JS Interop failed for {identifier}: {ex}");
-            return false;
-        }
-    }
-
+    
     private string GetPropertyValue(PlotPlan plotPlan, string propertyName)
     {
         var property = typeof(PlotPlan).GetProperty(propertyName);
@@ -1234,18 +1555,83 @@ else
         return value?.ToString() ?? string.Empty;
     }
 
-    private string GetProgressBarClass(int step)
+    private async Task DrawPlanInScene(PlotPlan plan)
     {
-        if (CurrentStep > step) return "bg-success";
-        if (CurrentStep == step) return "bg-primary";
-        return "bg-secondary";
+        if (!await SafeJsInvoke("drawPlane", plan.Tag, plan.TagDescription, _newPlan.ImgString,
+                plan.ScaleX, plan.ScaleY, plan.CentreX, plan.CentreY, plan.Z, plan.Opacity))
+        {
+            _errorMessage = "Failed to draw plot plan in 3D view.";
+        }
     }
 
-    private void ResetSteps()
+    private async Task ClearAllPins()
     {
-        showScaleSubmit = false;
-        showCentreSubmit = false;
-        showSaveSubmit = false;
+        StopPinPlacement();
+        await SafeJsInvoke("clearAllPins");
+        _placedPins.Clear();
+    }
+
+    private async void UpdateRefPointTextsInScene(List<string> tags)
+    {
+        await SafeJsInvoke("updateRefPointTexts", tags);
+    }
+
+    private async Task<bool> SafeJsInvoke(string identifier, params object[] args)
+    {
+        try
+        {
+            await JsRuntime.InvokeVoidAsync(identifier, args);
+            return true;
+        }
+        catch (JSException ex)
+        {
+            Debug.WriteLine($"JS Interop failed for {identifier}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void ResetImportState()
+    {
+        _newPlan = new PlotPlan();
+        _currentStep = ImportStep.None;
+        _showPreview = false;
+        _uploadedFileName = null;
+        _customRotationAngle = 0;
+        _placedPins.Clear();
+        _isPinPlacementActive = false;
+        _pinService_CurrentTag = "";
+        _customValidation?.ClearErrors();
+    }
+
+    private async Task ConfirmAndDiscard()
+    {
+        bool confirmed = await JsRuntime.InvokeAsync<bool>("confirm",
+            "⚠️ Discard this plot plan?\n\nAll changes will be lost.\n\nContinue?");
+
+        if (confirmed)
+        {
+            await DiscardAndReset();
+        }
+    }
+
+    private async Task DiscardAndReset()
+    {
+        if (!string.IsNullOrEmpty(_newPlan.Tag))
+        {
+            await SafeJsInvoke("removePlane", _newPlan.Tag);
+        }
+
+        await ClearAllPins();
+        StopPinPlacement();
+        ResetImportState();
+
+        if (PlotComponent != null)
+        {
+            await PlotComponent.HidePlotPlan();
+        }
+
+        _successMessage = "Plot plan discarded.";
+        StateHasChanged();
     }
 
     private void ClearMessages()
@@ -1254,123 +1640,27 @@ else
         _successMessage = null;
     }
 
+    private string GetStepName(ImportStep step) => step switch
+    {
+        ImportStep.Orientation => "Orient",
+        ImportStep.Scale => "Scale",
+        ImportStep.Position => "Position",
+        ImportStep.Save => "Save",
+        _ => ""
+    };
+
     #endregion
-    
-    
-    // ============ Helper Methods ============
-    
-    private int GetProgressPercent()
-    {
-        if (_refPinTagList.Count == 0) return 0;
-        return (int)(_currentIndex * 100.0 / _refPinTagList.Count);
-    }
-    
-    /// <summary>
-    /// Returns CSS class to show/hide file upload (using CSS, not conditional rendering)
-    /// </summary>
-    private string GetFileUploadVisibility()
-    {
-        if (showProcessing || showThumbImage || showScaleSubmit || showCentreSubmit || showSaveSubmit)
-        {
-            return "d-none";
-        }
-        return "d-flex align-items-center gap-2";
-    }
-    
-    
-    // ===== Event Handlers =====
-    
-    private void OnPinServiceChanged()
-    {
-        _currentIndex = PinService.CurrentTagIndex;
-        _refPinActive = PinService.IsActive;
-        InvokeAsync(StateHasChanged);
-    }
 
-    private void OnPinPlaced(string tag, double x, double y, double z)
-    {
-        _placedPins.Add(new PlacedPin
-        {
-            Tag = tag,
-            X = x,
-            Y = y,
-            Z = z,
-            // Calculate E/N if you have the function available
-            // E = ..., N = ...
-        });
-        _currentIndex = PinService.CurrentTagIndex;
-        InvokeAsync(StateHasChanged);
-    }
+    #region Inner Classes
 
-    private void OnAllPinsPlaced()
-    {
-        _refPinActive = false;
-        InvokeAsync(StateHasChanged);
-    }
-
-    // ===== Tag Management =====
-    
-    private void AddTag()
-    {
-        if (string.IsNullOrWhiteSpace(_newTag)) return;
-        
-        var tag = _newTag.Trim().ToUpper();
-        if (!_refPinTagList.Contains(tag))
-        {
-            _refPinTagList.Add(tag);
-        }
-        _newTag = "";
-    }
-
-
-
-
-
-    // ===== Pin Placement Control =====
-    
-    private void StartPinPlacement()
-    {
-        if (_refPinTagList.Count == 0) return;
-        
-        // Start placement with our tag list
-        PinService.StartPlacement(_refPinTagList);
-        _refPinActive = true;
-        _currentIndex = 0;
-    }
-
-    private void StopPinPlacement()
-    {
-        PinService.StopPlacement();
-        _refPinActive = false;
-    }
-
-    private void ResetPlacement()
-    {
-        PinService.Reset();
-        _placedPins.Clear();
-        _currentIndex = 0;
-        // TODO: Call JS to clear pins from scene
-    }
-
-    private void RemovePlacedPin(string tag)
-    {
-        _placedPins.RemoveAll(p => p.Tag == tag);
-        // TODO: Call JS to remove pin from scene
-    }
-    
-    
-    
-    
-    // ===== Models =====
-    
     private class PlacedPin
     {
         public string Tag { get; set; } = "";
-        public double X { get; set; }
-        public double Y { get; set; }
-        public double Z { get; set; }
-        public double? E { get; set; }
-        public double? N { get; set; }
+        public float X { get; set; }
+        public float Y { get; set; }
+        public float Z { get; set; }
     }
+
+    #endregion
     
 }

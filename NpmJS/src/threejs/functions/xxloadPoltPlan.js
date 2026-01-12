@@ -746,7 +746,7 @@ if (typeof window !== 'undefined') {
     window.debugPlotPlans = debugPlotPlans;
 
     // Legacy aliases
-    window.loadPlotPlan = loadPlotPlan;
-    window.scalePlotPlan = scalePlotPlan;
-    window.centrePlotPlan = centrePlotPlan;
+    //window.loadPlotPlan = loadPlotPlan;
+    //window.scalePlotPlan = scalePlotPlan;
+    //window.centrePlotPlan = centrePlotPlan;
 }

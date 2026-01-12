@@ -1,7 +1,6 @@
 ﻿import 'bootstrap';
 import sceneManager, { LAYERS } from './threejs/sceneManager'
-import { drawPlaneMesh } from './threejs/objects/plane';
-import { createInfiniteAxes, createAxisIndicator, createGridHelper } from './threejs/objects/axisHelpers';
+
 import { MouseEventHandler } from './threejs/events/mouseEvents';
 import { drawLadderMesh } from './threejs/objects/ladder';
 import { drawBendMesh } from './threejs/objects/bend';
@@ -15,6 +14,7 @@ import { focusElement, getModalDialogRect, setModalPosition, startModalDrag, sto
 import { addPin, removePin, clearAllPins, showPinHelpers, hidePinHelpers, drawRefPointMesh} from "./threejs/objects/refPoint";
 // Import pin cursor module
 import * as PinCursor from './threejs/events/pinCursor'
+
 
 
 // Expose sceneManager to window
@@ -128,20 +128,10 @@ window.toggleSceneVisibility = function(visible) {
     }
 };
 
+
+
 // ============ DRAWING FUNCTIONS ============
-window.drawPlane = function(planeTag,planeTagDescription, imageString, scaleX, scaleY, centreX, centreY, elevation, opacity) {
-    if (sceneManager && sceneManager.scene) {
-        const mesh = drawPlaneMesh(
-            sceneManager.renderer?.domElement?.width || 800,
-            sceneManager.renderer?.domElement?.height || 600,
-            planeTag, planeTagDescription, imageString, scaleX, scaleY, centreX, centreY, elevation, opacity
-        );
-        if (mesh) {
-            sceneManager.addObject(mesh, planeTag, LAYERS.PLOT_PLAN);
-            console.log('window.drawPlane :', planeTag, ' added.');
-        }
-    }
-};
+
 window.drawRefPoint = function(tag, point, opacity) {
     if (sceneManager && sceneManager.scene) {
         const mesh = drawRefPointMesh(tag, point, opacity

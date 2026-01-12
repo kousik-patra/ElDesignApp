@@ -127,6 +127,10 @@
     private string? _previousProjectId;
     private SceneMessage? _currentMessage;
     private List<PinMarker> _placedPins = new();
+    // ==== Screen Info ====
+    private float _rendererWidth = 0f;
+    private float _rendererHeight = 0f;
+    
 
     // ===== Parameters =====
     [Parameter] public string CurrentPage { get; set; } = "";
@@ -224,9 +228,16 @@
         Console.WriteLine($"SharedSceneHost.HandleSceneMessage: RECEIVED - {message.Text}");
         
         _currentMessage = message;
-       
         
-        // Handle pin placement from shift+click
+        // Handle resize messages
+        if (message.RenderWidth.HasValue && message.RenderHeight.HasValue)
+        {
+            Console.WriteLine($"SharedSceneHost: Canvas size = {message.RenderWidth} x {message.RenderHeight}");
+            _rendererHeight = (float)message.RenderHeight;
+            _rendererWidth = (float)message.RenderWidth;
+        }
+        
+       // Handle pin placement from shift+click
         if (PinService.IsActive && 
             PinService.ShiftKeyPressed && 
             message.WorldX.HasValue && 
@@ -449,9 +460,13 @@
         {
             try
             {
+                // Adjust renderwidth and renderheight as per current screen size
+                var scaleX = plot.ScaleX * plot.RendererWidth / _rendererWidth;
+                var scaleY = plot.ScaleY * plot.RendererHeight / _rendererHeight;
                 await JSRuntime.InvokeVoidAsync("drawPlane", 
                     plot.Tag, plot.TagDescription, plot.ImgString,
-                    plot.ScaleX, plot.ScaleY, 
+                    plot.Rotation,
+                    scaleX, scaleY, 
                     plot.CentreX, plot.CentreY, 
                     plot.Z, plot.Opacity);
             }

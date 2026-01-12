@@ -132,10 +132,23 @@ public class PinPlacementService
         if (AllTagsPlaced)
         {
             Console.WriteLine("PinPlacementService: All tags placed!");
+            
+            // Fire the event first so handlers can capture final state
             OnAllPinsPlaced?.Invoke();
+            
+            // AUTO-STOP: Deactivate pin mode when all tags are placed
+            // This ensures the UI banner disappears
+            _isActive = false;
+            _shiftKeyPressed = false;
+            Console.WriteLine("PinPlacementService: Auto-stopped after all pins placed");
+            OnStateChanged?.Invoke();
         }
-
-        OnStateChanged?.Invoke();
+        else
+        {
+            // Only fire state changed if not all placed (to avoid double-fire)
+            OnStateChanged?.Invoke();
+        }
+        
         return tag;
     }
 

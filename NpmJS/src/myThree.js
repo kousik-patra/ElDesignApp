@@ -16,7 +16,7 @@ import {drawEquipmentMesh} from '../src/threejs/objects/equipment'
 import {drawSleepMesh} from '../src/threejs/objects/sleeve'
 import {drawRefPointMesh} from '../src/threejs/objects/refPoint'
 
-import * as PLANE from '../src/threejs/functions/planeFunctions'
+import * as PLANE from './threejs/functions/xxplaneFunctions'
 
 
 var dotNetObj;
@@ -112,7 +112,7 @@ var shadowRingMaterial = new THREE.MeshBasicMaterial({color: 0xcccccc, side: THR
 var intervalId = window.setInterval(function () {
     if (camera != undefined) {
         const sceneInfo = JSON.stringify([rendererWidth, rendererHeight, camera.position.x, camera.position.y, camera.position.z, camera.rotation.x, camera.rotation.y, camera.rotation.z]);
-        dotNetObj.invokeMethodAsync("SaveSceneInfo", sceneInfo);
+        //dotNetObj.invokeMethodAsync("SaveSceneInfo", sceneInfo);
     }
 }, 10000);
 
@@ -235,7 +235,7 @@ function drawScene3Js(divId, sceneInfoJson = "", dotNetObjRef, retryCount = 0) {
     });
     
     const sceneInfo1 = JSON.stringify([rendererWidth, rendererHeight, camera.position.x, camera.position.y, camera.position.z, camera.rotation.x, camera.rotation.y, camera.rotation.z]);
-    dotNetObj.invokeMethodAsync("SaveSceneInfo", sceneInfo1);
+    //dotNetObj.invokeMethodAsync("SaveSceneInfo", sceneInfo1);
     controls.update();
 
     camera.position.z = 5;
@@ -268,7 +268,7 @@ function drawScene3Js(divId, sceneInfoJson = "", dotNetObjRef, retryCount = 0) {
         rendererHeight = window.innerHeight;
         camera.aspect = rendererWidth / rendererHeight;
         const sceneInfo = JSON.stringify([rendererWidth, rendererHeight, camera.position.x, camera.position.y, camera.position.z, camera.rotation.x, camera.rotation.y, camera.rotation.z]);
-        dotNetObj.invokeMethodAsync("SaveSceneInfo", sceneInfo);
+        //dotNetObj.invokeMethodAsync("SaveSceneInfo", sceneInfo);
         camera.updateProjectionMatrix();
         scene.updateMatrixWorld(true);
         renderer.setSize(rendererWidth, rendererHeight);
@@ -1071,7 +1071,7 @@ function loadScene3d(state, div1, guiDiv, file, scaleX, scaleY, centreX, centreY
     console.log("State : ", state);
     //update widow size to server
     const sceneInfo = JSON.stringify([rendererWidth, rendererHeight, camera.position.x, camera.position.y, camera.position.z, camera.rotation.x, camera.rotation.y, camera.rotation.z]);
-    dotNetObj.invokeMethodAsync("SaveSceneInfo", sceneInfo);
+    //dotNetObj.invokeMethodAsync("SaveSceneInfo", sceneInfo);
     
     //DotNet.invokeMethodAsync(projectName, "UpdateOnWindowResize", rendererWidth, rendererHeight);
     

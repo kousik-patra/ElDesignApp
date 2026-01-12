@@ -4,10 +4,11 @@ namespace ElDesignApp.Models
     public enum SceneMessageType
     {
         Info,
+        Warning,
+        Error,
         Coordinates,
         ObjectSelected,
-        Warning,
-        Error
+        Resize 
     }
 
     public class SceneMessage
@@ -18,6 +19,8 @@ namespace ElDesignApp.Models
         public double? WorldX { get; set; }
         public double? WorldY { get; set; }
         public double? WorldZ { get; set; }
+        public double? RenderWidth { get; set; }
+        public double? RenderHeight { get; set; }
         public DateTime Timestamp { get; set; } = DateTime.Now;
 
         // Factory methods for common messages
@@ -33,6 +36,17 @@ namespace ElDesignApp.Models
                 WorldX = x,
                 WorldY = y,
                 WorldZ = 0
+            };
+        }
+        
+        public static SceneMessage Resize(double width, double height)
+        {
+            return new SceneMessage
+            {
+                Type = SceneMessageType.Info,
+                Text = $"Canvas resized to {width:F0} x {height:F0}",
+                RenderWidth = width,
+                RenderHeight = height
             };
         }
 

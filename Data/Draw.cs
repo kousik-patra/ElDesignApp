@@ -19,7 +19,7 @@ public class Draw
 {
     // Event for UI updates
     public event Action<SceneMessage>? OnSceneMessage;
-
+    
     // Helper method to send messages
     private void SendMessage(SceneMessage message)
     {
@@ -52,6 +52,7 @@ public class Draw
     [JSInvokable("SaveSceneInfo")]
     public void SaveSceneInfo(string? sceneInfoJson)
     {
+        return;
         if (string.IsNullOrEmpty(sceneInfoJson)) return;
     
         try
@@ -295,6 +296,27 @@ public class Draw
     }
 
     
+    
+    
+    [JSInvokable("OnWindowResize")]
+    public void OnWindowResize(double rendererWidth, double rendererHeight)  // Use double, not float!
+    {
+        try
+        {
+            Console.WriteLine($"Draw.cs (OnWindowResize): resized to {rendererWidth}, {rendererHeight}");
+            _globalData.sceneDataCurrent.RendererWidth = (float)rendererWidth;
+            _globalData.sceneDataCurrent.RendererHeight = (float)rendererHeight;
+            var message = SceneMessage.Resize(rendererWidth, rendererHeight);
+            SendMessage(message);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Draw.cs (OnWindowResize) ERROR: {ex.Message}");
+            // Don't rethrow - this would break the dotNetRef
+        }
+    }
+    
+    
     [JSInvokable("OnSceneClick")]
     public void OnSceneClick(string clickDataJson)
     {
@@ -352,7 +374,8 @@ public class Draw
         
         if (!string.IsNullOrEmpty(clickData.ObjectTag))
         {
-            Console.WriteLine($"Draw: Clicked on object: {clickData.ObjectTag}");
+            Console.WriteLine($"Draw.cs (HandleSingleClick): Single Clicked on object: {clickData.ObjectTag} at " +
+                              $"X: {clickData.WorldX:F2}, Y: {clickData.WorldY:F2}");
             SendMessage(SceneMessage.Info($"Object Type: {GetObjectType(clickData.ObjectTag)}"));
             // TODO: Select object, show properties, etc.
         }
@@ -411,13 +434,14 @@ public class Draw
         var y = clickData.WorldY;
         var z = clickData.WorldZ;
     
-        Console.WriteLine($"Pin placed: {tag} at ({x:F2}, {y:F2}, {z:F2})");
+        Console.WriteLine($"Draw.cs (HandlePinPlaced) Pin placed: {tag} at ({x:F2}, {y:F2}, {z:F2})");
+        var message = SceneMessage.Info($"📍 Placed '{tag}' at X:{x:F2}, Y:{y:F2}");
     
         // Calculate E/N if needed
         var enu = _layoutFunction.XY2EN(new Vector3(x, y, z));
     
         // Send message to UI
-        var message = SceneMessage.Info($"📍 Placed '{tag}' at E:{enu.E:F2}, N:{enu.N:F2}");
+        //var message = SceneMessage.Info($"📍 Placed '{tag}' at E:{enu.E:F2}, N:{enu.N:F2}");
         message.WorldX = x;
         message.WorldY = y;
         message.ObjectTag = tag;
