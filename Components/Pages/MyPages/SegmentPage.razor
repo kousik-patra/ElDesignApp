@@ -1,4 +1,5 @@
 ﻿@page "/segment"
+@using ElDesignApp.Services.Rendering
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Policy = "RequireUser")]
 
@@ -7,13 +8,14 @@
 @inject NavigationManager MyNavigationManager
 @inject IJSRuntime JsRuntime
 
-
 @inject IDataRetrievalService DataService
 @inject ITableService Table
 @inject ICacheService CacheService
 @inject IGlobalDataService GlobalData
 @inject ILayoutFunctionService LayoutFunction
 @inject IMyFunctionService MyFunction
+@inject ISegmentRenderService SegmentRender
+@inject IMiscService MiscService
 
 
 <div class="d-flex justify-content-between align-items-center" style="background-color:beige">
@@ -41,26 +43,39 @@
                     </div>
                     <!-- Add a gap between the tab group and button group -->
                     <div class="mx-3"></div>
+                    
+                    <!-- Selection Info (shows when segments are selected) -->
+                    @if (_selectedSegmentTags.Count > 0)
+                    {
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-info">@_selectedSegmentTags.Count selected</span>
+                            <button @onclick="ClearSelection" class="btn btn-sm btn-outline-secondary">
+                                Clear Selection
+                            </button>
+                            <button @onclick="FocusOnSelection" class="btn btn-sm btn-outline-primary">
+                                Focus
+                            </button>
+                        </div>
+                        <div class="mx-3"></div>
+                    }
 
                     <!-- Button Group -->
                     <div class="btn-group" role="group" aria-label="Forth group">
                         <button @onclick="CalculateAccessories" class="btn btn-outline-primary"
-                                title="Calculate accessories (Bend, Tee, Cross) and make connections">Calculate
-                            Accessories
+                                title="Calculate accessories (Bend, Tee, Cross) and make connections">
+                            Calculate Accessories
                         </button>
                         <button @onclick="DisplayAccessories" class="btn btn-outline-info"
-                                title="Display accessories in the 3D" disabled="@(!_displayNsaveAccessories)">Display
-                            Accessories
+                                title="Display accessories in the 3D" disabled="@(!_displayNsaveAccessories)">
+                            Display Accessories
                         </button>
                         <button @onclick="SaveAccessories" class="btn btn-outline-success"
-                                title="Save accessories to DB" disabled="@(!_displayNsaveAccessories)">Save Accessories
+                                title="Save accessories to DB" disabled="@(!_displayNsaveAccessories)">
+                            Save Accessories
                         </button>
                     </div>
                 </div>
             </div>
-
-
-
 
             <br/>
             @if (_tab[0])
@@ -75,13 +90,19 @@
             {
                 <div class="container-fluid tabcontent">
                     <h5>@_tabName[1]</h5>
-                    <Table List="GlobalData.Segments"
+                    <Table List="Segments"
                            ListOriginal="GlobalData.Segments"
                            T="Segment"
                            AutoCheck="@AutoCheckOnTableChange"
                            Update="@UpdateOnTableChange"
                            Discard="@DiscardTableChange"
                            Refresh="@RefreshTableChange"
+                           OnRowClicked="@OnSegmentRowClicked"
+                           OnRowHover="@OnSegmentRowHover"
+                           OnRowHoverEnd="@OnSegmentRowHoverEnd"
+                           SelectedItems="@_selectedSegmentTags"
+                           EnableMultiSelect="true"
+                           ActionMessage="@tableActionMessage"
                            SuccessMessage="@tableSuccessMessage"
                            InfoMessage="@tableInfoMessage"
                            WarningMessage="@tableWarningMessage"
@@ -103,12 +124,13 @@
             {
                 <div class="container-fluid tabcontent">
                     <h4>@_tabName[3]</h4>
-                    <Table List="GlobalData.Sleeves"
+                    <Table List="Sleeves"
                            ListOriginal="GlobalData.Sleeves"
                            T="Sleeve"
                            AutoCheck="@AutoCheckOnTableChange"
                            Update="@UpdateOnTableChange"
                            Discard="@DiscardTableChange"
+                           ActionMessage="@tableActionMessage"
                            SuccessMessage="@tableSuccessMessage"
                            InfoMessage="@tableInfoMessage"
                            WarningMessage="@tableWarningMessage"
@@ -130,12 +152,13 @@
             {
                 <div class="container-fluid tabcontent">
                     <h4>@_tabName[5]</h4>
-                    <Table List="GlobalData.Equipments"
+                    <Table List="Equipments"
                            ListOriginal="GlobalData.Equipments"
                            T="Equipment"
                            AutoCheck="@AutoCheckOnTableChange"
                            Update="@UpdateOnTableChange"
                            Discard="@DiscardTableChange"
+                           ActionMessage="@tableActionMessage"
                            SuccessMessage="@tableSuccessMessage"
                            InfoMessage="@tableInfoMessage"
                            WarningMessage="@tableWarningMessage"
@@ -158,14 +181,6 @@
     </div>
     <br/>
     <br/>
-    @* <Plot *@
-    @*     @ref="PlotRef" *@
-    @*     @rendermode="InteractiveServer" *@
-    @*       Title="Segments" *@
-    @*       DivString="segmentDiv" *@
-    @*       DisplayItems="_displayItems" *@
-    @*       SceneInfo="GlobalData.sceneDataSegment"> *@
-    @* </Plot> *@
 }
 else
 {
@@ -179,15 +194,16 @@ else
     <img src="./images/working.gif" asp-append-version="true" width="300" alt=""/>
 }
 
-<br/>
-<div id="SegPage3DCanvas"></div>
-<div id="SegPage3DCanvasGui"></div>
-
 
 @code {
     private Plot PlotRef { get; set; } // Reference to the Plot component
     private bool _loadChild;
     private readonly bool[] _tab = new bool[10];
+
+    public static List<Segment> Segments = [];
+    public static List<Sleeve> Sleeves = [];
+    public static List<Equipment> Equipments = [];
+
 
     private readonly string[] _tabName =
     [
@@ -200,64 +216,38 @@ else
         "Other"
     ];
 
-    private string tagStyleActive = "background-color:#808080; color: white;";
-    private string tagStyleInactive = "background-color:#8080ff; color: black;";
-
-    private bool IsDisabledBttnSaveSegmentResultToDB = true;
+    private bool _isDisabledBttnSaveSegmentResultToDb = true;
     private bool _isProcessing = false;
-
-    private static List<Segment>? Segments = new();
-
     private bool _displayNsaveAccessories = true; // change to false later
 
+    private string tableActionMessage = "";
     private string tableMessage = "";
     private string tableSuccessMessage = "";
     private string tableInfoMessage = "";
     private string tableWarningMessage = "";
     private string tableErrorMessage = "";
-
-    private readonly List<string> _displayItems =
-    [
-        "Plot",
-        "RawSegment",
-        //"IsolatedSegment", 
-        //"Segment",
-        //"Tray", 
-        // "Bend", 
-        // "Tee", 
-        // "Cross", 
-        // "Node", 
-        //"Sleeve",
-        // "Load", 
-        // "Cable", 
-        // "Board",
-        //"Structure"
-    ];
-
+    
+    private ILogger _logger;
+    private string? loginUser;
 
     private readonly SegmentResult segmentResult = new();
-
-    private static List<PlotPlan> PlotPlans = new();
-
     private DotNetObjectReference<Draw>? objSegmentPage;
 
-    // Store the delegate to ensure proper unsubscribe
-    private Action _refreshUiAction;
-
-
+    // Multi-selection support
+    private List<string> _selectedSegmentTags = new();
+    
+    
     protected override void OnInitialized()
     {
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Segment - {MethodBase.GetCurrentMethod()?.Name}");
-        //
 
-
-        // default tab on loading
-        // 0: PlotPlan, 1: Ladder/Tray, 2: Trench, 3: Sleeve, 4: Other
+        // default tab on loading  0: PlotPlan, 1: Ladder/Tray, 2: Trench, 3: Sleeve, 4: Other
         _tab[GlobalData.SegmentPageTab] = true;
-        //
+
         GlobalData.selectedPage = "Segments: Cable Ladders, Trays, Trenches and Sleeves";
         GlobalData.sceneCurrent = "Segment";
         GlobalData.sceneDataCable.SceneName = GlobalData.sceneCurrent;
+        
         StateHasChanged();
         base.OnInitialized();
     }
@@ -274,43 +264,50 @@ else
         // do something for the first time renders
         if (firstRender)
         {
-            
-            // load existing plot plans for the selected project
-            (GlobalData.PlotPlans, string logInfo, string logWarning, string logError)
-                = await DataService.ReadFromCacheOrDb<PlotPlan>();
-            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} " +
-                            $"Info: {logInfo}, Warning: {logWarning}, Error: {logError}");
-            // read raw segments
-            //GlobalData.Segments = await ReadFromCacheOrDB(new Segment());
-            (GlobalData.Segments, logInfo, logWarning, logError)
-                = await DataService.ReadFromCacheOrDb<Segment>();
+            var (userId, userName) = await MiscService.GetCurrentUserInfoAsync();
+            loginUser = userName ?? "Guest";
 
+
+            // load existing plot plans for the selected project
+            // (GlobalData.PlotPlans, string logInfo, string logWarning, string logError)
+            //     = await DataService.ReadFromCacheOrDb<PlotPlan>();
+            // Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} " +
+            //                 $"Info: {logInfo}, Warning: {logWarning}, Error: {logError}");
+            //
+            // load raw segments
+            var logInfo = "";
+            var logWarning = "";
+            var logError = "";
+            
+            (Segments, logInfo, logWarning, logError)
+                = await DataService.ReadFromCacheOrDb<Segment>();
+            
             var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
-            Debug.WriteLine(displayText);
+            Console.WriteLine(displayText);
             await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
             _isProcessing = true;
             StateHasChanged();
             // update Raw segments
-            GlobalData.Segments.ForEach(segment => LayoutFunction.SegmentUpdate(segment));
+            Segments.ForEach(segment => LayoutFunction.SegmentUpdate(segment));
             // remove any segments having zero lengths (same End1 and End2)
-            GlobalData.Segments = GlobalData.Segments.Where(item => item.Length > 0.01f).ToList();
-            Debug.WriteLine($"Total raw Segment in the DB after removing insignificant lengths : {GlobalData.Segments.Count}");
+            Segments = Segments.Where(item => item.Length > 0.01f).ToList();
+            Console.WriteLine($"Total raw Segment in the DB after removing insignificant lengths : {Segments.Count}");
             // update face March 2024
-            GlobalData.Segments = LayoutFunction.AssignFaceForASegmentList(GlobalData.Segments);
+            Segments = LayoutFunction.AssignFaceForASegmentList(Segments);
 
-            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Face assigned for {GlobalData.Segments.Count}.");
-            GlobalData.Segments = Table.AssignSequence(GlobalData.Segments);
-            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Sequence assigned for total {GlobalData.Segments.Count} raw Segments");
+            Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Face assigned for {Segments.Count}.");
+            Segments = Table.AssignSequence(Segments);
+            Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Sequence assigned for total {Segments.Count} raw Segments");
             _isProcessing = false;
             StateHasChanged();
-            // read sleeves
-            //GlobalData.Sleeves = await ReadFromCacheOrDB(new Sleeve());
-            (GlobalData.Sleeves, _, _, _) = await DataService.ReadFromCacheOrDb<Sleeve>();
+            
+            // load sleeves
+            (Sleeves, _, _, _) = await DataService.ReadFromCacheOrDb<Sleeve>();
 
             // generate Points based on ENU PointS (point string in the DB)
-            GlobalData.Sleeves.ForEach(sleeve => LayoutFunction.SleevePointsUpdate(sleeve));
-            GlobalData.Sleeves = Table.AssignSequence(GlobalData.Sleeves);
-            Debug.WriteLine($"Total sleeves in the DB : {GlobalData.Sleeves.Count}");
+            Sleeves.ForEach(sleeve => LayoutFunction.SleevePointsUpdate(sleeve));
+            Sleeves = Table.AssignSequence(Sleeves);
+            Console.WriteLine($"Total sleeves in the DB : {Sleeves.Count}");
 
             // read trenches
             //GlobalData.Trences = await ReadFromCacheOrDB(new Trench());
@@ -320,16 +317,25 @@ else
             //GlobalData.Structures = await ReadFromCacheOrDB(new Structure());
             //System.Diagnostics.Debug.WriteLine($"Total structural steel members in the DB : {GlobalData.Structures.Count}");
 
-            // read Equipment
-            //GlobalData.Equipments = await ReadFromCacheOrDB(new Equipment());
-
-            (GlobalData.Equipments, _, _, _) = await DataService.ReadFromCacheOrDb<Equipment>( );
-
-            GlobalData.Equipments = Table.AssignSequence(GlobalData.Equipments);
-            Debug.WriteLine($"Total equipment in the DB : {GlobalData.Equipments.Count}");
+            // load Equipment
+            (Equipments, _, _, _) = await DataService.ReadFromCacheOrDb<Equipment>( );
+            Equipments = Table.AssignSequence(Equipments);
+            Console.WriteLine($"Total equipment in the DB : {Equipments.Count}");
+            
+            
+            
+            
+            // as all the Tables are now updated, assign the same to Global Tables
+            
+            var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+            
+            GlobalData.Segments = JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(Segments, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.Sleeves = JsonSerializer.Deserialize<List<Sleeve>>(JsonSerializer.Serialize(Sleeves, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.Equipments = JsonSerializer.Deserialize<List<Equipment>>(JsonSerializer.Serialize(Equipments, jsonSerializerOptions), jsonSerializerOptions);
+  
 
             _loadChild = true;
-            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
+            Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
             StateHasChanged();
         }
     }
@@ -340,8 +346,103 @@ else
         // Unsubscribe to prevent memory leaks
         objSegmentPage?.Dispose();
     }
+    
+    // ===== Tab Switching =====
+    
+    void TabUpdate(int i)
+    {
+        var previousTab = GlobalData.SegmentPageTab;
+        _tab[GlobalData.SegmentPageTab] = false;
+        GlobalData.SegmentPageTab = i;
+        _tab[i] = true;
+        
+        // Notify SharedSceneHost about tab change
+        if (previousTab != i)
+        {
+            GlobalData.NotifySegmentTabChanged(i);
+        }
+    }
+
+    
+    // ===== Segment Selection Handling (Multi-Select) =====
+    
+    /// <summary>
+    /// Handle row click in table - supports Ctrl+Click and Shift+Click for multi-select
+    /// </summary>
+    private async Task OnSegmentRowClicked((Segment Item, bool CtrlKey, bool ShiftKey) args)
+    {
+        var segment = args.Item;
+        var ctrlKey = args.CtrlKey;
+        var shiftKey = args.ShiftKey;
+        
+        if (segment == null) return;
+        
+        Console.WriteLine($"Segment row clicked: {segment.Tag}, Ctrl={ctrlKey}, Shift={shiftKey}");
+        
+        if (ctrlKey)
+        {
+            // Ctrl+click: toggle selection
+            await SegmentRender.ToggleSelectionAsync(segment.Tag);
+        }
+        else if (shiftKey)
+        {
+            // Shift+click: add to selection
+            await SegmentRender.AddToSelectionAsync(segment.Tag);
+        }
+        else
+        {
+            // Normal click: select only this one
+            await SegmentRender.SelectSegmentAsync(segment.Tag);
+            await SegmentRender.FocusOnSegmentAsync(segment.Tag);
+        }
+    }
+    
+    /// <summary>
+    /// Handle row hover for highlighting
+    /// </summary>
+    private async Task OnSegmentRowHover(Segment segment)
+    {
+        if (segment == null) return;
+        await SegmentRender.HighlightSegmentsAsync(new[] { segment.Tag }, true);
+    }
+    
+    /// <summary>
+    /// Handle row hover end
+    /// </summary>
+    private async Task OnSegmentRowHoverEnd(Segment segment)
+    {
+        if (segment == null) return;
+        await SegmentRender.HighlightSegmentsAsync(new[] { segment.Tag }, false);
+    }
+    
+    /// <summary>
+    /// Sync selection from render service to local state
+    /// </summary>
+    private void OnRenderSelectionChanged(List<string> selectedTags)
+    {
+        _selectedSegmentTags = selectedTags.ToList();
+        InvokeAsync(StateHasChanged);
+    }
+    
+    /// <summary>
+    /// Clear all segment selections
+    /// </summary>
+    private async void ClearSelection()
+    {
+        await SegmentRender.ClearSelectionAsync();
+    }
+    
+    /// <summary>
+    /// Focus camera on selected segments
+    /// </summary>
+    private async void FocusOnSelection()
+    {
+        await SegmentRender.FocusOnSelectionAsync();
+    }
 
 
+    // ===== Table Event Handlers =====
+    
     private void AutoCheckOnTableChange<T>((T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
     {
         // Access the parameters from args
@@ -359,82 +460,104 @@ else
         var tagProperty = typeof(T).GetProperties().ToList().Where(p => p.Name == "Tag").ToList()[0];
         var tag = tagProperty.GetValue(item);
         //
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : {tag} : {propertyInfo.Name} : {propertyInfo.PropertyType}");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : {tag} : {propertyInfo.Name} : {propertyInfo.PropertyType}");
     }
 
-    private void UpdateOnTableChange()
+    private async void UpdateOnTableChange<T>(
+        (T item, List<T> list, List<T> originalList, string success, string info, string warning, string error ) args) where T : class
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+
+        try
+        {
+            ResetTableMessages();
+            Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+            //
+            List<T> itemslist = args.Item2;
+            List<T> origialItemslist = args.Item3;
+
+            var result = await Table.SyncListAsync(itemslist, origialItemslist, loginUser);
+            _logger?.LogError( result.Errors?.ToString());
+            _logger?.LogInformation($"Records Added: {result.Added}, Modified: {result.Modified} and Deleted: {result.Deleted}.");
+            // clear cache invoking the parent page
+            tableSuccessMessage = "Data updated to the Database";
+            tableActionMessage = tableSuccessMessage;
+            StateHasChanged();
+        
+            // as the data is updated, to clear the cache entry for the current hour
+            var recordKey = "NavMenu_"  + "_" + GlobalData.SelectedProject?.Tag + "_" +typeof(T).Name + "_" + DateTime.Now.ToString("yyyyMMdd_hh");
+            //await CacheService.RemoveAsync(recordKey);
+       
+            // Construct the pattern to match all hourly keys for this type.
+            // The pattern needs a wildcard for the varying parts.
+            // Original key format: "NavMenu_" + dbName + "_" + DateTime.Now.ToString("yyyyMMdd_hh")
+            // So, the pattern will be: "NavMenu_CableData_*"
+            var pattern = $"NavMenu_{typeof(T).Name}_*";
+            await CacheService.RemoveByPatternAsync(pattern);
+            Console.WriteLine($"Attempted to clear all cache for pattern: {pattern}");
+        }
+        catch (Exception e)
+        {
+           // _logger.LogError( e.Message);
+            throw; // TODO handle exception
+        }
     }
 
-    private void DiscardTableChange()
+
+    private void DiscardTableChange<T>((T item, List<T> list, List<T> originalList) args)
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        ResetTableMessages();
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        var item = args.Item1;
+        var origialItemslist = args.Item3;
+
+        GetItemsNOriginalItems(item);
+        SetItems(origialItemslist);
+        tableSuccessMessage = "All changes discarded";
+        tableActionMessage = tableSuccessMessage;
+        StateHasChanged();
     }
 
 
     private async void RefreshTableChange()
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
-        // try
-        // {
-        //     Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
-        //     await OnAfterRenderAsync(false);
-        // }
-        // catch (Exception e)
-        // {
-        //     Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : Error: {e.Message}");
-        // }
-    }
-
-
-    void TabUpdate(int i)
-    {
-        _tab[GlobalData.SegmentPageTab] = false;
-        GlobalData.SegmentPageTab = i;
-        _tab[i] = true;
-    }
-
-
-    /// <summary>
-    /// </summary>
-    /// <param name="divString"></param>
-    /// <param name="sceneJSON"></param>
-    public async void DrawScene(string divString, string sceneJSON)
-    {
-        await JsRuntime.InvokeVoidAsync("drawScene", divString, sceneJSON);
-    }
-
-    public async void DrawCube(int n)
-    {
-        for (var i = 0; i < n; i++)
+        try
         {
-            await JsRuntime.InvokeVoidAsync("drawCube");
+            Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} .. code todo ");
+            ResetTableMessages();
+
+            // temporary implement only for Segments, further do for all remaining TODO
+            await GetItemsNOriginalItems(GlobalData.Segments, true);
+            SetItems(Segments);
+            tableSuccessMessage = "All changes discarded";
+            tableActionMessage = tableSuccessMessage;
+            StateHasChanged();
+        }
+        catch (Exception e)
+        {
+            throw; // TODO handle exception
         }
     }
 
-
+    // ===== Accessory Methods =====
+    
     private async Task DisplayAccessories()
     {
-        Debug.WriteLine("Displaying accessories...");
+        Console.WriteLine("Displaying accessories...");
     }
 
     private async Task SaveAccessories()
     {
-        Debug.WriteLine("Saving accessories to DB...");
+        Console.WriteLine("Saving accessories to DB...");
 
-        //var existingSegmentResult = await MyTable.GetList(new SegmentResult(), GlobalData.SelectedProject);
-        //var existingSegmentResult = await ReadFromCacheOrDB(new SegmentResult());
-
-        (var existingSegmentResult, _, _, _) = await DataService.ReadFromCacheOrDb<SegmentResult>();
+        var (existingSegmentResult, _, _, _) = await DataService.ReadFromCacheOrDb<SegmentResult>();
         if (!String.IsNullOrEmpty(segmentResult.NodeListJSON) && existingSegmentResult.Count > 0)
         {
             await Table.UpdateFieldsByUidAsync(segmentResult, existingSegmentResult[0].UID, []); // TODO: Field List
-            System.Diagnostics.Debug.WriteLine("Record of straight segments, bends, tees, crosses and nodes updated.");
+            Console.WriteLine("Record of straight segments, bends, tees, crosses and nodes updated.");
         }
         else
         {
-            System.Diagnostics.Debug.WriteLine("Generate accessories first before saving straight segments, bends, tees, crosses and nodes to the DB.");
+            Console.WriteLine("Generate accessories first before saving straight segments, bends, tees, crosses and nodes to the DB.");
         }
     }
 
@@ -784,7 +907,7 @@ else
         //
         segmentResult.UpdatedBy = "KP";
         segmentResult.UpdatedDateTime = DateTime.UtcNow;
-        IsDisabledBttnSaveSegmentResultToDB = false;
+        _isDisabledBttnSaveSegmentResultToDb = false;
         _displayNsaveAccessories = true;
         watch.Stop();
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {watch.ElapsedMilliseconds}ms: Generate accessories ...info ready to be saved into the DB");
@@ -796,6 +919,74 @@ else
     {
         Debug.WriteLine($"Segment: JSONCastObjectUIDs: {jsonCastObjectUiDs}, JsonCastObjectTags: {jsonCastObjectTags}, " +
                         $"objTag: {objTag}, X: {X}, Y: {Y}, Z{Z}, hiddenObjTag: {hiddenObjTag}, Xh{Xh}, Yh: {Yh}, Zh: {Zh} ");
+    }
+    
+    
+    
+    private async Task<List<List<T>?>> GetItemsNOriginalItems<T>(T item, bool readFromDbAfresh = false)
+    {
+        var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+        List<T>? items = new();
+        List<T>? itemsOriginal = new();
+
+        switch (typeof(T).Name)
+        {
+            case "Segment":
+                var logInfo = "";
+                var logError = "";
+                var logWarning = "";
+                if (readFromDbAfresh)
+                {
+                    (GlobalData.Segments, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Segment>();
+                    _logger.LogInformation(logInfo);
+                    _logger.LogWarning(logWarning);
+                    _logger.LogError(logError);
+                }
+                items = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(GlobalData.Segments, jsonSerializerOptions), jsonSerializerOptions);
+                itemsOriginal = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(GlobalData.Loads, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Item1":
+                // items = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(Item1, jsonSerializerOptions), jsonSerializerOptions);
+                // itemsOriginal = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(GlobalData.Item1, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Item2":
+                // items = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(Item2, jsonSerializerOptions), jsonSerializerOptions);
+                // itemsOriginal = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(GlobalData.Item2, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+        }
+
+        return new List<List<T>?> { items, itemsOriginal };
+    }
+
+
+    private void SetItems<T>(List<T> inputList)
+    {
+        var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+        
+        switch (typeof(T).Name)
+        {
+            case "Segment":
+                GlobalData.Segments = JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Item1":
+                //Item1 = JsonConvert.DeserializeObject<List<Item1>>(JsonConvert.SerializeObject(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Item2":
+                //Item2 = JsonConvert.DeserializeObject<List<Item2>>(JsonConvert.SerializeObject(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+        }
+    }
+    
+    
+    
+    
+    private void ResetTableMessages()
+    {
+        tableMessage = "";
+        tableSuccessMessage = "";
+        tableInfoMessage = "";
+        tableWarningMessage = "";
+        tableErrorMessage = "";
     }
 
 

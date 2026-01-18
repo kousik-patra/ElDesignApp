@@ -90,7 +90,12 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 
 */
+// NpmJS/src/threejs/events/pinCursor.js
+// Simplified pin cursor with crosshair preview
 
+// pinCursor.js - Debug version with logging
+
+import * as THREE from 'three';
 
 // ===== State =====
 const pinModeState = {
@@ -100,43 +105,228 @@ const pinModeState = {
     dotNetHelper: null,
     tooltipElement: null,
     mouseX: 0,
-    mouseY: 0
+    mouseY: 0,
+    crosshair: null,
+    scene: null,
+    camera: null,
+    renderer: null,
+    raycaster: null,
+    lastPreviewPoint: null
 };
 
-// ===== Internal Functions =====
+const CROSSHAIR_CONFIG = {
+    color: 0x00ff00,
+    centerColor: 0xff0000,
+    length: 2,
+    lineWidth: 2
+};
+
+// ===== Crosshair Functions =====
+
+function createCrosshair() {
+    console.log('[PinCursor DEBUG] Creating crosshair...');
+
+    const group = new THREE.Group();
+    group.name = 'pinCrosshair';
+
+    const material = new THREE.LineBasicMaterial({
+        color: CROSSHAIR_CONFIG.color,
+        linewidth: CROSSHAIR_CONFIG.lineWidth,
+        depthTest: false,
+        transparent: true,
+        opacity: 0.9
+    });
+
+    const len = CROSSHAIR_CONFIG.length;
+
+    // X-axis line
+    const xGeom = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-len, 0, 0),
+        new THREE.Vector3(len, 0, 0)
+    ]);
+    group.add(new THREE.Line(xGeom, material));
+
+    // Y-axis line
+    const yGeom = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, -len, 0),
+        new THREE.Vector3(0, len, 0)
+    ]);
+    group.add(new THREE.Line(yGeom, material));
+
+    // Center dot
+    const dotGeom = new THREE.CircleGeometry(0.1, 16);
+    const dotMat = new THREE.MeshBasicMaterial({
+        color: CROSSHAIR_CONFIG.centerColor,
+        side: THREE.DoubleSide,
+        depthTest: false
+    });
+    const dot = new THREE.Mesh(dotGeom, dotMat);
+    dot.position.z = 0.01;
+    group.add(dot);
+
+    group.renderOrder = 9999;
+
+    console.log('[PinCursor DEBUG] Crosshair created with', group.children.length, 'children');
+    return group;
+}
+
+function showCrosshair() {
+    console.log('[PinCursor DEBUG] showCrosshair called');
+    console.log('[PinCursor DEBUG] scene:', pinModeState.scene ? 'EXISTS' : 'NULL');
+    console.log('[PinCursor DEBUG] camera:', pinModeState.camera ? 'EXISTS' : 'NULL');
+    console.log('[PinCursor DEBUG] renderer:', pinModeState.renderer ? 'EXISTS' : 'NULL');
+
+    if (!pinModeState.scene) {
+        console.error('[PinCursor DEBUG] Cannot show crosshair - scene is null!');
+        return;
+    }
+
+    if (!pinModeState.crosshair) {
+        pinModeState.crosshair = createCrosshair();
+        console.log('[PinCursor DEBUG] New crosshair created');
+    }
+
+    if (!pinModeState.crosshair.parent) {
+        pinModeState.scene.add(pinModeState.crosshair);
+        console.log('[PinCursor DEBUG] Crosshair added to scene');
+    }
+
+    pinModeState.crosshair.visible = true;
+    console.log('[PinCursor DEBUG] Crosshair visibility set to true');
+
+    updateCrosshairPosition();
+}
+
+function hideCrosshair() {
+    if (pinModeState.crosshair) {
+        pinModeState.crosshair.visible = false;
+        console.log('[PinCursor DEBUG] Crosshair hidden');
+    }
+}
+
+function updateCrosshairPosition() {
+    if (!pinModeState.crosshair?.visible) {
+        console.log('[PinCursor DEBUG] updateCrosshairPosition - crosshair not visible, skipping');
+        return;
+    }
+
+    if (!pinModeState.scene || !pinModeState.camera || !pinModeState.renderer) {
+        console.error('[PinCursor DEBUG] updateCrosshairPosition - missing references:', {
+            scene: !!pinModeState.scene,
+            camera: !!pinModeState.camera,
+            renderer: !!pinModeState.renderer
+        });
+        return;
+    }
+
+    if (!pinModeState.raycaster) {
+        pinModeState.raycaster = new THREE.Raycaster();
+    }
+
+    const mouse = new THREE.Vector2();
+    const rect = pinModeState.renderer.domElement.getBoundingClientRect();
+
+    mouse.x = ((pinModeState.mouseX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((pinModeState.mouseY - rect.top) / rect.height) * 2 + 1;
+
+    console.log('[PinCursor DEBUG] Mouse NDC:', mouse.x.toFixed(3), mouse.y.toFixed(3));
+
+    pinModeState.raycaster.setFromCamera(mouse, pinModeState.camera);
+
+    // Find intersection
+    let point = null;
+    const intersects = pinModeState.raycaster.intersectObjects(pinModeState.scene.children, true);
+
+    console.log('[PinCursor DEBUG] Raycast found', intersects.length, 'intersections');
+
+    for (const hit of intersects) {
+        if (isPartOfCrosshair(hit.object)) continue;
+        if (!hit.object.visible) continue;
+        point = hit.point;
+        console.log('[PinCursor DEBUG] Using intersection with:', hit.object.name || hit.object.type, 'at', point.x.toFixed(2), point.y.toFixed(2), point.z.toFixed(2));
+        break;
+    }
+
+    // Fallback to z=0 plane
+    if (!point) {
+        console.log('[PinCursor DEBUG] No intersection, using z=0 plane fallback');
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        point = new THREE.Vector3();
+        const intersected = pinModeState.raycaster.ray.intersectPlane(plane, point);
+        if (!intersected) {
+            console.error('[PinCursor DEBUG] Failed to intersect z=0 plane!');
+            return;
+        }
+    }
+
+    if (point) {
+        pinModeState.crosshair.position.set(point.x, point.y, point.z + 0.05);
+        pinModeState.lastPreviewPoint = point.clone();
+        console.log('[PinCursor DEBUG] Crosshair positioned at:', point.x.toFixed(2), point.y.toFixed(2), point.z.toFixed(2));
+    }
+}
+
+function isPartOfCrosshair(object) {
+    let current = object;
+    while (current) {
+        if (current === pinModeState.crosshair) return true;
+        current = current.parent;
+    }
+    return false;
+}
+
+function disposeCrosshair() {
+    if (pinModeState.crosshair) {
+        if (pinModeState.crosshair.parent) {
+            pinModeState.crosshair.parent.remove(pinModeState.crosshair);
+        }
+        pinModeState.crosshair.traverse((child) => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+        });
+        pinModeState.crosshair = null;
+    }
+}
+
+// ===== Event Handlers =====
 
 function handleKeyDown(event) {
     if (event.key === 'Shift' && !pinModeState.shiftPressed) {
+        console.log('[PinCursor DEBUG] Shift pressed, isActive:', pinModeState.isActive);
+
         pinModeState.shiftPressed = true;
         updateCursor();
         updateTooltip();
 
-        // Notify Blazor
+        if (pinModeState.isActive) {
+            showCrosshair();
+        } else {
+            console.log('[PinCursor DEBUG] Pin mode not active, crosshair not shown');
+        }
+
         if (pinModeState.dotNetHelper && pinModeState.isActive) {
-            pinModeState.dotNetHelper.invokeMethodAsync('OnShiftKeyChanged', true)
-                .catch(err => console.error('Error notifying Blazor of shift key:', err));
+            pinModeState.dotNetHelper.invokeMethodAsync('OnShiftKeyChanged', true).catch(console.error);
         }
     }
 
-    // Escape to cancel pin mode
     if (event.key === 'Escape' && pinModeState.isActive) {
+        hideCrosshair();
         if (pinModeState.dotNetHelper) {
-            pinModeState.dotNetHelper.invokeMethodAsync('OnPinModeCancelled')
-                .catch(err => console.error('Error cancelling pin mode:', err));
+            pinModeState.dotNetHelper.invokeMethodAsync('OnPinModeCancelled').catch(console.error);
         }
     }
 }
 
 function handleKeyUp(event) {
     if (event.key === 'Shift') {
+        console.log('[PinCursor DEBUG] Shift released');
         pinModeState.shiftPressed = false;
         updateCursor();
         updateTooltip();
+        hideCrosshair();
 
-        // Notify Blazor
         if (pinModeState.dotNetHelper && pinModeState.isActive) {
-            pinModeState.dotNetHelper.invokeMethodAsync('OnShiftKeyChanged', false)
-                .catch(err => console.error('Error notifying Blazor of shift key:', err));
+            pinModeState.dotNetHelper.invokeMethodAsync('OnShiftKeyChanged', false).catch(console.error);
         }
     }
 }
@@ -149,17 +339,16 @@ function handleMouseMove(event) {
         pinModeState.tooltipElement.style.left = event.clientX + 'px';
         pinModeState.tooltipElement.style.top = event.clientY + 'px';
     }
+
+    if (pinModeState.isActive && pinModeState.shiftPressed) {
+        updateCrosshairPosition();
+    }
 }
 
 function updateCursor() {
     const container = document.getElementById('shared-scene-container');
     if (!container) return;
-
-    if (pinModeState.isActive && pinModeState.shiftPressed) {
-        container.classList.add('pin-mode');
-    } else {
-        container.classList.remove('pin-mode');
-    }
+    container.classList.toggle('pin-mode', pinModeState.isActive && pinModeState.shiftPressed);
 }
 
 function updateTooltip() {
@@ -173,25 +362,21 @@ function updateTooltip() {
 function showTooltip(tag) {
     if (!pinModeState.tooltipElement) {
         pinModeState.tooltipElement = document.createElement('div');
-        pinModeState.tooltipElement.className = 'pin-next-tag-tooltip';
         pinModeState.tooltipElement.style.cssText = `
             position: fixed;
             background: rgba(0, 0, 0, 0.85);
             color: white;
-            padding: 8px 14px;
-            border-radius: 6px;
-            font-family: 'Consolas', monospace;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-family: Consolas, monospace;
             font-size: 13px;
             pointer-events: none;
             z-index: 10000;
             transform: translate(-50%, -100%);
-            margin-top: -15px;
-            white-space: nowrap;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            margin-top: -12px;
         `;
         document.body.appendChild(pinModeState.tooltipElement);
     }
-
     pinModeState.tooltipElement.textContent = `📍 ${tag}`;
     pinModeState.tooltipElement.style.left = pinModeState.mouseX + 'px';
     pinModeState.tooltipElement.style.top = pinModeState.mouseY + 'px';
@@ -204,32 +389,39 @@ function hideTooltip() {
     }
 }
 
-// ===== Exported Functions (ES Module) =====
+// ===== Exported Functions =====
 
-/**
- * Initialize pin placement mode with Blazor reference
- * @param {object} dotNetRef - Blazor .NET object reference
- */
 export function initPinPlacementMode(dotNetRef) {
+    console.log('[PinCursor DEBUG] initPinPlacementMode called');
     pinModeState.dotNetHelper = dotNetRef;
-
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('keyup', handleKeyUp);
     document.addEventListener('mousemove', handleMouseMove);
-
-    console.log('PinCursor: Initialized');
+    console.log('[PinCursor DEBUG] Event listeners added');
 }
 
-/**
- * Dispose pin placement mode and remove listeners
- */
+export function setSceneReferences(scene, camera, renderer) {
+    console.log('[PinCursor DEBUG] setSceneReferences called');
+    console.log('[PinCursor DEBUG] scene:', scene ? 'PROVIDED' : 'NULL');
+    console.log('[PinCursor DEBUG] camera:', camera ? 'PROVIDED' : 'NULL');
+    console.log('[PinCursor DEBUG] renderer:', renderer ? 'PROVIDED' : 'NULL');
+
+    pinModeState.scene = scene;
+    pinModeState.camera = camera;
+    pinModeState.renderer = renderer;
+    pinModeState.raycaster = new THREE.Raycaster();
+
+    console.log('[PinCursor DEBUG] Scene references stored');
+}
+
 export function disposePinPlacementMode() {
     document.removeEventListener('keydown', handleKeyDown);
     document.removeEventListener('keyup', handleKeyUp);
     document.removeEventListener('mousemove', handleMouseMove);
     hideTooltip();
+    disposeCrosshair();
 
-    if (pinModeState.tooltipElement && pinModeState.tooltipElement.parentNode) {
+    if (pinModeState.tooltipElement?.parentNode) {
         pinModeState.tooltipElement.parentNode.removeChild(pinModeState.tooltipElement);
         pinModeState.tooltipElement = null;
     }
@@ -238,72 +430,35 @@ export function disposePinPlacementMode() {
     pinModeState.isActive = false;
     pinModeState.shiftPressed = false;
     pinModeState.currentTag = null;
+    pinModeState.scene = null;
+    pinModeState.camera = null;
+    pinModeState.renderer = null;
+    pinModeState.raycaster = null;
 
     updateCursor();
-
-    console.log('PinCursor: Disposed');
+    console.log('[PinCursor DEBUG] Disposed');
 }
 
-/**
- * Set pin mode active state
- * @param {boolean} active - Whether pin mode is active
- * @param {string} currentTag - Current tag to display/use
- */
 export function setPinModeActive(active, currentTag = null) {
+    console.log('[PinCursor DEBUG] setPinModeActive:', active, 'tag:', currentTag);
     pinModeState.isActive = active;
     pinModeState.currentTag = currentTag;
-
     updateCursor();
-    updateTooltip();
-
-    console.log(`PinCursor: active=${active}, tag=${currentTag}`);
+    updateTooltip();    
+    if (!active) hideCrosshair();
 }
 
-/**
- * Update the current pin tag
- * @param {string} tag - New tag value
- */
 export function updatePinModeTag(tag) {
     pinModeState.currentTag = tag;
     updateTooltip();
 }
 
-/**
- * Check if pin mode is active
- * @returns {boolean}
- */
-export function isPinModeActive() {
-    return pinModeState.isActive;
-}
+export function isPinModeActive() { return pinModeState.isActive; }
+export function isShiftPressed() { return pinModeState.shiftPressed; }
+export function shouldPlacePin() { return pinModeState.isActive && pinModeState.shiftPressed; }
+export function getCurrentPinTag() { return pinModeState.currentTag; }
+export function getLastPreviewPoint() { return pinModeState.lastPreviewPoint; }
 
-/**
- * Check if shift key is pressed
- * @returns {boolean}
- */
-export function isShiftPressed() {
-    return pinModeState.shiftPressed;
-}
-
-/**
- * Check if we should place a pin (active + shift pressed)
- * @returns {boolean}
- */
-export function shouldPlacePin() {
-    return pinModeState.isActive && pinModeState.shiftPressed;
-}
-
-/**
- * Get the current pin tag
- * @returns {string|null}
- */
-export function getCurrentPinTag() {
-    return pinModeState.currentTag;
-}
-
-/**
- * Request next tag from Blazor (async)
- * @returns {Promise<string|null>}
- */
 export async function requestNextPinTag() {
     if (pinModeState.dotNetHelper) {
         try {
@@ -319,18 +474,27 @@ export async function requestNextPinTag() {
     return null;
 }
 
-// ===== Also expose to window for direct Blazor interop =====
-// (So Blazor can call these without going through ES modules)
+export function configureCrosshair(config) {
+    Object.assign(CROSSHAIR_CONFIG, config);
+}
 
-window.initPinPlacementMode = initPinPlacementMode;
-window.disposePinPlacementMode = disposePinPlacementMode;
-window.setPinModeActive = setPinModeActive;
-window.updatePinModeTag = updatePinModeTag;
-window.shouldPlacePin = shouldPlacePin;
-window.getCurrentPinTag = getCurrentPinTag;
-window.isPinModeActive = isPinModeActive;
-window.isShiftPressed = isShiftPressed;
-window.requestNextPinTag = requestNextPinTag;
+// ===== Debug helper - expose to window for console testing =====
+window.debugPinCursor = function() {
+    console.log('=== PinCursor State ===');
+    console.log('isActive:', pinModeState.isActive);
+    console.log('shiftPressed:', pinModeState.shiftPressed);
+    console.log('currentTag:', pinModeState.currentTag);
+    console.log('scene:', pinModeState.scene ? 'EXISTS' : 'NULL');
+    console.log('camera:', pinModeState.camera ? 'EXISTS' : 'NULL');
+    console.log('renderer:', pinModeState.renderer ? 'EXISTS' : 'NULL');
+    console.log('crosshair:', pinModeState.crosshair ? 'EXISTS' : 'NULL');
+    if (pinModeState.crosshair) {
+        console.log('crosshair.visible:', pinModeState.crosshair.visible);
+        console.log('crosshair.position:', pinModeState.crosshair.position);
+        console.log('crosshair.parent:', pinModeState.crosshair.parent ? 'IN SCENE' : 'NOT IN SCENE');
+    }
+    console.log('lastPreviewPoint:', pinModeState.lastPreviewPoint);
+    return pinModeState;
+};
 
-// Export state for advanced usage/debugging
-export { pinModeState };
+export { pinModeState, CROSSHAIR_CONFIG };

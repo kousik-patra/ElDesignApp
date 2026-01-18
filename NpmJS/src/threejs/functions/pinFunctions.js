@@ -30,12 +30,13 @@ import {
     PIN_CONFIG
 } from '../objects/refPoint';
 
-import {
-    setPinModeActive,
-    updatePinModeTag,
-    isPinModeActive,
-    getCurrentPinTag
-} from '../events/pinCursor';
+// import {
+//     setPinModeActive,
+//     updatePinModeTag,
+//     isPinModeActive,
+//     getCurrentPinTag,
+//     setSceneReferences
+// } from '../events/pinCursor';
 
 // ============================================================================
 // MODULE STATE
@@ -43,6 +44,35 @@ import {
 
 let _sceneManager = null;
 let _expectedTags = [];  // List of expected pin tags for the current operation
+
+
+// ============================================================================
+// HELPER: Use window functions for pinCursor to avoid module duplication
+// ============================================================================
+
+function setPinModeActive(active, tag) {
+    if (window.setPinModeActive) {
+        window.setPinModeActive(active, tag);
+    } else {
+        console.warn('[pinFunctions] window.setPinModeActive not available');
+    }
+}
+
+function updatePinModeTag(tag) {
+    if (window.updatePinModeTag) {
+        window.updatePinModeTag(tag);
+    } else {
+        console.warn('[pinFunctions] window.updatePinModeTag not available');
+    }
+}
+
+function isPinModeActive() {
+    return window.isPinModeActive ? window.isPinModeActive() : false;
+}
+
+function getCurrentPinTag() {
+    return window.getCurrentPinTag ? window.getCurrentPinTag() : null;
+}
 
 // ============================================================================
 // INITIALIZATION

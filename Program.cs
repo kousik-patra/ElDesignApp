@@ -25,6 +25,7 @@ using Microsoft.Extensions.Logging;
 using Resend;
 using ElDesignApp.Constants;
 using ElDesignApp.Models;
+using ElDesignApp.Services.Rendering;
 using OfficeOpenXml;
 using ICacheService = ElDesignApp.Services.Cache.ICacheService;
 using IGlobalDataService = ElDesignApp.Services.Global.IGlobalDataService;
@@ -97,6 +98,8 @@ builder.Services.AddDistributedMemoryCache();
     builder.Services.AddScoped<IPlotPlanService, PlotPlanService>();
     builder.Services.AddScoped<Draw>();
     builder.Services.AddScoped<PinPlacementService>();
+    builder.Services.AddScoped<CoordinateSystemManager>();
+    builder.Services.AddScoped<ISegmentRenderService, SegmentRenderService>();
 
     builder.Services.AddScoped<IDbConnection>(sp => 
         new SqlConnection(sp.GetRequiredService<IConfiguration>()

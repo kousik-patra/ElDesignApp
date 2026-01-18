@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Security;
 using System.Text.Json.Serialization;
 
 namespace ElDesignApp.Data;
@@ -17,6 +18,11 @@ using ElDesignApp.Services.Global;
 
 public class Draw
 {
+    private readonly ILayoutFunctionService _layoutFunction; 
+    private readonly IGlobalDataService _globalData; 
+    
+    
+    
     // Event for UI updates
     public event Action<SceneMessage>? OnSceneMessage;
     
@@ -39,8 +45,7 @@ public class Draw
     }
     
     
-    private readonly ILayoutFunctionService _layoutFunction; 
-    private IGlobalDataService _globalData; 
+
 
     // Inject ILayoutFunctionService into the constructor
     public Draw(ILayoutFunctionService layoutFunction,  IGlobalDataService globalData)
@@ -306,7 +311,7 @@ public class Draw
             Console.WriteLine($"Draw.cs (OnWindowResize): resized to {rendererWidth}, {rendererHeight}");
             _globalData.sceneDataCurrent.RendererWidth = (float)rendererWidth;
             _globalData.sceneDataCurrent.RendererHeight = (float)rendererHeight;
-            var message = SceneMessage.Resize(rendererWidth, rendererHeight);
+            var message = SceneMessage.RendererSize(rendererWidth, rendererHeight);
             SendMessage(message);
         }
         catch (Exception ex)
@@ -360,29 +365,65 @@ public class Draw
         }
     }
     
-    private void HandleSingleClick(SceneClickData clickData)
+private void HandleSingleClick(SceneClickData clickData)
+{
+    Console.WriteLine($"Draw: Single Click at Scene (X:{clickData.WorldX:F2}, Y:{clickData.WorldY:F2})");
+    
+    // Build coordinate list from all systems
+    var systemCoordinates = new List<SystemCoordinate>();
+    
+    var coordinateSystemJson = _globalData.SelectedProject.CoordinateSystemJson;
+    if (!string.IsNullOrEmpty(coordinateSystemJson))
     {
-        var text = $"Draw: Single Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})";
-        Console.WriteLine(text);
-        
-        var message = SceneMessage.Coordinates(
-            clickData.WorldX, 
-            clickData.WorldY, 
-            clickData.ObjectTag
-        );
-        SendMessage(message);
-        
-        if (!string.IsNullOrEmpty(clickData.ObjectTag))
+        try
         {
-            Console.WriteLine($"Draw.cs (HandleSingleClick): Single Clicked on object: {clickData.ObjectTag} at " +
-                              $"X: {clickData.WorldX:F2}, Y: {clickData.WorldY:F2}");
-            SendMessage(SceneMessage.Info($"Object Type: {GetObjectType(clickData.ObjectTag)}"));
-            // TODO: Select object, show properties, etc.
+            var coordinateManager = new CoordinateSystemManager();
+            var dtos = JsonSerializer.Deserialize<List<CoordinateSystemDto>>(coordinateSystemJson);
+            
+            if (dtos != null && dtos.Count > 0)
+            {
+                coordinateManager.ImportAll(dtos);
+                
+                // Use the new helper method
+                systemCoordinates = coordinateManager.GetAllSystemCoordinates(
+                    clickData.WorldX, 
+                    clickData.WorldY
+                );
+                
+                // Log all coordinates to console
+                Console.WriteLine($"  Scene: X={clickData.WorldX:F3}, Y={clickData.WorldY:F3}");
+                foreach (var sc in systemCoordinates)
+                {
+                    Console.WriteLine($"  {sc.SystemName}: E={sc.E:F3}, N={sc.N:F3} {sc.Unit} [XEW={sc.XEW}]");
+                }
+            }
         }
-        
-        // Store click point if needed
-        // _globalData.sceneDataCurrent.ClickPoints.Add(new ClickedPoint { ... });
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error parsing coordinate systems: {ex.Message}");
+        }
     }
+    else
+    {
+        Console.WriteLine("  No coordinate systems configured for this project");
+    }
+
+    // Create message WITH coordinate systems
+    var message = SceneMessage.Coordinates(
+        clickData.WorldX, 
+        clickData.WorldY, 
+        clickData.ObjectTag,
+        systemCoordinates
+    );
+    
+    SendMessage(message);
+    
+    if (!string.IsNullOrEmpty(clickData.ObjectTag))
+    {
+        Console.WriteLine($"Draw.cs: Clicked on object: {clickData.ObjectTag}");
+        //SendMessage(SceneMessage.Info($"Object Type: {GetObjectType(clickData.ObjectTag)}"));
+    }
+}
     
     private void HandleDoubleClick(SceneClickData clickData)
     {

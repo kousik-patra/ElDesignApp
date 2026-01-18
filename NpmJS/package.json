@@ -29,6 +29,7 @@
     "igniteui-webcomponents-core": "^4.7.2",
     "igniteui-webcomponents-gauges": "^4.7.2",
     "path-browserify": "^1.0.1",
+    "stats.js": "^0.17.0",
     "three": "^0.164.1"
   }
 }

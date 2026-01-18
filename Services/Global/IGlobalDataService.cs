@@ -15,6 +15,19 @@ public interface IGlobalDataService
     Project? SelectedProject { get; set; } // Or whatever properties GlobalData holds
     
     event Action? OnProjectChanged;
+    
+    // For Segments Rendering
+    /// <summary>
+    /// Event fired when the segment page tab changes
+    /// Used by SharedSceneHost to draw/hide segments based on active tab
+    /// </summary>
+    event Action<int>? OnSegmentTabChanged;
+    
+    /// <summary>
+    /// Notify listeners that the segment tab has changed
+    /// </summary>
+    void NotifySegmentTabChanged(int tabIndex);
+    
         
     void SetSelectedProject(Project? project);
         
@@ -383,6 +396,13 @@ public class GlobalDataService : IGlobalDataService
             }
         }
         
+        public event Action<int>? OnSegmentTabChanged;
+        
+        public void NotifySegmentTabChanged(int tabIndex)
+        {
+            OnSegmentTabChanged?.Invoke(tabIndex);
+        }
+
 
         public int ClickCount { get; set; }
 

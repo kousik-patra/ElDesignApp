@@ -324,9 +324,13 @@
                                 {
                                     for (var i = 0; i < _displayList.Count(); i++)
                                     {
+                                        var currentIndex = i;
+                                        var currentItem = _displayList[currentIndex];
                                         var thisUid = (Guid)_uidProperty.GetValue(_displayList[i]);
-                                        <tr @onclick="@(async () =>
+                                        <tr 
+                                            @onclick="@(async (MouseEventArgs e) =>
                                                       {
+                                                          // Existing single-select logic
                                                           if (SelectedItemUid == thisUid)
                                                           {
                                                               // already selected
@@ -335,7 +339,8 @@
                                                           else
                                                           {
                                                               SelectedItemUid = thisUid;
-                                                              _selectedIndex = List.FindIndex(item => SelectedItemUid == (Guid)_uidProperty.GetValue(item));
+                                                              _selectedIndex = List.FindIndex(item => 
+                                                                  SelectedItemUid == (Guid)_uidProperty.GetValue(item));
                                                               _selectedItem = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(List[_selectedIndex]));
                                                               var args = (_selectedItem, SelectedItemUid);
                                                               await SelectedItem.InvokeAsync(args);
@@ -343,8 +348,29 @@
 
                                                           DoSelection(); // to act on Server side
                                                           //System.Diagnostics.Debug.WriteLine($"Clicked item sequence: {selectedIndex} UID:{selectedItemUID}");
+                                                          // Invoke OnRowClicked with multi-select info
+                                                          if (OnRowClicked.HasDelegate)
+                                                          {
+                                                              await OnRowClicked.InvokeAsync((currentItem, e.CtrlKey, e.ShiftKey));
+                                                          }
                                                       })"
-                                            class="@CssClassTableRow(thisUid)">
+                                            @onmouseenter="@(async () =>
+                                                           {
+                                                               _lastHoveredItem = currentItem;
+                                                               if (OnRowHover.HasDelegate)
+                                                               {
+                                                                   await OnRowHover.InvokeAsync(currentItem);
+                                                               }
+                                                           })"
+                                            @onmouseleave="@(async () =>
+                                                           {
+                                                               if (OnRowHoverEnd.HasDelegate && _lastHoveredItem != null)
+                                                               {
+                                                                   await OnRowHoverEnd.InvokeAsync(_lastHoveredItem);
+                                                               }
+                                                               _lastHoveredItem = default;
+                                                           })"
+                                            class="@CssClassTableRow(thisUid) @GetMultiSelectRowClass(currentItem)">
                                             <th>@(_seqList[i] + 1)</th>@* data original sequence no*@
                                             @foreach (var property in _tableProperties)
                                             {
@@ -694,7 +720,41 @@
     [Parameter] public RenderFragment<PropertyInfo>? FieldTemplate { get; set; }
     [Parameter] public RenderFragment<ContextItemField>? ItemFieldTemplate { get; set; }
     [Parameter] public string? TableWidthPx { get; set; }
+    
+    /// <summary>
+    /// Callback when a row is clicked. Provides the item, ctrlKey, and shiftKey states for multi-select support.
+    /// </summary>
+    [Parameter] public EventCallback<(T Item, bool CtrlKey, bool ShiftKey)> OnRowClicked { get; set; }
 
+    /// <summary>
+    /// Callback when mouse hovers over a row
+    /// </summary>
+    [Parameter] public EventCallback<T> OnRowHover { get; set; }
+
+    /// <summary>
+    /// Callback when mouse leaves a row
+    /// </summary>
+    [Parameter] public EventCallback<T> OnRowHoverEnd { get; set; }
+
+    /// <summary>
+    /// List of selected item tags (for multi-select visual feedback)
+    /// Uses the Tag property of the items
+    /// </summary>
+    [Parameter] public List<string> SelectedItems { get; set; } = new();
+
+    /// <summary>
+    /// Enable multi-select mode (Ctrl+Click, Shift+Click)
+    /// </summary>
+    [Parameter] public bool EnableMultiSelect { get; set; } = false;
+
+
+    // Track last hovered item for OnRowHoverEnd
+    private T? _lastHoveredItem = default;
+
+    // Property for getting Tag from items
+    private PropertyInfo? _tagProperty;
+    
+    
     private List<PropertyInfo> _tableProperties = null!;
     private List<DBMaster>? _dbMaster;
     private List<T>? _iteratedList;
@@ -854,7 +914,7 @@
         System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name} : Warning - UID property not found");
     }
 
-
+    _tagProperty = typeof(T).GetProperty("Tag");
 
     // Initialize property indexing (0 = not indexed, 1 = ascending, 2 = descending)
     _propertyIndexed.Clear();
@@ -903,6 +963,10 @@
     _seqList.Clear();
     _seqList.AddRange(_displayList.Select(item => List?.IndexOf(item) ?? -1));
 
+    
+    
+    
+    
     base.OnInitialized();
     }
 
@@ -2139,6 +2203,24 @@ private async Task CallUpdateMethodIfExists(T item)
 
         //
         return cssClass;
+    }
+    
+    /// <summary>
+    /// Get CSS class for multi-select highlighting
+    /// </summary>
+    string GetMultiSelectRowClass(T item)
+    {
+        if (!EnableMultiSelect || SelectedItems == null || SelectedItems.Count == 0)
+            return "";
+    
+        if (_tagProperty == null)
+            return "";
+    
+        var tag = _tagProperty.GetValue(item)?.ToString();
+        if (string.IsNullOrEmpty(tag))
+            return "";
+    
+        return SelectedItems.Contains(tag) ? "table-success" : "";
     }
 
 

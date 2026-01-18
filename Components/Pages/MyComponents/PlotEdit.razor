@@ -559,137 +559,234 @@ else
             @if (_coordinateSystems.Count > 0)
             {
                 <div class="table-responsive mb-3">
-                    <table class="table table-sm table-bordered">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Name</th>
-                                <th>Description</th>
-                                <th>Unit</th>
-                                <th>Ref E</th>
-                                <th>Ref N</th>
-                                <th>Rotation°</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var cs in _coordinateSystems)
-                            {
-                                <tr class="@(string.IsNullOrEmpty(cs.Name) ? "table-warning" : "")">
-                                    <td>
-                                        @(string.IsNullOrEmpty(cs.Name) ? "(Default)" : cs.Name)
-                                        @if (string.IsNullOrEmpty(cs.Name))
-                                        {
-                                            <span class="badge bg-secondary ms-1">Auto</span>
-                                        }
-                                    </td>
-                                    <td>@cs.Description</td>
-                                    <td>@cs.Unit</td>
-                                    <td>@cs.ReferenceX.ToString("F2")</td>
-                                    <td>@cs.ReferenceY.ToString("F2")</td>
-                                    <td>@cs.RotationDegrees.ToString("F2")</td>
-                                    <td>
-                                        @if (!string.IsNullOrEmpty(cs.Name))
-                                        {
-                                            <button class="btn btn-danger btn-sm" 
-                                                    @onclick="() => DeleteCoordinateSystem(cs.Name)">
-                                                🗑️
-                                            </button>
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+    <table class="table table-sm table-bordered">
+        <thead class="table-light">
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Unit</th>
+                <th>X-Axis</th>
+                <th>Ref E</th>
+                <th>Ref N</th>
+                <th>Scale E</th>
+                <th>Scale N</th>
+                <th>Rotation°</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var cs in _coordinateSystems)
+            {
+                <tr class="@(string.IsNullOrEmpty(cs.Name) ? "table-warning" : "")">
+                    <td>
+                        @(string.IsNullOrEmpty(cs.Name) ? "(Default)" : cs.Name)
+                        @if (string.IsNullOrEmpty(cs.Name))
+                        {
+                            <span class="badge bg-secondary ms-1">Auto</span>
+                        }
+                    </td>
+                    <td>@cs.Description</td>
+                    <td>@cs.Unit</td>
+                    <td>
+                        <span class="badge @(cs.XEW ? "bg-primary" : "bg-info")">
+                            @(cs.XEW ? "E-W" : "N-S")
+                        </span>
+                    </td>
+                    <td>@cs.ReferenceE.ToString("F2")</td>
+                    <td>@cs.ReferenceN.ToString("F2")</td>
+                    <td>
+                        <span class="badge @(cs.ScaleE > 0 ? "bg-success" : "bg-danger")">
+                            @(cs.ScaleE > 0 ? "+1" : "-1")
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge @(cs.ScaleN > 0 ? "bg-success" : "bg-danger")">
+                            @(cs.ScaleN > 0 ? "+1" : "-1")
+                        </span>
+                    </td>
+                    <td>@cs.RotationDegrees.ToString("F2")</td>
+                    <td>
+                        @if (!string.IsNullOrEmpty(cs.Name))
+                        {
+                            <button class="btn btn-danger btn-sm" 
+                                    @onclick="() => DeleteCoordinateSystem(cs.Name)">
+                                🗑️
+                            </button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
             }
             else
             {
                 <p class="text-muted small">No coordinate systems defined yet. The default system will be created with the Key Plan.</p>
             }
 
+            
             @* Add New Coordinate System Form *@
-            @if (_showCoordSystemForm)
-            {
-                <div class="coord-system-form card card-body bg-light">
-                    <h6>Add New Coordinate System</h6>
-                    
-                    <div class="row g-2 align-items-end">
-                        <div class="col-md-2">
-                            <label class="form-label small">Name</label>
-                            <input type="text" class="form-control form-control-sm" 
-                                   @bind="_newCoordSystem.Name" placeholder="e.g., UTM, Global"/>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label small">Description</label>
-                            <input type="text" class="form-control form-control-sm" 
-                                   @bind="_newCoordSystem.Description" placeholder="Optional"/>
-                        </div>
-                        <div class="col-md-1">
-                            <label class="form-label small">Unit</label>
-                            <select class="form-select form-select-sm" @bind="_newCoordSystem.Unit">
-                                <option value="m">m</option>
-                                <option value="km">km</option>
-                                <option value="mm">mm</option>
-                                <option value="ft">ft</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small">Reference E</label>
-                            <input type="number" step="0.01" class="form-control form-control-sm" 
-                                   @bind="_newCoordSystem.ReferenceX" placeholder="Easting"/>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small">Reference N</label>
-                            <input type="number" step="0.01" class="form-control form-control-sm" 
-                                   @bind="_newCoordSystem.ReferenceY" placeholder="Northing"/>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small">Rotation (CW°)</label>
-                            <input type="number" step="0.1" class="form-control form-control-sm" 
-                                   @bind="_newCoordSystem.RotationDegrees" placeholder="0"/>
-                        </div>
-                    </div>
+@if (_showCoordSystemForm)
+{
+    <div class="coord-system-form card card-body bg-light">
+        <h6>Add New Coordinate System</h6>
+        
+        @* Row 1: Name, Description, Unit *@
+        <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small">Name</label>
+                <input type="text" class="form-control form-control-sm" 
+                       @bind="_newCoordSystem.Name" placeholder="e.g., UTM, Global"/>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small">Description</label>
+                <input type="text" class="form-control form-control-sm" 
+                       @bind="_newCoordSystem.Description" placeholder="Optional"/>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small">Unit</label>
+                <select class="form-select form-select-sm" @bind="_newCoordSystem.Unit">
+                    <option value="m">m</option>
+                    <option value="km">km</option>
+                    <option value="mm">mm</option>
+                    <option value="ft">ft</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small">Rotation (CW°)</label>
+                <input type="number" step="0.1" class="form-control form-control-sm" 
+                       @bind="_newCoordSystem.RotationDegrees" placeholder="0"/>
+            </div>
+        </div>
 
-                    <div class="row g-2 mt-2">
-                        <div class="col-12">
-                            <div class="d-flex align-items-center gap-2">
-                                <span class="text-muted small">
-                                    📍 Pin location on map: 
-                                    @if (_coordSystemPin != null)
-                                    {
-                                        <span class="badge bg-success">
-                                            X: @_coordSystemPin.Value.X.ToString("F2"), Y: @_coordSystemPin.Value.Y.ToString("F2")
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <span class="badge bg-secondary">Not set</span>
-                                    }
-                                </span>
-                                <button type="button" class="btn btn-sm btn-warning" 
-                                        @onclick="StartCoordSystemPinPlacement"
-                                        disabled="@_isPinPlacementActive">
-                                    📍 Pin Reference Point
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mt-3">
-                        <button type="button" class="btn btn-sm btn-success" 
-                                @onclick="SaveCoordinateSystem"
-                                disabled="@(!CanSaveCoordinateSystem)">
-                            💾 Save Coordinate System
-                        </button>
-                        <button type="button" class="btn btn-sm btn-secondary ms-2" 
-                                @onclick="ToggleCoordinateSystemForm">
-                            Cancel
-                        </button>
-                    </div>
+        @* Row 2: Reference Coordinates *@
+        <div class="row g-2 mt-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small">Reference Easting</label>
+                <input type="number" step="0.01" class="form-control form-control-sm" 
+                       @bind="_newCoordSystem.ReferenceE" placeholder="Easting at pin"/>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small">Reference Northing</label>
+                <input type="number" step="0.01" class="form-control form-control-sm" 
+                       @bind="_newCoordSystem.ReferenceN" placeholder="Northing at pin"/>
+            </div>
+            <div class="col-md-6">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-muted small">
+                        📍 Pin location: 
+                        @if (_coordSystemPin != null)
+                        {
+                            <span class="badge bg-success">
+                                X: @_coordSystemPin.Value.X.ToString("F2"), Y: @_coordSystemPin.Value.Y.ToString("F2")
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">Not set</span>
+                        }
+                    </span>
+                    <button type="button" class="btn btn-sm btn-warning" 
+                            @onclick="StartCoordSystemPinPlacement"
+                            disabled="@_isPinPlacementActive">
+                        📍 Pin Reference Point
+                    </button>
                 </div>
-            }
+            </div>
+        </div>
+
+        @* Row 3: Axis Orientation and Scale Factors *@
+        <div class="row g-2 mt-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small d-block">Scene X-Axis Direction</label>
+                <div class="btn-group btn-group-sm w-100" role="group">
+                    <input type="radio" class="btn-check" name="xewRadio" id="xewTrue" 
+                           checked="@_newCoordSystem.XEW"
+                           @onchange="@(() => _newCoordSystem.XEW = true)">
+                    <label class="btn btn-outline-primary" for="xewTrue">
+                        ↔️ East-West
+                    </label>
+                    <input type="radio" class="btn-check" name="xewRadio" id="xewFalse"
+                           checked="@(!_newCoordSystem.XEW)"
+                           @onchange="@(() => _newCoordSystem.XEW = false)">
+                    <label class="btn btn-outline-primary" for="xewFalse">
+                        ↕️ North-South
+                    </label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small d-block">Easting Direction (Scale E)</label>
+                <div class="btn-group btn-group-sm w-100" role="group">
+                    <input type="radio" class="btn-check" name="scaleERadio" id="scaleEPos" 
+                           checked="@(_newCoordSystem.ScaleE > 0)"
+                           @onchange="@(() => _newCoordSystem.ScaleE = 1.0)">
+                    <label class="btn btn-outline-success" for="scaleEPos">
+                        ➕ Increasing (+1)
+                    </label>
+                    <input type="radio" class="btn-check" name="scaleERadio" id="scaleENeg"
+                           checked="@(_newCoordSystem.ScaleE < 0)"
+                           @onchange="@(() => _newCoordSystem.ScaleE = -1.0)">
+                    <label class="btn btn-outline-danger" for="scaleENeg">
+                        ➖ Decreasing (-1)
+                    </label>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small d-block">Northing Direction (Scale N)</label>
+                <div class="btn-group btn-group-sm w-100" role="group">
+                    <input type="radio" class="btn-check" name="scaleNRadio" id="scaleNPos" 
+                           checked="@(_newCoordSystem.ScaleN > 0)"
+                           @onchange="@(() => _newCoordSystem.ScaleN = 1.0)">
+                    <label class="btn btn-outline-success" for="scaleNPos">
+                        ➕ Increasing (+1)
+                    </label>
+                    <input type="radio" class="btn-check" name="scaleNRadio" id="scaleNNeg"
+                           checked="@(_newCoordSystem.ScaleN < 0)"
+                           @onchange="@(() => _newCoordSystem.ScaleN = -1.0)">
+                    <label class="btn btn-outline-danger" for="scaleNNeg">
+                        ➖ Decreasing (-1)
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        @* Row 4: Visual Helper *@
+        <div class="row mt-2">
+            <div class="col-12">
+                <div class="alert alert-info small py-2 mb-0">
+                    <strong>Current Setup:</strong>
+                    Scene X-axis is <strong>@(_newCoordSystem.XEW ? "East-West" : "North-South")</strong>.
+                    Moving right (+X) will @(_newCoordSystem.XEW ? (_newCoordSystem.ScaleE > 0 ? "increase" : "decrease") : (_newCoordSystem.ScaleN > 0 ? "increase" : "decrease")) 
+                    <strong>@(_newCoordSystem.XEW ? "Easting" : "Northing")</strong>.
+                    Moving up (+Y) will @(_newCoordSystem.XEW ? (_newCoordSystem.ScaleN > 0 ? "increase" : "decrease") : (_newCoordSystem.ScaleE > 0 ? "increase" : "decrease")) 
+                    <strong>@(_newCoordSystem.XEW ? "Northing" : "Easting")</strong>.
+                </div>
+            </div>
+        </div>
+
+        @* Row 5: Action Buttons *@
+        <div class="mt-3">
+            <button type="button" class="btn btn-sm btn-success" 
+                    @onclick="SaveCoordinateSystem"
+                    disabled="@(!CanSaveCoordinateSystem)">
+                💾 Save Coordinate System
+            </button>
+            <button type="button" class="btn btn-sm btn-secondary ms-2" 
+                    @onclick="ToggleCoordinateSystemForm">
+                Cancel
+            </button>
+        </div>
+    </div>
+}
+            
+            
         </div>
     }
+    
+    
+    
+    
 }
 
 @* ============================================================================
@@ -1130,6 +1227,8 @@ else
 
         if (IsKeyPlan)
         {
+            // For key plan, centre the scene origin on the pinned point
+            
             var originPin = _placedPins.FirstOrDefault(p => p.Tag == "Origin");
             if (originPin == null)
             {
@@ -1151,23 +1250,17 @@ else
             centreX = originPin!.X;
             centreY = originPin.Y;
             _newPlan.KeyPlan = true;
-
-            // Store reference coordinates in project
-            if (GlobalData.SelectedProject != null)
-            {
-                GlobalData.SelectedProject.LocalE = _newPlan.LocalE;
-                GlobalData.SelectedProject.LocalN = _newPlan.LocalN;
-                GlobalData.SelectedProject.XEW = _newPlan.XEW;
-            }
         }
         else
         {
+            // For subsequent plans, Move new plan so that Ref. point on New plan aligns with the Ref. point on Key Plan
+            
             var refNewPin = _placedPins.FirstOrDefault(p => p.Tag == "Ref-New");
             var refKeyPin = _placedPins.FirstOrDefault(p => p.Tag == "Ref-Key");
 
             if (refNewPin == null || refKeyPin == null)
             {
-                errors.Add("Pins", new List<string> { "Please place both reference pins (Ref-New on new plan, Ref-Key on key plan)." });
+                errors.Add("Pins", ["Please place both reference pins (Ref-New on new plan, Ref-Key on key plan)."]);
                 _customValidation?.DisplayErrors(errors);
                 return;
             }
@@ -1264,38 +1357,34 @@ else
 
     private async Task CreateDefaultCoordinateSystem()
     {
-        var defaultCS = new CoordinateSystem
+        var scaleX = _newPlan.X2 > _newPlan.X1 ? 1 : -1;
+        var scaleY = _newPlan.Y2 > _newPlan.Y1 ? 1 : -1;
+        var defaultCs = new CoordinateSystem
         {
-            Name = "",  // Empty name = default
+            Name = "Default",
             Description = "Default for Key Plan",
+            XEW = _newPlan.XEW,
             Unit = "m",
             ReferenceSceneX = 0,
             ReferenceSceneY = 0,
-            ReferenceX = _newPlan.LocalE,
-            ReferenceY = _newPlan.LocalN,
+            ReferenceE = _newPlan.LocalE,
+            ReferenceN = _newPlan.LocalN,
             RotationDegrees = 0,
-            ScaleX = _newPlan.X2 > _newPlan.X1 ? 1 : -1,
-            ScaleY = _newPlan.Y2 > _newPlan.Y1 ? 1 : -1
+            ScaleE = _newPlan.XEW ? scaleX :scaleY,
+            ScaleN = _newPlan.XEW ? scaleY :scaleX
         };
-
-        // Handle X-axis direction
-        if (!_newPlan.XEW)
-        {
-            // If X-axis is North-South, swap the scale factors
-            (defaultCS.ScaleX, defaultCS.ScaleY) = (defaultCS.ScaleY, defaultCS.ScaleX);
-        }
-
+ 
         if (GlobalData.SelectedProject != null)
         {
-            GlobalData.SelectedProject.CoordinateSystems?.Clear();
-            GlobalData.SelectedProject.CoordinateSystems?.Add(defaultCS);
+            GlobalData.SelectedProject.CoordinateSystems = [];
+            GlobalData.SelectedProject.CoordinateSystems?.Add(defaultCs);
             GlobalData.SelectedProject.CoordinateSystemJson =
                 JsonSerializer.Serialize(GlobalData.SelectedProject.CoordinateSystems);
 
             await Table.UpdateAsync(GlobalData.SelectedProject);
         }
 
-        Debug.WriteLine($"Created default coordinate system: E={defaultCS.ReferenceX}, N={defaultCS.ReferenceY}");
+        Debug.WriteLine($"Created default coordinate system: E={defaultCs.ReferenceE}, N={defaultCs.ReferenceN}");
     }
 
     #endregion
@@ -1305,25 +1394,32 @@ else
     private async Task LoadCoordinateSystems()
     {
         _coordinateSystems.Clear();
+        
+        // read coordinate system of the project afresh from DB:
+       
+        var (_projects, _, _, _) = await DataService.ReadFromCacheOrDb<Project>();
 
-        if (GlobalData.SelectedProject?.CoordinateSystems != null)
+        var project = _projects.Find(p => GlobalData.SelectedProject != null && p.UID == GlobalData.SelectedProject.UID);
+
+        if (project?.CoordinateSystemJson != null)
         {
-            _coordinateSystems = GlobalData.SelectedProject.CoordinateSystems.ToList();
-        }
-        else if (!string.IsNullOrEmpty(GlobalData.SelectedProject?.CoordinateSystemJson))
-        {
-            try
+            GlobalData.SelectedProject?.CoordinateSystemJson = project?.CoordinateSystemJson;
+            
+            if (!string.IsNullOrEmpty(GlobalData.SelectedProject?.CoordinateSystemJson))
             {
-                var systems = JsonSerializer.Deserialize<List<CoordinateSystem>>(
-                    GlobalData.SelectedProject.CoordinateSystemJson);
-                if (systems != null)
+                try
                 {
-                    _coordinateSystems = systems;
+                    var systems = JsonSerializer.Deserialize<List<CoordinateSystem>>(
+                        GlobalData.SelectedProject.CoordinateSystemJson);
+                    if (systems != null)
+                    {
+                        _coordinateSystems = systems;
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Failed to deserialize coordinate systems: {ex.Message}");
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Failed to deserialize coordinate systems: {ex.Message}");
+                }
             }
         }
     }
@@ -1384,6 +1480,7 @@ else
             {
                 await Table.UpdateAsync(GlobalData.SelectedProject);
                 _successMessage = $"Coordinate system '{_newCoordSystem.Name}' saved successfully.";
+                await SafeJsInvoke("clearAllPins");
             }
             catch (Exception ex)
             {
@@ -1557,7 +1654,7 @@ else
 
     private async Task DrawPlanInScene(PlotPlan plan)
     {
-        if (!await SafeJsInvoke("drawPlane", plan.Tag, plan.TagDescription, _newPlan.ImgString,
+        if (!await SafeJsInvoke("drawPlane", plan.Tag, plan.TagDescription, _newPlan.ImgString,_newPlan.Rotation,
                 plan.ScaleX, plan.ScaleY, plan.CentreX, plan.CentreY, plan.Z, plan.Opacity))
         {
             _errorMessage = "Failed to draw plot plan in 3D view.";

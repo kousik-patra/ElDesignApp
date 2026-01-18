@@ -128,6 +128,7 @@ function registerWindowFunctions() {
      * @param {string} planeTag - Unique identifier
      * @param {string} planeTagDescription - Description
      * @param {string} imageString - Base64 image data
+     * @param angleOfRotationRad
      * @param {number} scaleX - X scale factor
      * @param {number} scaleY - Y scale factor
      * @param {number} centreX - X centre offset

@@ -1,20 +1,17 @@
 ﻿import 'bootstrap';
-import sceneManager, { LAYERS } from './threejs/sceneManager'
-
-import { MouseEventHandler } from './threejs/events/mouseEvents';
-import { drawLadderMesh } from './threejs/objects/ladder';
-import { drawBendMesh } from './threejs/objects/bend';
-import { drawTeeMesh } from './threejs/objects/tee';
-import { drawCrossMesh } from './threejs/objects/cross';
-import { drawNodeMesh } from './threejs/objects/node';
-import { drawSleeveMesh } from './threejs/objects/sleeve';
-import { drawEquipmentMesh } from './threejs/objects/equipment';
-import { drawSLD, updateSLD, updateSLDItem, updateSLDWithStudyResults } from './mySLD';
-import { focusElement, getModalDialogRect, setModalPosition, startModalDrag, stopModalDrag} from './modal/modal-interop';
-import { addPin, removePin, clearAllPins, showPinHelpers, hidePinHelpers, drawRefPointMesh} from "./threejs/objects/refPoint";
+import sceneManager, {LAYERS} from './threejs/sceneManager'
+import {drawSLD, updateSLD, updateSLDItem, updateSLDWithStudyResults} from './mySLD';
+import {getModalDialogRect, setModalPosition, startModalDrag, stopModalDrag} from './modal/modal-interop';
+import {
+    addPin,
+    clearAllPins,
+    drawRefPointMesh,
+    hidePinHelpers,
+    removePin,
+    showPinHelpers
+} from "./threejs/objects/refPoint";
 // Import pin cursor module
 import * as PinCursor from './threejs/events/pinCursor'
-
 
 
 // Expose sceneManager to window
@@ -30,6 +27,7 @@ window.shouldPlacePin = PinCursor.shouldPlacePin;
 window.getCurrentPinTag = PinCursor.getCurrentPinTag;
 window.isPinModeActive = PinCursor.isPinModeActive;
 window.isShiftPressed = PinCursor.isShiftPressed;
+window.setSceneReferences = PinCursor.setSceneReferences;
 
 // ===== Expose pin management functions to window for Blazor interop =====
 window.addPinMarker = function(x, y, z = 0, tag = null) {
@@ -68,13 +66,8 @@ window.consoleLog = function (logString) {
 
 // ============ SCENE INITIALIZATION ============
 window.initializeScene = function(containerId, stateJson, dotNetObjRef) {
-    console.log('=== initializeScene START ===');
-    console.log('Container ID:', containerId);
-
     try {
-        const result = sceneManager.initialize(containerId, dotNetObjRef, stateJson);
-        console.log('=== initializeScene RESULT:', result, '===');
-        return result;
+        return sceneManager.initialize(containerId, dotNetObjRef, stateJson);
     } catch (e) {
         console.error('=== initializeScene ERROR:', e, '===');
         return false;

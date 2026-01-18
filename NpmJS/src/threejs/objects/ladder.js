@@ -1,49 +1,56 @@
 ﻿import * as THREE from 'three';
 
+// ============================================================
+// REUSABLE OBJECTS - Avoid creating these in loops!
+// ============================================================
+const _tempMatrix = new THREE.Matrix4();
+const _tempVec3 = new THREE.Vector3();
+const _tempColor = new THREE.Color();
+const _tempBox = new THREE.Box3();
+const _minVec = new THREE.Vector3();
+const _maxVec = new THREE.Vector3();
 
+// Push order for ladder geometry (constant)
+const PUSH_ORDER = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6];
+
+
+/**
+ * Draw a single ladder mesh (unchanged from original)
+ */
 function drawLadderMesh(tag, jsonPoints, material, color, opacity) {
     try {
-        // Parse color only once and handle potential errors
         let clr;
         try {
             clr = JSON.parse(color);
         } catch (colorParseError) {
             console.error(`Error parsing color for tag ${tag}: ${colorParseError}`);
-            return null; // Exit if color parsing fails
+            return null;
         }
 
         const setColor = new THREE.Color(clr[0] / 255, clr[1] / 255, clr[2] / 255);
         material.color = setColor;
 
-        // Parse points only once and handle errors
         let points;
         try {
             points = JSON.parse(jsonPoints);
         } catch (pointsParseError) {
             console.error(`Error parsing points for tag ${tag}: ${pointsParseError}`);
-            return null; // Exit if points parsing fails
+            return null;
         }
 
         const vertices1 = [];
-        const pushOrder = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6];
-
-        // Pre-allocate array for better performance
-        vertices1.length = pushOrder.length;
-
-        // Use a for loop for better performance than forEach
-        for (let i = 0; i < pushOrder.length; i++) {
-            const pointIndex = pushOrder[i];
+        for (let i = 0; i < PUSH_ORDER.length; i++) {
+            const pointIndex = PUSH_ORDER[i];
             vertices1[i] = new THREE.Vector3(points[pointIndex].X, points[pointIndex].Y, points[pointIndex].Z);
         }
 
         const pointsGeometry = new THREE.BufferGeometry().setFromPoints(vertices1);
-
         const ladderMesh = new THREE.Mesh(pointsGeometry, material);
 
         ladderMesh.Tag = tag;
         ladderMesh.Type = "ladder";
         ladderMesh.Clicked = false;
-        ladderMesh.OriginalColor = ladderMesh.material.color.clone(); // Clone the color
+        ladderMesh.OriginalColor = ladderMesh.material.color.clone();
 
         const center = new THREE.Vector3();
         pointsGeometry.computeBoundingBox();
@@ -51,9 +58,6 @@ function drawLadderMesh(tag, jsonPoints, material, color, opacity) {
         ladderMesh.geometry.center();
         ladderMesh.position.copy(center);
         ladderMesh.material.opacity = opacity;
-
-        // Dispose of geometry after use
-        //pointsGeometry.dispose(); // Moved to be handled outside of this function.
 
         return ladderMesh;
     } catch (e) {
@@ -63,144 +67,186 @@ function drawLadderMesh(tag, jsonPoints, material, color, opacity) {
 }
 
 
+/**
+ * OPTIMIZED: Draw ladder mesh batch for 20,000+ segments
+ * Key optimizations:
+ * 1. No temporary geometry creation in loop
+ * 2. Reusable math objects
+ * 3. Single JSON parse per segment
+ * 4. Shadows disabled (huge performance gain)
+ * 5. Direct bounding box calculation
+ */
 function drawLadderMeshBatch(tags, jsonPointsArray, material, colors, opacities) {
-    console.log("Step 4: Drawing from ladder.js : drawLadderMeshBatch for " + tags.length +
-        " trays with " + jsonPointsArray.length)
+
+    console.log(`[ladder.js] drawLadderMeshBatch: ${tags.length} segments`);
+    console.trace("WHO CALLED ME?");
+    
+    console.log(`[ladder.js] drawLadderMeshBatch: ${tags.length} segments`);
+    console.time('drawLadderMeshBatch');
+
     // Validate inputs
-    if (!Array.isArray(jsonPointsArray) || !Array.isArray(tags) || !Array.isArray(colors) || !Array.isArray(opacities)) {
-        console.error('Invalid input arrays:', {tags, jsonPointsArray, colors, opacities});
-        return null;
-    }
-    if (jsonPointsArray.length !== tags.length || jsonPointsArray.length !== colors.length || jsonPointsArray.length !== opacities.length) {
-        console.error('Array lengths mismatch:', {
-            tags: tags.length,
-            points: jsonPointsArray.length,
-            colors: colors.length,
-            opacities: opacities.length
-        });
+    if (!Array.isArray(jsonPointsArray) || !Array.isArray(tags) ||
+        !Array.isArray(colors) || !Array.isArray(opacities)) {
+        console.error('Invalid input arrays');
         return null;
     }
 
-    const geometry = new THREE.BufferGeometry();
-    const vertices = [];
-    const pushOrder = [0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6];
+    if (jsonPointsArray.length !== tags.length ||
+        jsonPointsArray.length !== colors.length ||
+        jsonPointsArray.length !== opacities.length) {
+        console.error('Array lengths mismatch');
+        return null;
+    }
 
-    // Parse and validate points
-    const points = [];
+    // ============================================================
+    // PHASE 1: Parse all points (single pass)
+    // ============================================================
+    console.time('parsePoints');
+    const parsedPoints = [];
+    const validIndices = [];
+
     for (let i = 0; i < jsonPointsArray.length; i++) {
         try {
             const parsed = JSON.parse(jsonPointsArray[i]);
-            if (!Array.isArray(parsed) || parsed.length < 8) {
-                console.error(`Tray ${i} : Invalid points array for tag ${tags[i]}: Expected at least 8 vertices, got`, parsed);
-                continue;
+            if (Array.isArray(parsed) && parsed.length >= 8) {
+                parsedPoints.push(parsed);
+                validIndices.push(i);
             }
-            if (!parsed.every(p => p && typeof p.X === 'number' && typeof p.Y === 'number' && typeof p.Z === 'number')) {
-                console.error(`Tray ${i} : Invalid point structure for tag ${tags[i]}: Missing or invalid X, Y, Z`, parsed);
-                continue;
-            }
-            points.push(parsed);
         } catch (e) {
-            console.error(`Tray ${i} : Error parsing JSON for tag ${tags[i]}:`, e);
+            // Skip invalid entries silently for performance
         }
     }
+    console.timeEnd('parsePoints');
 
-    if (points.length === 0) {
+    const count = parsedPoints.length;
+    if (count === 0) {
         console.error('No valid points to render');
         return null;
     }
 
-    // Create vertices for valid ladders
-    for (let i = 0; i < points.length; i++) {
-        for (let j = 0; j < pushOrder.length; j++) {
-            const idx = pushOrder[j];
-            vertices.push(points[i][idx].X, points[i][idx].Y, points[i][idx].Z);
-        }
-    }
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    console.log(`[ladder.js] Valid segments: ${count}/${tags.length}`);
 
-    // Material cache
-    const materialCache = {};
+    // ============================================================
+    // PHASE 2: Build merged geometry
+    // ============================================================
+    console.time('buildGeometry');
 
-    function getMaterial(color, opacity) {
-        const key = `${color}_${opacity}`;
-        if (!materialCache[key]) {
-            let colorArray;
-            try {
-                // Handle case where color is a JSON string
-                if (typeof color === 'string') {
-                    colorArray = JSON.parse(color);
-                } else if (Array.isArray(color)) {
-                    // Handle case where color is already an array
-                    colorArray = color;
-                } else {
-                    throw new Error('Tray ' + i + ' : Invalid color format');
-                }
-                // Validate color array
-                if (!Array.isArray(colorArray) || colorArray.length !== 3 || !colorArray.every(c => typeof c === 'number' && c >= 0 && c <= 255)) {
-                    throw new Error('Tray ' + i + ' : Invalid color array');
-                }
-                materialCache[key] = new THREE.MeshBasicMaterial({
-                    color: new THREE.Color(...colorArray.map(c => c / 255)),
-                    opacity,
-                    transparent: true
-                });
-            } catch (e) {
-                console.error(`Error processing color for key ${key}:`, e, 'Color value:', color);
-                // Fallback to default color (white)
-                materialCache[key] = new THREE.MeshBasicMaterial({
-                    color: 0xffffff,
-                    opacity,
-                    transparent: true
-                });
-            }
-        }
-        return materialCache[key];
-    }
+    // Pre-allocate vertex array (18 vertices per segment * 3 components)
+    const vertexCount = count * PUSH_ORDER.length * 3;
+    const vertices = new Float32Array(vertexCount);
 
-    const count = points.length;
-    const instancedMesh = new THREE.InstancedMesh(geometry, getMaterial(colors[0], opacities[0]), count);
-
-    // Store tags for valid ladders only
-    instancedMesh.instanceTags = points.map((_, i) => tags[i]);
-    instancedMesh.Type = "ladder";
-    instancedMesh.castShadow = true; // Cast shadows
-    instancedMesh.receiveShadow = true; // Receive shadows (optional, for ladders shadowing each other)
-
-    // Set instance matrices and colors
+    let vertexIndex = 0;
     for (let i = 0; i < count; i++) {
-        const matrix = new THREE.Matrix4();
-        const center = new THREE.Vector3();
-        const tempGeometry = new THREE.BufferGeometry().setFromPoints(
-            pushOrder.map(idx => new THREE.Vector3(points[i][idx].X, points[i][idx].Y, points[i][idx].Z))
-        );
-        tempGeometry.computeBoundingBox();
-        tempGeometry.boundingBox.getCenter(center);
-        matrix.setPosition(center);
-        instancedMesh.setMatrixAt(i, matrix);
-        try {
-            let colorArray;
-            if (typeof colors[i] === 'string') {
-                colorArray = JSON.parse(colors[i]);
-            } else if (Array.isArray(colors[i])) {
-                colorArray = colors[i];
-            } else {
-                throw new Error('Tray ' + i + ' : Invalid color format');
-            }
-            if (!Array.isArray(colorArray) || colorArray.length !== 3 || !colorArray.every(c => typeof c === 'number' && c >= 0 && c <= 255)) {
-                throw new Error('Tray ' + i + ' : Invalid color array');
-            }
-            instancedMesh.setColorAt(i, new THREE.Color(...colorArray.map(c => c / 255)));
-        } catch (e) {
-            console.error(`Tray ${i} : Error setting color for tag ${tags[i]}:`, e, 'Color value:', colors[i]);
-            instancedMesh.setColorAt(i, new THREE.Color(1, 11));
+        const pts = parsedPoints[i];
+        for (let j = 0; j < PUSH_ORDER.length; j++) {
+            const idx = PUSH_ORDER[j];
+            vertices[vertexIndex++] = pts[idx].X;
+            vertices[vertexIndex++] = pts[idx].Y;
+            vertices[vertexIndex++] = pts[idx].Z;
         }
-        tempGeometry.dispose();
     }
 
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geometry.computeBoundingSphere();  // Important for frustum culling
+    console.timeEnd('buildGeometry');
+
+    // ============================================================
+    // PHASE 3: Create material (single material for all)
+    // ============================================================
+    let baseMaterial;
+    try {
+        const colorArray = typeof colors[0] === 'string' ? JSON.parse(colors[0]) : colors[0];
+        baseMaterial = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(colorArray[0] / 255, colorArray[1] / 255, colorArray[2] / 255),
+            opacity: opacities[0] || 0.7,
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+    } catch (e) {
+        baseMaterial = new THREE.MeshBasicMaterial({
+            color: 0x8080cc,
+            opacity: 0.7,
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+    }
+
+    // ============================================================
+    // PHASE 4: Create InstancedMesh
+    // ============================================================
+    console.time('createInstances');
+    const instancedMesh = new THREE.InstancedMesh(geometry, baseMaterial, count);
+
+    instancedMesh.instanceTags = [];
+    instancedMesh.Type = "ladder";
+
+    // IMPORTANT: Disable shadows for performance!
+    instancedMesh.castShadow = false;
+    instancedMesh.receiveShadow = false;
+
+    // Enable frustum culling
+    instancedMesh.frustumCulled = true;
+
+    // ============================================================
+    // PHASE 5: Set matrices and colors (optimized loop)
+    // ============================================================
+    for (let i = 0; i < count; i++) {
+        const pts = parsedPoints[i];
+        const originalIndex = validIndices[i];
+
+        // Calculate center directly (no temporary geometry!)
+        _minVec.set(Infinity, Infinity, Infinity);
+        _maxVec.set(-Infinity, -Infinity, -Infinity);
+
+        for (let j = 0; j < 8; j++) {
+            const px = pts[j].X, py = pts[j].Y, pz = pts[j].Z;
+            if (px < _minVec.x) _minVec.x = px;
+            if (py < _minVec.y) _minVec.y = py;
+            if (pz < _minVec.z) _minVec.z = pz;
+            if (px > _maxVec.x) _maxVec.x = px;
+            if (py > _maxVec.y) _maxVec.y = py;
+            if (pz > _maxVec.z) _maxVec.z = pz;
+        }
+
+        // Center position
+        _tempVec3.set(
+            (_minVec.x + _maxVec.x) / 2,
+            (_minVec.y + _maxVec.y) / 2,
+            (_minVec.z + _maxVec.z) / 2
+        );
+
+        // Set matrix (position only, no rotation/scale)
+        _tempMatrix.makeTranslation(_tempVec3.x, _tempVec3.y, _tempVec3.z);
+        instancedMesh.setMatrixAt(i, _tempMatrix);
+
+        // Set color
+        try {
+            const colorArray = typeof colors[originalIndex] === 'string'
+                ? JSON.parse(colors[originalIndex])
+                : colors[originalIndex];
+            _tempColor.setRGB(colorArray[0] / 255, colorArray[1] / 255, colorArray[2] / 255);
+        } catch (e) {
+            _tempColor.setRGB(0.5, 0.5, 0.8);
+        }
+        instancedMesh.setColorAt(i, _tempColor);
+
+        // Store tag
+        instancedMesh.instanceTags.push(tags[originalIndex]);
+    }
+
+    // Single update at the end (not inside loop!)
     instancedMesh.instanceMatrix.needsUpdate = true;
-    instancedMesh.instanceColor.needsUpdate = true;
+    if (instancedMesh.instanceColor) {
+        instancedMesh.instanceColor.needsUpdate = true;
+    }
+
+    console.timeEnd('createInstances');
+    console.timeEnd('drawLadderMeshBatch');
+    console.log(`[ladder.js] ✓ Created InstancedMesh with ${count} instances`);
 
     return instancedMesh;
 }
 
-export {drawLadderMesh, drawLadderMeshBatch}
+
+export { drawLadderMesh, drawLadderMeshBatch };

@@ -30,8 +30,9 @@ using Microsoft.Extensions.Logging;
 
 public interface ILayoutFunctionService
 {
-    
-    
+
+    Vector3 ENU2XYZ(ENU enu, string coordSystem = "Default");
+    ENU XYZ2ENU(Vector3 xyz, string coordSystem = "Default");
     ENU XY2EN(Vector3 xyz, string coordSystem = "LOCAL");
     Vector3 EN2XY(ENU enu);
     float String2Coordinate(string? coordinateString, char? coord);
@@ -195,18 +196,107 @@ public class LayoutFunctionService : ILayoutFunctionService
     private readonly IGlobalDataService _globalData; 
     private readonly IMyFunctionService _myFunction;
     private readonly ILogger<DataRetrievalService> _logger;
+    private readonly CoordinateSystemManager _coordinateSystemManager;
+    
+    // Cache for performance
+    private string? _lastCoordinateSystemJson;
+    private bool _isInitialized;
 
     // Inject IGlobalDataService into the constructor
     public LayoutFunctionService(IGlobalDataService globalData, IMyFunctionService myFunction, 
-        ILogger<DataRetrievalService> logger)
+        ILogger<DataRetrievalService> logger, CoordinateSystemManager coordinateSystemManager)
     {
         _globalData = globalData;
         _myFunction = myFunction;
         _logger = logger;
+        _coordinateSystemManager = coordinateSystemManager;
     }
     
     public readonly JsonSerializerOptions jsonSerializerOptions = new() { IncludeFields = true };
 
+    
+    /// <summary>
+    /// Ensures coordinate systems are loaded from project settings
+    /// </summary>
+    private void EnsureCoordinateSystemsLoaded()
+    {
+        var currentJson = _globalData.SelectedProject?.CoordinateSystemJson;
+        
+        // Only reload if JSON changed or not initialized
+        if (!_isInitialized || _lastCoordinateSystemJson != currentJson)
+        {
+            if (!string.IsNullOrEmpty(currentJson))
+            {
+                try
+                {
+                    var dtos = JsonSerializer.Deserialize<List<CoordinateSystemDto>>(currentJson);
+                    if (dtos != null && dtos.Count > 0)
+                    {
+                        // Clear existing and import fresh
+                        foreach (var name in _coordinateSystemManager.Systems.Keys.ToList())
+                        {
+                            _coordinateSystemManager.Remove(name);
+                        }
+                        _coordinateSystemManager.ImportAll(dtos);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to load coordinate systems from JSON");
+                }
+            }
+            
+            _lastCoordinateSystemJson = currentJson;
+            _isInitialized = true;
+        }
+    }
+    
+    
+    
+    /// <summary>
+    /// Convert E/N/U to Scene X/Y/Z - Single point
+    /// </summary>
+    public Vector3 ENU2XYZ(ENU enu, string coordSystem = "Default")
+    {
+        EnsureCoordinateSystemsLoaded();
+        
+        // Resolve "Default" to actual default system name
+        var systemName = coordSystem == "Default" 
+            ? _coordinateSystemManager.DefaultSystemName 
+            : coordSystem;
+        
+        if (string.IsNullOrEmpty(systemName))
+        {
+            _logger.LogWarning("No coordinate system specified or default not set");
+            return new Vector3((float)enu.E, (float)enu.N, (float)enu.U);
+        }
+        
+        var (x, y) = _coordinateSystemManager.SystemToScene(enu.E, enu.N, systemName);
+        return new Vector3((float)x, (float)y, (float)enu.U);
+    }
+    
+    /// <summary>
+    /// Convert Scene X/Y/Z to E/N/U - Single point
+    /// </summary>
+    public ENU XYZ2ENU(Vector3 xyz, string coordSystem = "Default")
+    {
+        EnsureCoordinateSystemsLoaded();
+        
+        var systemName = coordSystem == "Default" 
+            ? _coordinateSystemManager.DefaultSystemName 
+            : coordSystem;
+        
+        if (string.IsNullOrEmpty(systemName))
+        {
+            return new ENU { E = xyz.X, N = xyz.Y, U = xyz.Z };
+        }
+        
+        var (e, n) = _coordinateSystemManager.SceneToSystem(xyz.X, xyz.Y, systemName);
+        return new ENU { E = (float)e, N = (float)n, U = xyz.Z };
+    }
+    
+    
+    
         /// <summary></summary>
     public ENU XY2EN(Vector3 xyz, string coordSystem = "LOCAL")
     {
@@ -292,6 +382,8 @@ public class LayoutFunctionService : ILayoutFunctionService
         return enu;
     }
 
+
+        
     /// <summary></summary>
     public Vector3 EN2XY(ENU enu)
     {
@@ -425,29 +517,32 @@ public class LayoutFunctionService : ILayoutFunctionService
             var n = String2Coordinate(locationString, 'N');
             var u = String2Coordinate(locationString, 'U');
 
-            // if global system of coordinate, then calculate xy differently
-            if (coordSystem.ToUpper() == "XYZ")
-            {
-                var options = new JsonSerializerOptions
-                {
-                    IncludeFields = true
-                };
-                point = JsonSerializer.Deserialize<Vector3>(locationString, options);
-            }
-            else if (coordSystem.ToUpper() == "GLOBAL")
-            {
-                var globalE = _globalData.PlotPlans?[0].GlobalE ?? 0f;
-                var globalN = _globalData.PlotPlans?[0].GlobalN ?? 0f;
-                var xyGlobal = EN2XY(new ENU(e - globalE, n - globalN));
-                point = new Vector3(xyGlobal.X, xyGlobal.Y, u);
-            }
-            else
-            {
-                // assuming "Local" coordinate system
-                var xy = EN2XY(new ENU(e, n));
-                //CentrePoint = MyFunction.ENUString2XYZ(CentrePointS); not used as ENUString2XYZ is for Global Coordinates (segments)
-                point = new Vector3(xy.X, xy.Y, u);
-            }
+            point = ENU2XYZ(new ENU(e, n, u), coordSystem);
+            
+            //
+            // // if global system of coordinate, then calculate xy differently
+            // if (coordSystem.ToUpper() == "XYZ")
+            // {
+            //     var options = new JsonSerializerOptions
+            //     {
+            //         IncludeFields = true
+            //     };
+            //     point = JsonSerializer.Deserialize<Vector3>(locationString, options);
+            // }
+            // else if (coordSystem.ToUpper() == "GLOBAL")
+            // {
+            //     var globalE = _globalData.PlotPlans?[0].GlobalE ?? 0f;
+            //     var globalN = _globalData.PlotPlans?[0].GlobalN ?? 0f;
+            //     var xyGlobal = EN2XY(new ENU(e - globalE, n - globalN));
+            //     point = new Vector3(xyGlobal.X, xyGlobal.Y, u);
+            // }
+            // else
+            // {
+            //     // assuming "Local" coordinate system
+            //     var xy = EN2XY(new ENU(e, n));
+            //     //CentrePoint = MyFunction.ENUString2XYZ(CentrePointS); not used as ENUString2XYZ is for Global Coordinates (segments)
+            //     point = new Vector3(xy.X, xy.Y, u);
+            // }
         }
         catch(Exception e)
         {

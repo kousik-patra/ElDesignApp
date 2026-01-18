@@ -2,12 +2,16 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
 import { createInfiniteAxes, createAxisIndicator, createGridHelper } from './objects/axisHelpers.js';
 import { MouseEventHandler } from './events/mouseEvents.js';
+
 import {initPinManager, updatePinScales} from "./objects/refPoint";
-import * as PinCursor from "./events/pinCursor";
 import { initPlaneFunctions } from "./functions/planeFunctions";
 import { initPinFunctions } from "./functions/pinFunctions";
+
+import { initSegmentFunctions, disposeSegmentFunctions } from "./functions/segmentFunctions";
+import Stats from 'stats.js';
 
 // Layer constants for object categorization
 export const LAYERS = {
@@ -43,6 +47,14 @@ class SceneManager {
         this.resizeTimeout = null;
         this.boundWindowResize = null;
         this.saveInterval = null;
+        this.stats = null;
+        this.renderInfo = {
+            fps: 0,
+            drawCalls: 0,
+            triangles: 0,
+            geometries: 0,
+            textures: 0
+        };
 
         // Mouse event handler
         this.mouseHandler = new MouseEventHandler(this);
@@ -116,6 +128,7 @@ class SceneManager {
         this.createScene();
         this.createCamera(container);
         this.createRenderer(container);
+        this.createStats(container);
         this.createControls();
         this.createLights();
         this.createHelpers();
@@ -132,9 +145,21 @@ class SceneManager {
         // After scene is created, initialize pin manager
         initPinManager(this.scene);
 
-         // Initialize pin cursor with the same Blazor reference
-        // This enables keyboard handling (Shift key detection, ESC to cancel)
-        PinCursor.initPinPlacementMode(dotNetObjRef);
+        // Initialize pin cursor with the same Blazor reference.
+        // Initialize pin cursor via WINDOW functions (ensures same module instance)
+        if (window.initPinPlacementMode) {
+            window.initPinPlacementMode(dotNetObjRef);
+            console.log('[SceneManager] initPinPlacementMode called via window');
+        } else {
+            console.warn('[SceneManager] window.initPinPlacementMode not available!');
+        }
+
+        if (window.setSceneReferences) {
+            window.setSceneReferences(this.scene, this.camera, this.renderer);
+            console.log('[SceneManager] setSceneReferences called via window');
+        } else {
+            console.warn('[SceneManager] window.setSceneReferences not available!');
+        }
 
         // Initialize plane functions (drawPlane, rotatePlane, scalePlane, etc.)
         // This registers all window.* functions for Blazor JSInterop
@@ -144,6 +169,8 @@ class SceneManager {
         // This registers all pin-related window.* functions for Blazor JSInterop
         initPinFunctions(this);
 
+        initSegmentFunctions(this);
+
         // Setup optional local callbacks
         this.setupMouseCallbacks();
 
@@ -152,6 +179,7 @@ class SceneManager {
         this.isInitialized = true;
         this.onContainerResize();
         console.log('SceneManager: Initialized with axis helpers and mouse events');
+        
         return true;
     }
 
@@ -224,6 +252,116 @@ class SceneManager {
         console.log(`SceneManager: Renderer created with size ${width}x${height}`);
     }
 
+    /**
+     * Create stats panel for performance monitoring
+     * Shows FPS, MS (frame time), MB (memory - Chrome only)
+     */
+    createStats(container) {
+        this.stats = new Stats();
+
+        // Panel options: 0 = FPS, 1 = MS, 2 = MB (Chrome only)
+        this.stats.showPanel(0);
+
+        // Position: bottom-left corner
+        const dom = this.stats.dom;
+        dom.style.position = 'absolute';
+        dom.style.left = '10px';
+        dom.style.bottom = '10px';
+        dom.style.top = 'auto';       // Override default top
+        dom.style.zIndex = '10000';
+        dom.style.cursor = 'pointer';  // Click to cycle panels
+
+        // Ensure container has position for absolute positioning
+        if (getComputedStyle(container).position === 'static') {
+            container.style.position = 'relative';
+        }
+
+        container.appendChild(dom);
+
+        // Add custom info panel
+        this.createInfoPanel(container);
+    }
+
+    /**
+     * Create custom info panel showing render statistics
+     */
+    createInfoPanel(container) {
+        const panel = document.createElement('div');
+        panel.id = 'render-info-panel';
+        panel.style.cssText = `
+        position: absolute;
+        left: 90px;
+        bottom: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        color: #0ff;
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 11px;
+        padding: 8px 12px;
+        border-radius: 4px;
+        z-index: 10000;
+        pointer-events: none;
+        line-height: 1.4;
+    `;
+        panel.innerHTML = `
+        <div>Draw Calls: <span id="info-drawcalls">0</span></div>
+        <div>Triangles: <span id="info-triangles">0</span></div>
+        <div>Geometries: <span id="info-geometries">0</span></div>
+    `;
+        container.appendChild(panel);
+        this.infoPanel = panel;
+    }
+
+    /**
+     * Update the info panel with current render stats
+     */
+    updateInfoPanel() {
+        if (!this.renderer || !this.infoPanel) return;
+
+        const info = this.renderer.info;
+
+        document.getElementById('info-drawcalls').textContent = info.render.calls.toString();
+        document.getElementById('info-triangles').textContent = info.render.triangles.toLocaleString();
+        document.getElementById('info-geometries').textContent = info.memory.geometries.toString();
+
+        // Store for external access
+        this.renderInfo = {
+            drawCalls: info.render.calls,
+            triangles: info.render.triangles,
+            geometries: info.memory.geometries,
+            textures: info.memory.textures
+        };
+    }
+
+    /**
+     * Get current render statistics (can be called from Blazor)
+     */
+    getRenderStats() {
+        if (!this.renderer) return null;
+
+        const info = this.renderer.info;
+        return {
+            fps: this.stats ? Math.round(1000 / this.stats.domElement.textContent) : 0,
+            drawCalls: info.render.calls,
+            triangles: info.render.triangles,
+            geometries: info.memory.geometries,
+            textures: info.memory.textures,
+            programs: info.programs?.length || 0
+        };
+    }
+
+    /**
+     * Show/hide stats panel
+     */
+    setStatsVisible(visible) {
+        if (this.stats && this.stats.dom) {
+            this.stats.dom.style.display = visible ? 'block' : 'none';
+        }
+        if (this.infoPanel) {
+            this.infoPanel.style.display = visible ? 'block' : 'none';
+        }
+    }
+    
+
     createControls() {
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
         this.controls.enableDamping = true;
@@ -292,6 +430,14 @@ class SceneManager {
             this.controls.screenSpacePanning = true;
         }
 
+        // Re-add stats to new container
+        if (this.stats && this.stats.dom) {
+            container.appendChild(this.stats.dom);
+        }
+        if (this.infoPanel) {
+            container.appendChild(this.infoPanel);
+        }
+
         // Re-initialize mouse handler
         this.mouseHandler.initialize(
             this.renderer,
@@ -303,6 +449,14 @@ class SceneManager {
 
         this.setupResizeObserver(container);
         this.onContainerResize();
+
+        // Re-initialize pin cursor after reattachment
+        if (window.initPinPlacementMode) {
+            window.initPinPlacementMode(this.dotNetRef);
+        }
+        if (window.setSceneReferences) {
+            window.setSceneReferences(this.scene, this.camera, this.renderer);
+        }
 
         console.log('SceneManager: Reattached to container');
     }
@@ -531,6 +685,7 @@ class SceneManager {
 
         const { width, height } = this.getConstrainedDimensions(this.canvas);
 
+        // Update camera aspect to match actual canvas dimensions
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
 
@@ -540,7 +695,12 @@ class SceneManager {
         canvas.style.width = width + 'px';
         canvas.style.height = height + 'px';
 
-        console.log(`SceneManager: Resized to ${width}x${height}`);
+        // Ensure canvas is aligned to top-left
+        canvas.style.position = 'absolute';
+        canvas.style.top = '0';
+        canvas.style.left = '0';
+        
+        //console.log(`SceneManager: Resized to ${width}x${height}`);
         if (this.dotNetRef && this.isInitialized) {
             this.dotNetRef.invokeMethodAsync('OnWindowResize', width, height);
         }
@@ -551,9 +711,21 @@ class SceneManager {
     }
 
     startAnimation() {
+
+        const stats = this.stats;
+        const self = this;
+
+        // Throttle info panel updates (every 30 frames)
+        let frameCount = 0;
+        const INFO_UPDATE_INTERVAL = 30;
+        
         const animate = () => {
             this.animationId = requestAnimationFrame(animate);
 
+            // Start stats measurement
+            if (stats) stats.begin();
+
+            // Update controls
             if (this.controls) {
                 this.controls.update();
             }
@@ -568,6 +740,16 @@ class SceneManager {
 
             // Render main scene
             const { width, height } = this.getConstrainedDimensions(this.canvas);
+            
+            // // Use renderer's actual size instead of recalculating
+            // const width = this.renderer.domElement.width;
+            // const height = this.renderer.domElement.height;
+            //
+            // if (this.camera.aspect !== width / height) {
+            //     this.camera.aspect = width / height;
+            //     this.camera.updateProjectionMatrix();
+            // }
+
             this.renderer.setViewport(0, 0, width, height);
             this.renderer.render(this.scene, this.camera);
 
@@ -575,6 +757,17 @@ class SceneManager {
             if (this.axisIndicator) {
                 this.axisIndicator.render(this.renderer, width, height);
             }
+
+            // Update info panel (throttled)
+            frameCount++;
+            if (frameCount >= INFO_UPDATE_INTERVAL) {
+                self.updateInfoPanel();
+                frameCount = 0;
+            }
+
+            // End stats measurement
+            if (stats) stats.end();
+            
         };
         animate();
     }
@@ -592,11 +785,30 @@ class SceneManager {
     dispose() {
         this.stopAnimation();
 
+        // Dispose stats
+        if (this.stats && this.stats.dom && this.stats.dom.parentNode) {
+            this.stats.dom.parentNode.removeChild(this.stats.dom);
+            this.stats = null;
+        }
+
+        // Remove info panel
+        if (this.infoPanel && this.infoPanel.parentNode) {
+            this.infoPanel.parentNode.removeChild(this.infoPanel);
+            this.infoPanel = null;
+        }
+
         // Dispose mouse handler
         this.mouseHandler.dispose();
         
         // Dispose pin cursor
-        PinCursor.disposePinPlacementMode();
+        if (window.disposePinPlacementMode) {
+            window.disposePinPlacementMode();
+        }
+
+        // Dispose Segments
+        if (window.disposeSegmentFunctions) {
+            window.disposeSegmentFunctions();
+        }
 
         // Dispose axis indicator
         if (this.axisIndicator) {
@@ -676,5 +888,7 @@ class SceneManager {
 
 // Singleton instance
 const sceneManager = new SceneManager();
+window.getRenderStats = () => sceneManager.getRenderStats();
+window.setStatsVisible = (visible) => sceneManager.setStatsVisible(visible);
 window.sceneManager = sceneManager;
 export default sceneManager;

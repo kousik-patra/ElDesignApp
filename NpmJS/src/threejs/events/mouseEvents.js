@@ -73,6 +73,7 @@ export class MouseEventHandler {
         this.camera = camera;
         this.scene = scene;
         this.dotNetRef = dotNetRef;
+        this.raycaster.layers.mask = this.camera.layers.mask;
 
         this.attachEventListeners();
         console.log('MouseEventHandler: Initialized');
@@ -174,6 +175,7 @@ export class MouseEventHandler {
         return worldPosition;
     }
 
+
     /**
      * Perform raycasting to find intersected objects
      */
@@ -253,6 +255,15 @@ export class MouseEventHandler {
             ctrlKey: event.ctrlKey || event.metaKey,
             altKey: event.altKey,
             button: event.button,
+            cameraPosition: {
+                x: this.camera.position.x,
+                y: this.camera.position.y,
+                z: this.camera.position.z
+            },
+            canvasWidth: this.renderer.domElement.getBoundingClientRect().width,
+            canvasHeight: this.renderer.domElement.getBoundingClientRect().height,
+            clientX: event.clientX,
+            clientY: event.clientY,
             timestamp: Date.now()
         };
     }

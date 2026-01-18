@@ -389,7 +389,7 @@ else
 
 @code {
 
-
+    private readonly CoordinateSystemManager _coordinateSystemManager;
     private bool loadChild = false;
     
     private bool _isProcessing = false;
@@ -949,10 +949,9 @@ else
         ResetTableMessages();
         Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
         var item = args.Item1;
-        List<T> itemslist = args.Item2;
         List<T> origialItemslist = args.Item3;
         //
-        var itemsNOriginalItems = GetItemsNOriginalItems(item);
+        GetItemsNOriginalItems(item);
         SetItems(origialItemslist);
         tableSuccessMessage = "All changes discarded";
         tableActionMessage = tableSuccessMessage;
@@ -1072,13 +1071,13 @@ else
         
 
 
-        var dotNetObjRef = DotNetObjectReference.Create(new Draw(LayoutFunction, GlobalData));
+        //var dotNetObjRef = DotNetObjectReference.Create(new Draw(LayoutFunction, GlobalData, _coordinateSystemManager));
         var dotNetObjRefSLD = DotNetObjectReference.Create(this);
 
 
         await JsRuntime.InvokeVoidAsync("drawSLD", _divString,
             xgridSize, ygridSize, GlobalData.leftSpacing, GlobalData.topSpacig, GlobalData.xGridSpacing, GlobalData.yGridSpacing,
-            buses, switchboards, branches, loads, transformers, cableBranches, busDucts, xyString, sldComponents, dotNetObjRef, dotNetObjRefSLD);
+            buses, switchboards, branches, loads, transformers, cableBranches, busDucts, xyString, sldComponents, dotNetObjRefSLD, dotNetObjRefSLD);
         
         _timeTaken = DateTime.Now;
         });

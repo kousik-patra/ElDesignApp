@@ -80,8 +80,7 @@ function drawPlaneMesh(rendererWidth, rendererHeight, planeTag, planeTagDescript
             side: THREE.DoubleSide,
             flatShading: true,
             polygonOffset: true,
-            polygonOffsetFactor: -1,
-            polygonOffsetUnit: -1
+            polygonOffsetFactor: -1
         });
 
         // Update texture when image loads

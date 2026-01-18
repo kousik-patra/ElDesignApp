@@ -20,354 +20,447 @@ public class LayoutClass
 
 #region coordinate system
 
+/// <summary>
+/// Represents a coordinate system with its transformation parameters relative to the 3D scene
+/// </summary>
+public class CoordinateSystem
+{
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    
     /// <summary>
-    /// Represents a coordinate system with its transformation parameters relative to the 3D scene
+    /// Scene axis orientation:
+    /// true  = Scene X is East-West, Scene Y is North-South (default)
+    /// false = Scene X is North-South, Scene Y is East-West
     /// </summary>
-    public class CoordinateSystem
+    public bool XEW { get; set; } = true; // true: X-Axis along East-West, false: X-Axis along North-South
+    
+    public string Unit { get; set; } = "m";  // meters, feet, etc.
+
+    // Reference point in scene coordinates
+    public double ReferenceSceneX { get; set; }
+    public double ReferenceSceneY { get; set; }
+
+    // Reference point in this coordinate system (Easting/Northing)
+    public double ReferenceE { get; set; }  // Easting at reference point
+    public double ReferenceN { get; set; }  // Northing at reference point
+
+    // Transformation parameters
+    /// <summary>
+    /// Rotation in degrees. Clockwise positive from scene Y-axis to true North.
+    /// </summary>
+    public double RotationDegrees { get; set; }
+    
+    public double ScaleE { get; set; } = 1.0;  // Scale factor for Easting (+1 if increase in X or Y as per XEW will increase in E, else -1)
+    public double ScaleN { get; set; } = 1.0;  // Scale factor for Northing (+1 if increase in X or Y as per XEW will increase in N, else -1)
+
+    // Computed transformation matrix coefficients
+    private double _a, _b, _c, _d;
+    private double _aInv, _bInv, _cInv, _dInv;
+    private bool _isInitialized;
+
+    public void Initialize()
     {
-        public string Name { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public string Unit { get; set; } = "m";  // meters, feet, etc.
+        double thetaRad = RotationDegrees * Math.PI / 180.0;
+        double cosTheta = Math.Cos(thetaRad);
+        double sinTheta = Math.Sin(thetaRad);
 
-        // Reference point in scene coordinates
-        public double ReferenceSceneX { get; set; }
-        public double ReferenceSceneY { get; set; }
+        // Forward transformation matrix: Scene (after axis swap if needed) -> E/N
+        // [E]   [ScaleE*cos   ScaleE*sin ] [dx]   [RefE]
+        // [N] = [-ScaleN*sin  ScaleN*cos ] [dy] + [RefN]
+        _a = ScaleE * cosTheta;
+        _b = ScaleE * sinTheta;
+        _c = -ScaleN * sinTheta;
+        _d = ScaleN * cosTheta;
 
-        // Reference point in this coordinate system
-        public double ReferenceX { get; set; }  // Easting or X in this system
-        public double ReferenceY { get; set; }  // Northing or Y in this system
+        // Inverse transformation matrix
+        double det = _a * _d - _b * _c;
+        if (Math.Abs(det) < 1e-10)
+            throw new InvalidOperationException($"Coordinate system '{Name}' has degenerate transformation (det={det})");
 
-        // Transformation parameters
-        public double RotationDegrees { get; set; }  // Clockwise +ve from scene Y to system North/Y
-        public double ScaleX { get; set; } = 1.0;
-        public double ScaleY { get; set; } = 1.0;
+        _aInv = _d / det;
+        _bInv = -_b / det;
+        _cInv = -_c / det;
+        _dInv = _a / det;
 
-        // Computed transformation matrix coefficients
-        private double _a, _b, _c, _d;
-        private double _aInv, _bInv, _cInv, _dInv;
-        private bool _isInitialized;
+        _isInitialized = true;
+    }
 
-        public void Initialize()
+    private void EnsureInitialized()
+    {
+        if (!_isInitialized)
+            Initialize();
+    }
+
+    /// <summary>
+    /// Convert scene coordinates to Easting/Northing in this coordinate system
+    /// </summary>
+    /// <param name="sceneX">Scene X coordinate (WorldX)</param>
+    /// <param name="sceneY">Scene Y coordinate (WorldY)</param>
+    /// <returns>Tuple of (Easting, Northing)</returns>
+    public (double E, double N) FromScene(double sceneX, double sceneY)
+    {
+        EnsureInitialized();
+
+        // Calculate displacement from reference point in scene coordinates
+        double dx = sceneX - ReferenceSceneX;
+        double dy = sceneY - ReferenceSceneY;
+
+        // Handle axis orientation:
+        // If XEW=true:  dx is in E direction, dy is in N direction
+        // If XEW=false: dx is in N direction, dy is in E direction (swap needed)
+        double dE_scene, dN_scene;
+        if (XEW)
         {
-            double thetaRad = RotationDegrees * Math.PI / 180.0;
-            double cosTheta = Math.Cos(thetaRad);
-            double sinTheta = Math.Sin(thetaRad);
-
-            // Forward: Scene -> This coordinate system
-            _a = ScaleX * cosTheta;
-            _b = ScaleY * sinTheta;
-            _c = -ScaleX * sinTheta;
-            _d = ScaleY * cosTheta;
-
-            // Inverse: This coordinate system -> Scene
-            double det = _a * _d - _b * _c;
-            if (Math.Abs(det) < 1e-10)
-                throw new InvalidOperationException($"Coordinate system '{Name}' has degenerate transformation");
-
-            _aInv = _d / det;
-            _bInv = -_b / det;
-            _cInv = -_c / det;
-            _dInv = _a / det;
-
-            _isInitialized = true;
+            dE_scene = dx;  // Scene X contributes to Easting
+            dN_scene = dy;  // Scene Y contributes to Northing
+        }
+        else
+        {
+            dE_scene = dy;  // Scene Y contributes to Easting
+            dN_scene = dx;  // Scene X contributes to Northing
         }
 
-        private void EnsureInitialized()
+        // Apply rotation and scaling transformation
+        double e = ReferenceE + _a * dE_scene + _b * dN_scene;
+        double n = ReferenceN + _c * dE_scene + _d * dN_scene;
+
+        return (e, n);
+    }
+
+    /// <summary>
+    /// Convert Easting/Northing to scene coordinates
+    /// </summary>
+    /// <param name="e">Easting</param>
+    /// <param name="n">Northing</param>
+    /// <returns>Tuple of (SceneX, SceneY)</returns>
+    public (double SceneX, double SceneY) ToScene(double e, double n)
+    {
+        EnsureInitialized();
+
+        // Calculate displacement from reference in E/N
+        double de = e - ReferenceE;
+        double dn = n - ReferenceN;
+
+        // Apply inverse rotation and scaling
+        double dE_scene = _aInv * de + _bInv * dn;
+        double dN_scene = _cInv * de + _dInv * dn;
+
+        // Handle axis orientation (reverse of FromScene)
+        double dx, dy;
+        if (XEW)
         {
-            if (!_isInitialized)
-                Initialize();
+            dx = dE_scene;  // Easting component → Scene X
+            dy = dN_scene;  // Northing component → Scene Y
+        }
+        else
+        {
+            dx = dN_scene;  // Northing component → Scene X
+            dy = dE_scene;  // Easting component → Scene Y
         }
 
-        /// <summary>
-        /// Convert scene coordinates to this coordinate system
-        /// </summary>
-        public (double X, double Y) FromScene(double sceneX, double sceneY)
+        double sceneX = ReferenceSceneX + dx;
+        double sceneY = ReferenceSceneY + dy;
+
+        return (sceneX, sceneY);
+    }
+
+    /// <summary>
+    /// Get formatted coordinate string
+    /// </summary>
+    public string FormatCoordinates(double e, double n, int decimals = 3)
+    {
+        return $"E: {e.ToString($"F{decimals}")} {Unit}, N: {n.ToString($"F{decimals}")} {Unit}";
+    }
+
+    /// <summary>
+    /// Create a deep copy of this coordinate system
+    /// </summary>
+    public CoordinateSystem Clone()
+    {
+        var clone = new CoordinateSystem
         {
-            EnsureInitialized();
+            Name = Name,
+            Description = Description,
+            XEW = XEW,
+            Unit = Unit,
+            ReferenceSceneX = ReferenceSceneX,
+            ReferenceSceneY = ReferenceSceneY,
+            ReferenceE = ReferenceE,
+            ReferenceN = ReferenceN,
+            RotationDegrees = RotationDegrees,
+            ScaleE = ScaleE,
+            ScaleN = ScaleN
+        };
+        clone.Initialize();
+        return clone;
+    }
 
-            double dx = sceneX - ReferenceSceneX;
-            double dy = sceneY - ReferenceSceneY;
+    public override string ToString() => $"{Name} ({Description}) [XEW={XEW}]";
+}
 
-            double x = ReferenceX + _a * dx + _b * dy;
-            double y = ReferenceY + _c * dx + _d * dy;
+/// <summary>
+/// Manages multiple coordinate systems and provides transformation services
+/// </summary>
+public class CoordinateSystemManager
+{
+    private readonly Dictionary<string, CoordinateSystem> _systems = new(StringComparer.OrdinalIgnoreCase);
 
-            return (x, y);
+    public IReadOnlyDictionary<string, CoordinateSystem> Systems => _systems;
+
+    public string DefaultSystemName { get; set; } = string.Empty;
+
+    public event EventHandler<CoordinateSystemEventArgs>? SystemAdded;
+    public event EventHandler<CoordinateSystemEventArgs>? SystemRemoved;
+    public event EventHandler<CoordinateSystemEventArgs>? SystemUpdated;
+
+    /// <summary>
+    /// Add or update a coordinate system
+    /// </summary>
+    public void AddOrUpdate(CoordinateSystem system)
+    {
+        if (string.IsNullOrWhiteSpace(system.Name))
+            throw new ArgumentException("Coordinate system must have a name");
+
+        system.Initialize();
+
+        bool isUpdate = _systems.ContainsKey(system.Name);
+        _systems[system.Name] = system;
+
+        if (isUpdate)
+            SystemUpdated?.Invoke(this, new CoordinateSystemEventArgs(system));
+        else
+            SystemAdded?.Invoke(this, new CoordinateSystemEventArgs(system));
+
+        // Set as default if it's the first one
+        if (_systems.Count == 1)
+            DefaultSystemName = system.Name;
+    }
+
+    /// <summary>
+    /// Remove a coordinate system
+    /// </summary>
+    public bool Remove(string name)
+    {
+        if (_systems.TryGetValue(name, out var system))
+        {
+            _systems.Remove(name);
+            SystemRemoved?.Invoke(this, new CoordinateSystemEventArgs(system));
+
+            if (DefaultSystemName == name)
+                DefaultSystemName = _systems.Keys.FirstOrDefault() ?? string.Empty;
+
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Get a coordinate system by name
+    /// </summary>
+    public CoordinateSystem? Get(string name)
+    {
+        return _systems.TryGetValue(name, out var system) ? system : null;
+    }
+
+    /// <summary>
+    /// Get the default coordinate system
+    /// </summary>
+    public CoordinateSystem? GetDefault()
+    {
+        return string.IsNullOrEmpty(DefaultSystemName) ? null : Get(DefaultSystemName);
+    }
+
+    /// <summary>
+    /// Transform scene coordinates to E/N in a named coordinate system
+    /// </summary>
+    public (double E, double N) SceneToSystem(double sceneX, double sceneY, string systemName)
+    {
+        var system = Get(systemName)
+            ?? throw new ArgumentException($"Coordinate system '{systemName}' not found");
+
+        return system.FromScene(sceneX, sceneY);
+    }
+
+    /// <summary>
+    /// Transform E/N from a named coordinate system to scene coordinates
+    /// </summary>
+    public (double SceneX, double SceneY) SystemToScene(double e, double n, string systemName)
+    {
+        var system = Get(systemName)
+            ?? throw new ArgumentException($"Coordinate system '{systemName}' not found");
+
+        return system.ToScene(e, n);
+    }
+
+    /// <summary>
+    /// Transform coordinates between two coordinate systems
+    /// </summary>
+    public (double E, double N) Transform(
+        double e, double n,
+        string fromSystemName,
+        string toSystemName)
+    {
+        if (string.Equals(fromSystemName, toSystemName, StringComparison.OrdinalIgnoreCase))
+            return (e, n);
+
+        // Go through scene coordinates as intermediate
+        var (sceneX, sceneY) = SystemToScene(e, n, fromSystemName);
+        return SceneToSystem(sceneX, sceneY, toSystemName);
+    }
+
+    /// <summary>
+    /// Transform a list of points between coordinate systems
+    /// </summary>
+    public List<(double E, double N)> TransformMany(
+        IEnumerable<(double E, double N)> points,
+        string fromSystemName,
+        string toSystemName)
+    {
+        var fromSystem = Get(fromSystemName)
+            ?? throw new ArgumentException($"Coordinate system '{fromSystemName}' not found");
+        var toSystem = Get(toSystemName)
+            ?? throw new ArgumentException($"Coordinate system '{toSystemName}' not found");
+
+        var result = new List<(double E, double N)>();
+
+        foreach (var (e, n) in points)
+        {
+            var (sceneX, sceneY) = fromSystem.ToScene(e, n);
+            result.Add(toSystem.FromScene(sceneX, sceneY));
         }
 
-        /// <summary>
-        /// Convert this coordinate system to scene coordinates
-        /// </summary>
-        public (double SceneX, double SceneY) ToScene(double x, double y)
+        return result;
+    }
+
+    /// <summary>
+    /// Get E/N coordinates for a scene point in all registered systems
+    /// </summary>
+    public Dictionary<string, (double E, double N)> GetAllCoordinates(double sceneX, double sceneY)
+    {
+        var result = new Dictionary<string, (double E, double N)>();
+
+        foreach (var (name, system) in _systems)
         {
-            EnsureInitialized();
-
-            double dx = x - ReferenceX;
-            double dy = y - ReferenceY;
-
-            double sceneX = ReferenceSceneX + _aInv * dx + _bInv * dy;
-            double sceneY = ReferenceSceneY + _cInv * dx + _dInv * dy;
-
-            return (sceneX, sceneY);
+            result[name] = system.FromScene(sceneX, sceneY);
         }
 
-        /// <summary>
-        /// Create a deep copy of this coordinate system
-        /// </summary>
-        public CoordinateSystem Clone()
+        return result;
+    }
+    
+    /// <summary>
+    /// Get coordinates as SystemCoordinate list for UI binding
+    /// </summary>
+    public List<SystemCoordinate> GetAllSystemCoordinates(double sceneX, double sceneY)
+    {
+        var result = new List<SystemCoordinate>();
+
+        foreach (var (name, system) in _systems)
         {
-            var clone = new CoordinateSystem
+            var (e, n) = system.FromScene(sceneX, sceneY);
+            result.Add(new SystemCoordinate
             {
-                Name = Name,
-                Description = Description,
-                Unit = Unit,
-                ReferenceSceneX = ReferenceSceneX,
-                ReferenceSceneY = ReferenceSceneY,
-                ReferenceX = ReferenceX,
-                ReferenceY = ReferenceY,
-                RotationDegrees = RotationDegrees,
-                ScaleX = ScaleX,
-                ScaleY = ScaleY
+                SystemName = name,
+                E = e,
+                N = n,
+                Unit = system.Unit,
+                XEW = system.XEW
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Serialize all coordinate systems to JSON-compatible format
+    /// </summary>
+    public List<CoordinateSystemDto> ExportAll()
+    {
+        return _systems.Values.Select(s => new CoordinateSystemDto
+        {
+            Name = s.Name,
+            Description = s.Description,
+            XEW = s.XEW,
+            Unit = s.Unit,
+            ReferenceSceneX = s.ReferenceSceneX,
+            ReferenceSceneY = s.ReferenceSceneY,
+            ReferenceE = s.ReferenceE,
+            ReferenceN = s.ReferenceN,
+            RotationDegrees = s.RotationDegrees,
+            ScaleE = s.ScaleE,
+            ScaleN = s.ScaleN
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Import coordinate systems from serialized format
+    /// </summary>
+    public void ImportAll(IEnumerable<CoordinateSystemDto> dtos)
+    {
+        foreach (var dto in dtos)
+        {
+            var system = new CoordinateSystem
+            {
+                Name = dto.Name,
+                Description = dto.Description,
+                XEW = dto.XEW,
+                Unit = dto.Unit,
+                ReferenceSceneX = dto.ReferenceSceneX,
+                ReferenceSceneY = dto.ReferenceSceneY,
+                ReferenceE = dto.ReferenceE,
+                ReferenceN = dto.ReferenceN,
+                RotationDegrees = dto.RotationDegrees,
+                ScaleE = dto.ScaleE,
+                ScaleN = dto.ScaleN
             };
-            clone.Initialize();
-            return clone;
-        }
-
-        public override string ToString() => $"{Name} ({Description})";
-    }
-
-    /// <summary>
-    /// Manages multiple coordinate systems and provides transformation services
-    /// </summary>
-    public class CoordinateSystemManager
-    {
-        private readonly Dictionary<string, CoordinateSystem> _systems = new(StringComparer.OrdinalIgnoreCase);
-
-        public IReadOnlyDictionary<string, CoordinateSystem> Systems => _systems;
-
-        public string DefaultSystemName { get; set; } = string.Empty;
-
-        public event EventHandler<CoordinateSystemEventArgs>? SystemAdded;
-        public event EventHandler<CoordinateSystemEventArgs>? SystemRemoved;
-        public event EventHandler<CoordinateSystemEventArgs>? SystemUpdated;
-
-        /// <summary>
-        /// Add or update a coordinate system
-        /// </summary>
-        public void AddOrUpdate(CoordinateSystem system)
-        {
-            if (string.IsNullOrWhiteSpace(system.Name))
-                throw new ArgumentException("Coordinate system must have a name");
-
-            system.Initialize();
-
-            bool isUpdate = _systems.ContainsKey(system.Name);
-            _systems[system.Name] = system;
-
-            if (isUpdate)
-                SystemUpdated?.Invoke(this, new CoordinateSystemEventArgs(system));
-            else
-                SystemAdded?.Invoke(this, new CoordinateSystemEventArgs(system));
-
-            // Set as default if it's the first one
-            if (_systems.Count == 1)
-                DefaultSystemName = system.Name;
-        }
-
-        /// <summary>
-        /// Remove a coordinate system
-        /// </summary>
-        public bool Remove(string name)
-        {
-            if (_systems.TryGetValue(name, out var system))
-            {
-                _systems.Remove(name);
-                SystemRemoved?.Invoke(this, new CoordinateSystemEventArgs(system));
-
-                if (DefaultSystemName == name)
-                    DefaultSystemName = _systems.Keys.FirstOrDefault() ?? string.Empty;
-
-                return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Get a coordinate system by name
-        /// </summary>
-        public CoordinateSystem? Get(string name)
-        {
-            return _systems.TryGetValue(name, out var system) ? system : null;
-        }
-
-        /// <summary>
-        /// Get the default coordinate system
-        /// </summary>
-        public CoordinateSystem? GetDefault()
-        {
-            return string.IsNullOrEmpty(DefaultSystemName) ? null : Get(DefaultSystemName);
-        }
-
-        /// <summary>
-        /// Transform scene coordinates to a named coordinate system
-        /// </summary>
-        public (double X, double Y) SceneToSystem(double sceneX, double sceneY, string systemName)
-        {
-            var system = Get(systemName)
-                ?? throw new ArgumentException($"Coordinate system '{systemName}' not found");
-
-            return system.FromScene(sceneX, sceneY);
-        }
-
-        /// <summary>
-        /// Transform from a named coordinate system to scene coordinates
-        /// </summary>
-        public (double SceneX, double SceneY) SystemToScene(double x, double y, string systemName)
-        {
-            var system = Get(systemName)
-                ?? throw new ArgumentException($"Coordinate system '{systemName}' not found");
-
-            return system.ToScene(x, y);
-        }
-
-        /// <summary>
-        /// Transform coordinates between two coordinate systems
-        /// </summary>
-        public (double X, double Y) Transform(
-            double x, double y,
-            string fromSystemName,
-            string toSystemName)
-        {
-            if (string.Equals(fromSystemName, toSystemName, StringComparison.OrdinalIgnoreCase))
-                return (x, y);
-
-            // Go through scene coordinates as intermediate
-            var (sceneX, sceneY) = SystemToScene(x, y, fromSystemName);
-            return SceneToSystem(sceneX, sceneY, toSystemName);
-        }
-
-        /// <summary>
-        /// Transform a list of points between coordinate systems
-        /// </summary>
-        public List<(double X, double Y)> TransformMany(
-            IEnumerable<(double X, double Y)> points,
-            string fromSystemName,
-            string toSystemName)
-        {
-            var fromSystem = Get(fromSystemName)
-                ?? throw new ArgumentException($"Coordinate system '{fromSystemName}' not found");
-            var toSystem = Get(toSystemName)
-                ?? throw new ArgumentException($"Coordinate system '{toSystemName}' not found");
-
-            var result = new List<(double X, double Y)>();
-
-            foreach (var (x, y) in points)
-            {
-                var (sceneX, sceneY) = fromSystem.ToScene(x, y);
-                result.Add(toSystem.FromScene(sceneX, sceneY));
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// Get all coordinates for a scene point in all registered systems
-        /// </summary>
-        public Dictionary<string, (double X, double Y)> GetAllCoordinates(double sceneX, double sceneY)
-        {
-            var result = new Dictionary<string, (double X, double Y)>();
-
-            foreach (var (name, system) in _systems)
-            {
-                result[name] = system.FromScene(sceneX, sceneY);
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// Serialize all coordinate systems to JSON-compatible format
-        /// </summary>
-        public List<CoordinateSystemDto> ExportAll()
-        {
-            return _systems.Values.Select(s => new CoordinateSystemDto
-            {
-                Name = s.Name,
-                Description = s.Description,
-                Unit = s.Unit,
-                ReferenceSceneX = s.ReferenceSceneX,
-                ReferenceSceneY = s.ReferenceSceneY,
-                ReferenceX = s.ReferenceX,
-                ReferenceY = s.ReferenceY,
-                RotationDegrees = s.RotationDegrees,
-                ScaleX = s.ScaleX,
-                ScaleY = s.ScaleY
-            }).ToList();
-        }
-
-        /// <summary>
-        /// Import coordinate systems from serialized format
-        /// </summary>
-        public void ImportAll(IEnumerable<CoordinateSystemDto> dtos)
-        {
-            foreach (var dto in dtos)
-            {
-                var system = new CoordinateSystem
-                {
-                    Name = dto.Name,
-                    Description = dto.Description,
-                    Unit = dto.Unit,
-                    ReferenceSceneX = dto.ReferenceSceneX,
-                    ReferenceSceneY = dto.ReferenceSceneY,
-                    ReferenceX = dto.ReferenceX,
-                    ReferenceY = dto.ReferenceY,
-                    RotationDegrees = dto.RotationDegrees,
-                    ScaleX = dto.ScaleX,
-                    ScaleY = dto.ScaleY
-                };
-                AddOrUpdate(system);
-            }
+            AddOrUpdate(system);
         }
     }
+}
 
-    public class CoordinateSystemEventArgs : EventArgs
-    {
-        public CoordinateSystem System { get; }
-        public CoordinateSystemEventArgs(CoordinateSystem system) => System = system;
-    }
+public class CoordinateSystemEventArgs : EventArgs
+{
+    public CoordinateSystem System { get; }
+    public CoordinateSystemEventArgs(CoordinateSystem system) => System = system;
+}
 
-    /// <summary>
-    /// DTO for serialization
-    /// </summary>
-    public class CoordinateSystemDto
-    {
-        public string Name { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public string Unit { get; set; } = "m";
-        public double ReferenceSceneX { get; set; }
-        public double ReferenceSceneY { get; set; }
-        public double ReferenceX { get; set; }
-        public double ReferenceY { get; set; }
-        public double RotationDegrees { get; set; }
-        public double ScaleX { get; set; } = 1.0;
-        public double ScaleY { get; set; } = 1.0;
-    }
+/// <summary>
+/// DTO for serialization
+/// </summary>
+public class CoordinateSystemDto
+{
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public bool XEW { get; set; } = true;  // Default: X-axis is East-West
+    public string Unit { get; set; } = "m";
+    public double ReferenceSceneX { get; set; }
+    public double ReferenceSceneY { get; set; }
+    public double ReferenceE { get; set; }
+    public double ReferenceN { get; set; }
+    public double RotationDegrees { get; set; }
+    public double ScaleE { get; set; } = 1.0; // Default: +X increases Easting
+    public double ScaleN { get; set; } = 1.0; // Default: +Y increases Northing
+}
 
-    public class CoordinateDisplayModel
-    {
-        public double SceneX { get; set; }
-        public double SceneY { get; set; }
-        public List<SystemCoordinate> SystemCoordinates { get; set; } = new();
-    }
+public class CoordinateDisplayModel
+{
+    public double SceneX { get; set; }
+    public double SceneY { get; set; }
+    public List<SystemCoordinate> SystemCoordinates { get; set; } = new();
+}
 
-    public class SystemCoordinate
-    {
-        public string SystemName { get; set; } = string.Empty;
-        public double X { get; set; }
-        public double Y { get; set; }
-        public string Unit { get; set; } = "m";
-    }
+public class SystemCoordinate
+{
+    public string SystemName { get; set; } = string.Empty;
+    public double E { get; set; }
+    public double N { get; set; }
+    public string Unit { get; set; } = "m";
+    public bool XEW { get; set; } = true;
+    
+    public override string ToString() => $"E:{E:F3}, N:{N:F3} {Unit}";
+}
 
-    #endregion
+#endregion
 
 
 
@@ -772,7 +865,7 @@ public class Segment : BaseInfo, IBaseMethod
 
     public void Update()
     {
-        throw new NotImplementedException();
+        //throw new NotImplementedException();
     }
 
     public void FaceUpdate()

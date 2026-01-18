@@ -16,7 +16,7 @@ import {drawEquipmentMesh} from '../src/threejs/objects/equipment'
 import {drawSleepMesh} from '../src/threejs/objects/sleeve'
 import {drawRefPointMesh} from '../src/threejs/objects/refPoint'
 
-import * as PLANE from './threejs/functions/xxplaneFunctions'
+import * as PLANE from './threejs/functions/not used-planeFunctions'
 
 
 var dotNetObj;
@@ -263,16 +263,16 @@ function drawScene3Js(divId, sceneInfoJson = "", dotNetObjRef, retryCount = 0) {
 
 // onWindowResize (unchanged)
     function onWindowResize() {
-        console.log('Window resize event triggered');
-        rendererWidth = window.innerWidth;
-        rendererHeight = window.innerHeight;
-        camera.aspect = rendererWidth / rendererHeight;
-        const sceneInfo = JSON.stringify([rendererWidth, rendererHeight, camera.position.x, camera.position.y, camera.position.z, camera.rotation.x, camera.rotation.y, camera.rotation.z]);
-        //dotNetObj.invokeMethodAsync("SaveSceneInfo", sceneInfo);
-        camera.updateProjectionMatrix();
-        scene.updateMatrixWorld(true);
-        renderer.setSize(rendererWidth, rendererHeight);
-        render();
+        // console.log('Window resize event triggered');
+        // rendererWidth = window.innerWidth;
+        // rendererHeight = window.innerHeight;
+        // camera.aspect = rendererWidth / rendererHeight;
+        // const sceneInfo = JSON.stringify([rendererWidth, rendererHeight, camera.position.x, camera.position.y, camera.position.z, camera.rotation.x, camera.rotation.y, camera.rotation.z]);
+        // //dotNetObj.invokeMethodAsync("SaveSceneInfo", sceneInfo);
+        // camera.updateProjectionMatrix();
+        // scene.updateMatrixWorld(true);
+        // renderer.setSize(rendererWidth, rendererHeight);
+        // render();
     }
 
 // onKeyDown (unchanged, as it works correctly)
@@ -986,9 +986,9 @@ function render() {
     //fitCameraToObject(camera, planeMesh, 50);
 
     if (resizeRendererToDisplaySize(renderer)) {
-        const canvas = renderer.domElement;
-        camera.aspect = canvas.clientWidth / canvas.clientHeight;
-        camera.updateProjectionMatrix();
+        // const canvas = renderer.domElement;
+        // camera.aspect = canvas.clientWidth / canvas.clientHeight;
+        // camera.updateProjectionMatrix();
     }
     //console.log('Render:', renderer.info.render.calls);
     renderer.render(scene, camera);

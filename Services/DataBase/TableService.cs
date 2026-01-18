@@ -770,7 +770,7 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
                             parameters.Add($"@{prop.Name}", prop.GetValue(item));
                         }
 
-                        await connection.ExecuteAsync(sql, parameters, transaction);
+                        var insertResult = await connection.ExecuteAsync(sql, parameters, transaction);
                         added++;
                     }
                 }
@@ -1000,9 +1000,13 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         using var package = new ExcelPackage();
         var ws = package.Workbook.Worksheets.Add(typeof(T).Name);
+        
+        // Define the exclusion list
+        var excludeList = new[] { "UID", "ProjectId", "UpdatedBy", "UpdatedOn"};
 
         var properties = typeof(T).GetProperties()
-            .Where(p => sqlColumns.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
+            .Where(p => sqlColumns.Contains(p.Name, StringComparer.OrdinalIgnoreCase)
+                         && !excludeList.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
             .OrderBy(p => p.GetCustomAttribute<DisplayAttribute>()?.Order ?? int.MaxValue)
             .ToList();
 
@@ -1011,26 +1015,50 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
             throw new InvalidOperationException($"No matching columns found between class '{typeof(T).Name}' and SQL table.");
         }
 
+        var dataRowRange = 99999;
         // Headers - Row 1: Property names
         for (int col = 0; col < properties.Count; col++)
         {
+            var prop = properties[col];
+            var colIndex = col + 1;
+            
+            // Set Row 1 (Property Name)
             ws.Cells[1, col + 1].Value = properties[col].Name;
+            
+            // Set Row 2 (Display Name)
+            var displayName = prop.GetCustomAttribute<DisplayAttribute>()?.Name ?? prop.Name;
+            ws.Cells[2, colIndex].Value = displayName;
+            
+            // 2. Highlight "Tag" field
+            if (prop.Name.Equals("Tag", StringComparison.OrdinalIgnoreCase))
+            {
+                // 1. Highlight Header (Existing logic)
+                var headerCells = ws.Cells[1, colIndex, 2, colIndex];
+                headerCells.Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+                headerCells.Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.Yellow);
+
+                // 2. Add Tooltip (Comment) to the Display Name header (Row 2)
+                var comment = ws.Cells[2, colIndex].AddComment("All tags shall be unique.", "System");
+                comment.AutoFit = true;
+
+                // 3. Add Conditional Formatting for Duplicates
+                // We apply this to the data range below the headers (Row 3 down to dataRowRange)
+                var dataRange = ws.Cells[3, colIndex, dataRowRange, colIndex];
+                var duplicateFormatting = ws.ConditionalFormatting.AddDuplicateValues(dataRange);
+    
+                // Set the style for when a duplicate is found (e.g., light red fill with dark red text)
+                duplicateFormatting.Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+                duplicateFormatting.Style.Fill.BackgroundColor.Color = System.Drawing.Color.FromArgb(255, 199, 206);
+                duplicateFormatting.Style.Font.Color.Color = System.Drawing.Color.FromArgb(156, 0, 6);
+            }
         }
 
-        // Headers - Row 2: Display names
-        for (int col = 0; col < properties.Count; col++)
-        {
-            var displayName = properties[col].GetCustomAttribute<DisplayAttribute>()?.Name 
-                              ?? properties[col].Name;
-            ws.Cells[2, col + 1].Value = displayName;
-        }
 
-        // Data shall be empty as its a template for data input
+        // Data shall be empty as it's a template for data input
 
         // Formatting
-        var range = ws.Cells[1, 1, 9999, properties.Count];
-        range.AutoFilter = true;
-        range.AutoFitColumns();
+        var range = ws.Cells[1, 1, 2, properties.Count]; // Apply filter only to header rows for a template
+        ws.Cells[1, 1, dataRowRange, properties.Count].AutoFitColumns();
 
         for (int col = 1; col <= properties.Count; col++)
         {
@@ -1433,12 +1461,12 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
     }
 
     // Get current user context
-    string currentUser = "Import";
+    string currentUser = "system";
     string? currentProjectId = null;
     try
     {
-        var (projectId, userName) = await _userContext.GetContextAsync();
-        currentUser = userName ?? "Import";
+        var (userName, projectId) = await _userContext.GetContextAsync();
+        currentUser = userName ?? "system";
         currentProjectId = projectId;
     }
     catch (Exception ex)

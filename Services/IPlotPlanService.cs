@@ -468,8 +468,8 @@ public class PlotPlanService : IPlotPlanService
             SystemCoordinates = allCoords.Select(kv => new SystemCoordinate
             {
                 SystemName = kv.Key,
-                X = kv.Value.X,
-                Y = kv.Value.Y,
+                E = kv.Value.E,
+                N = kv.Value.N,
                 Unit = CoordinateManager.Get(kv.Key)?.Unit ?? "m"
             }).ToList()
         };

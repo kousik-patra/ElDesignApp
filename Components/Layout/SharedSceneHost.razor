@@ -3,11 +3,13 @@
 @using ElDesignApp.Models
 @using ElDesignApp.Services
 @using ElDesignApp.Services.Global
+@using ElDesignApp.Services.Rendering
 @inject IJSRuntime JSRuntime
 @inject IGlobalDataService GlobalData
 @inject ILayoutFunctionService LayoutFunction
 @inject IPlotPlanService PlotPlanService
 @inject PinPlacementService PinService
+@inject ISegmentRenderService SegmentRender
 
 @* ===== Message Bar ===== *@
 <div id="shared-scene-container-message-line"
@@ -69,7 +71,7 @@
     </div>
 </div>
 
-<div id="shared-scene-container" 
+<div id="shared-scene-container"
      class="@(PinService.ShowPinCursor ? "pin-mode" : "")"
      style="width: 100%; 
             min-width: 800px;
@@ -79,6 +81,7 @@
             overflow: hidden;
             position: relative;">
 </div>
+
 @* ===== Pin Mode Indicator ===== *@
 @if (PinService.IsActive)
 {
@@ -126,12 +129,12 @@
     private bool _isVisible = true;
     private string? _previousProjectId;
     private SceneMessage? _currentMessage;
-    private List<PinMarker> _placedPins = new();
+    private List<PinMarker> _placedPins = [];
+    
     // ==== Screen Info ====
     private float _rendererWidth = 0f;
     private float _rendererHeight = 0f;
     
-
     // ===== Parameters =====
     [Parameter] public string CurrentPage { get; set; } = "";
     [Parameter] public string? ProjectId { get; set; }
@@ -142,21 +145,25 @@
     protected override void OnInitialized()
     {
         Console.WriteLine("SharedSceneHost.OnInitialized: Creating Draw instance...");
-        // Create the Draw instance
+
         _draw = new Draw(LayoutFunction, GlobalData);
-        
-        // Subscribe to messages from Draw - THIS IS THE KEY!
         _draw.OnSceneMessage += HandleSceneMessage;
-        Console.WriteLine("SharedSceneHost.OnInitialized: Subscribed to OnSceneMessage");
-        // Subscribe to project changes
+        
+        // Subscribe to global events
         GlobalData.OnProjectChanged += OnProjectChanged;
         PinService.OnStateChanged += OnPinServiceStateChanged;
+        GlobalData.OnSegmentTabChanged += OnSegmentTabChanged;
+        
+        // Subscribe to segment render service events
+        SegmentRender.OnSegmentsRendered += OnSegmentsRendered;
+        SegmentRender.OnSelectionChanged += OnSegmentSelectionChanged;
+        
+        Console.WriteLine("SharedSceneHost.OnInitialized: Event subscriptions complete");
     }
 
     protected override void OnParametersSet()
     {
-        Console.WriteLine($"SharedSceneHost.OnParametersSet - ProjectId: {ProjectId}, Previous: {_previousProjectId}");
-        _isVisible = Visible;
+         _isVisible = Visible;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -165,10 +172,8 @@
         {
             Console.WriteLine("SharedSceneHost: Initializing scene...");
             
-            // Create DotNetObjectReference from the SAME Draw instance
             _drawRef = DotNetObjectReference.Create(_draw!);
             _thisRef = DotNetObjectReference.Create(this);
-            Console.WriteLine("SharedSceneHost.OnAfterRenderAsync: Created DotNetObjectReference");
             
             var savedState = GlobalData.sceneDataCurrent?.SceneJSON ?? "";
             
@@ -180,14 +185,20 @@
                     savedState, 
                     _drawRef);
                 
-                // Initialize pin cursor handling
                 await JSRuntime.InvokeVoidAsync("initPinPlacementMode", _thisRef);
                 
                 _isInitialized = true;
                 _previousProjectId = ProjectId;
                 Console.WriteLine($"SharedSceneHost ({ProjectId}): Scene initialized!");
                 
+                // draw plane(s)
                 await DrawPlotPlansAsync();
+                
+                // Draw segments if already on segment tab
+                if (GlobalData.SegmentPageTab == 1)
+                {
+                    await HandleSegmentTabActivatedAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -219,21 +230,13 @@
 
     // ===== Event Handlers =====
     
-    /// <summary>
-    /// This method is called when Draw.SendMessage() is invoked (from JS click handlers)
-    /// </summary>
     private void HandleSceneMessage(SceneMessage message)
     {
-        
-        Console.WriteLine($"SharedSceneHost.HandleSceneMessage: RECEIVED - {message.Text}");
-        
         _currentMessage = message;
         
-        // Handle resize messages
         if (message.RenderWidth.HasValue && message.RenderHeight.HasValue)
         {
-            Console.WriteLine($"SharedSceneHost: Canvas size = {message.RenderWidth} x {message.RenderHeight}");
-            _rendererHeight = (float)message.RenderHeight;
+             _rendererHeight = (float)message.RenderHeight;
             _rendererWidth = (float)message.RenderWidth;
         }
         
@@ -243,30 +246,18 @@
             message.WorldX.HasValue && 
             message.WorldY.HasValue)
         {
-            // Get next tag from service
             var tag = PinService.CurrentTag;
-            
             if (!string.IsNullOrEmpty(tag))
             {
-                // Place the pin with the tag
                 _ = PlacePinAsync(tag, message.WorldX.Value, message.WorldY.Value, message.WorldZ ?? 0);
             }
         }
-        
                
-        Console.WriteLine($"SharedSceneHost.HandleSceneMessage: Calling InvokeAsync(StateHasChanged)...");
-        // Must use InvokeAsync because this event comes from a JS callback thread
-        InvokeAsync(() =>
-        {
-            Console.WriteLine($"SharedSceneHost.HandleSceneMessage: Inside InvokeAsync, calling StateHasChanged");
-            StateHasChanged();
-            Console.WriteLine($"SharedSceneHost.HandleSceneMessage: StateHasChanged completed");
-        });
+        InvokeAsync(StateHasChanged);
     }
 
     private void OnProjectChanged()
     {
-        Console.WriteLine($"SharedSceneHost: OnProjectChanged event received");
         InvokeAsync(async () =>
         {
             if (!_isInitialized) return;
@@ -283,6 +274,24 @@
         });
     }
     
+    private void OnSegmentTabChanged(int tabIndex)
+    {
+        InvokeAsync(async () =>
+        {
+            Console.WriteLine($"SharedSceneHost: Segment tab changed to {tabIndex}");
+            
+            if (tabIndex == 1) // Raw Segments tab
+            {
+                await HandleSegmentTabActivatedAsync();
+            }
+            else
+            {
+                await HandleSegmentTabDeactivatedAsync();
+            }
+            
+            StateHasChanged();
+        });
+    }
     private void OnPinServiceStateChanged()
     {
         InvokeAsync(async () =>
@@ -298,6 +307,52 @@
         });
     }
     
+    private void OnSegmentsRendered(int count)
+    {
+        _currentMessage = SceneMessage.Info($"✓ {count} segments rendered");
+        InvokeAsync(StateHasChanged);
+    }
+    
+    private void OnSegmentSelectionChanged(List<string> selectedTags)
+    {
+        var count = selectedTags.Count;
+        if (count > 0)
+        {
+            _currentMessage = SceneMessage.ObjectSelected(
+                count == 1 ? selectedTags[0] : $"{count} segments",
+                $"Selected: {string.Join(", ", selectedTags.Take(3))}{(count > 3 ? "..." : "")}");
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    // ===== Segment Tab Handling =====
+    
+    private async Task HandleSegmentTabActivatedAsync()
+    {
+        if (!_isInitialized) return;
+        
+        if (!SegmentRender.IsRendered)
+        {
+            _currentMessage = SceneMessage.Info($"Drawing {GlobalData.Segments?.Count ?? 0} segments...");
+            StateHasChanged();
+            
+            await SegmentRender.DrawSegmentsAsync();
+        }
+        else if (!SegmentRender.IsVisible)
+        {
+            await SegmentRender.SetVisibilityAsync(true);
+        }
+    }
+    
+    private async Task HandleSegmentTabDeactivatedAsync()
+    {
+        if (!_isInitialized) return;
+        
+        if (SegmentRender.IsRendered && SegmentRender.IsVisible)
+        {
+            await SegmentRender.SetVisibilityAsync(false);
+        }
+    }
     
     // ===== JSInvokable Methods (called from JavaScript) =====
     
@@ -317,6 +372,15 @@
     public string? GetNextPinTag()
     {
         return PinService.GetNextTag();
+    }
+    
+    [JSInvokable]
+    public async Task OnSegmentsSelected(string[] tags)
+    {
+        Console.WriteLine($"SharedSceneHost.OnSegmentsSelected: {tags.Length} tags");
+        // This is called from JS when segments are clicked
+        // The SegmentRenderService already tracks selection
+        // You can add additional handling here if needed
     }
 
     // ===== Pin Management =====
@@ -435,7 +499,14 @@
         {
             Console.WriteLine("SharedSceneHost: Clearing scene for new project...");
             await JSRuntime.InvokeVoidAsync("clearAllSceneLayers");
+            await SegmentRender.ClearSegmentsAsync();
             await DrawPlotPlansAsync();
+            
+            if (GlobalData.SegmentPageTab == 1)
+            {
+                await HandleSegmentTabActivatedAsync();
+            }
+            
             Console.WriteLine("SharedSceneHost: Scene reloaded for new project");
         }
         catch (Exception ex)
@@ -460,7 +531,7 @@
         {
             try
             {
-                // Adjust renderwidth and renderheight as per current screen size
+                // Adjust RenderWidth and renderheight as per current screen size
                 var scaleX = plot.ScaleX * plot.RendererWidth / _rendererWidth;
                 var scaleY = plot.ScaleY * plot.RendererHeight / _rendererHeight;
                 await JSRuntime.InvokeVoidAsync("drawPlane", 
@@ -490,6 +561,9 @@
         // Unsubscribe to project changes
         GlobalData.OnProjectChanged -= OnProjectChanged;
         PinService.OnStateChanged -= OnPinServiceStateChanged;
+        GlobalData.OnSegmentTabChanged -= OnSegmentTabChanged;
+        SegmentRender.OnSegmentsRendered -= OnSegmentsRendered;
+        SegmentRender.OnSelectionChanged -= OnSegmentSelectionChanged;
         
         try
         {

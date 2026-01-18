@@ -1,7 +1,7 @@
 /**
  * Plot Plan Functions for Three.js (ES Module)
  *
- * Location: NpmJS/src/threejs/functions/xxplaneFunctions.js
+ * Location: NpmJS/src/threejs/functions/not used-planeFunctions.js
  *
  * Handles loading, scaling, positioning, rotating, and removing plot plan images
  */
