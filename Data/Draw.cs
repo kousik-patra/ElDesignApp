@@ -21,6 +21,18 @@ public class Draw
     private readonly ILayoutFunctionService _layoutFunction; 
     private readonly IGlobalDataService _globalData; 
     
+    // ===== Segment Selection State =====
+    private HashSet<string> _selectedSegmentTags = new();
+    
+    /// <summary>
+    /// Event fired when segment selection changes
+    /// </summary>
+    public event Action<IReadOnlyList<string>>? OnSegmentSelectionChanged;
+    
+    /// <summary>
+    /// Get currently selected segment tags
+    /// </summary>
+    public IReadOnlySet<string> SelectedSegmentTags => _selectedSegmentTags;
     
     
     // Event for UI updates
@@ -322,150 +334,290 @@ public class Draw
     }
     
     
-    [JSInvokable("OnSceneClick")]
-    public void OnSceneClick(string clickDataJson)
-    {
-        try
-        {
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            };
-            
-            var clickData = JsonSerializer.Deserialize<SceneClickData>(clickDataJson, options);
-            
-            if (clickData == null) return;
-            
-            Console.WriteLine($"Draw: Scene Click: Type={clickData.ClickType}, " +
-                             $"World=({clickData.WorldX:F2}, {clickData.WorldY:F2}, {clickData.WorldZ:F2}), " +
-                             $"Object={clickData.ObjectTag ?? "none"}");
-            
-            switch (clickData.ClickType)
-            {
-                case "single":
-                    HandleSingleClick(clickData);
-                    break;
-                case "double":
-                    HandleDoubleClick(clickData);
-                    break;
-                case "shift":
-                    HandleShiftClick(clickData);
-                    break;
-                case "ctrl":
-                    HandleCtrlClick(clickData);
-                    break;
-                case "pinPlaced":  // handle pin placement
-                    HandlePinPlaced(clickData);
-                    break;
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"OnSceneClick error: {e.Message}");
-        }
-    }
-    
-private void HandleSingleClick(SceneClickData clickData)
+[JSInvokable("OnSceneClick")]
+public void OnSceneClick(string clickDataJson)
 {
-    Console.WriteLine($"Draw: Single Click at Scene (X:{clickData.WorldX:F2}, Y:{clickData.WorldY:F2})");
-    
-    // Build coordinate list from all systems
-    var systemCoordinates = new List<SystemCoordinate>();
-    
-    var coordinateSystemJson = _globalData.SelectedProject.CoordinateSystemJson;
-    if (!string.IsNullOrEmpty(coordinateSystemJson))
+    try
     {
+        Console.WriteLine($"Draw.OnSceneClick received: {clickDataJson?.Substring(0, Math.Min(500, clickDataJson?.Length ?? 0))}...");
+        
+        if (string.IsNullOrEmpty(clickDataJson))
+        {
+            Console.WriteLine("OnSceneClick: Received null or empty JSON");
+            return;
+        }
+
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase // Important for JS interop!
+        };
+        
+        SceneClickData? clickData;
         try
         {
-            var coordinateManager = new CoordinateSystemManager();
-            var dtos = JsonSerializer.Deserialize<List<CoordinateSystemDto>>(coordinateSystemJson);
-            
-            if (dtos != null && dtos.Count > 0)
-            {
-                coordinateManager.ImportAll(dtos);
-                
-                // Use the new helper method
-                systemCoordinates = coordinateManager.GetAllSystemCoordinates(
-                    clickData.WorldX, 
-                    clickData.WorldY
-                );
-                
-                // Log all coordinates to console
-                Console.WriteLine($"  Scene: X={clickData.WorldX:F3}, Y={clickData.WorldY:F3}");
-                foreach (var sc in systemCoordinates)
-                {
-                    Console.WriteLine($"  {sc.SystemName}: E={sc.E:F3}, N={sc.N:F3} {sc.Unit} [XEW={sc.XEW}]");
-                }
-            }
+            clickData = JsonSerializer.Deserialize<SceneClickData>(clickDataJson, options);
         }
-        catch (Exception ex)
+        catch (JsonException jsonEx)
         {
-            Console.WriteLine($"Error parsing coordinate systems: {ex.Message}");
+            Console.WriteLine($"JSON Deserialization Error: {jsonEx.Message}");
+            Console.WriteLine($"JSON Path: {jsonEx.Path}");
+            Console.WriteLine($"Raw JSON: {clickDataJson}");
+            return;
+        }
+        
+        if (clickData == null)
+        {
+            Console.WriteLine("OnSceneClick: Deserialized to null");
+            return;
+        }
+        
+        Console.WriteLine($"Draw.OnSceneClick: Type={clickData.ClickType}, " +
+                         $"World=({clickData.WorldX:F2}, {clickData.WorldY:F2}, {clickData.WorldZ:F2}), " +
+                         $"Object={clickData.ObjectTag ?? "none"}, " +
+                         $"Segments={clickData.IntersectedSegments?.Count ?? 0}");
+        
+        switch (clickData.ClickType)
+        {
+            case "single":
+                HandleSingleClick(clickData);
+                break;
+            case "double":
+                HandleDoubleClick(clickData);
+                break;
+            case "shift":
+                HandleShiftClick(clickData);
+                break;
+            case "ctrl":
+                HandleCtrlClick(clickData);
+                break;
+            case "pinPlaced":
+                HandlePinPlaced(clickData);
+                break;
+            default:
+                Console.WriteLine($"Unknown click type: {clickData.ClickType}");
+                break;
         }
     }
-    else
+    catch (Exception e)
     {
-        Console.WriteLine("  No coordinate systems configured for this project");
-    }
-
-    // Create message WITH coordinate systems
-    var message = SceneMessage.Coordinates(
-        clickData.WorldX, 
-        clickData.WorldY, 
-        clickData.ObjectTag,
-        systemCoordinates
-    );
-    
-    SendMessage(message);
-    
-    if (!string.IsNullOrEmpty(clickData.ObjectTag))
-    {
-        Console.WriteLine($"Draw.cs: Clicked on object: {clickData.ObjectTag}");
-        //SendMessage(SceneMessage.Info($"Object Type: {GetObjectType(clickData.ObjectTag)}"));
+        Console.WriteLine($"OnSceneClick EXCEPTION: {e.GetType().Name}: {e.Message}");
+        Console.WriteLine($"Stack trace: {e.StackTrace}");
     }
 }
     
-    private void HandleDoubleClick(SceneClickData clickData)
+/// <summary>
+/// Handle single click - select single segment or show coordinates
+/// Includes system coordinates calculated from intersection point
+/// </summary>
+private void HandleSingleClick(SceneClickData clickData)
+{
+    try
     {
-        Console.WriteLine($"Draw: Double Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
-        
-        SendMessage(SceneMessage.Coordinates(clickData.WorldX, clickData.WorldY, clickData.ObjectTag));
-        
-        if (!string.IsNullOrEmpty(clickData.ObjectTag))
-        {
-            Console.WriteLine($"Draw: Double-clicked on object: {clickData.ObjectTag}");
-            SendMessage(SceneMessage.Info($"Double-clicked: {clickData.ObjectTag} - Opening details..."));
+        Console.WriteLine($"Draw.HandleSingleClick at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
 
-            // TODO: Open edit dialog, zoom to object, etc.
-        }
-    }
-    
-    private void HandleShiftClick(SceneClickData clickData)
-    {
-        Console.WriteLine($"Shift+Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        // Clear previous selection
+        _selectedSegmentTags.Clear();
+
+        // Determine the coordinate point to use:
+        // If we hit a segment, use the actual intersection point
+        // Otherwise, use the world position (on Z=0 plane)
+        float coordX = clickData.WorldX;
+        float coordY = clickData.WorldY;
+        float coordZ = clickData.WorldZ;
         
-        if (!string.IsNullOrEmpty(clickData.ObjectTag))
+        // Safely get primary tag and intersection point
+        string? primaryTag = null;
+        IntersectPoint? intersectPoint = null;
+        
+        try
         {
-            Console.WriteLine($"  Shift-clicked on object: {clickData.ObjectTag}");
-            SendMessage(SceneMessage.Info($"Added to selection: {clickData.ObjectTag}"));
-            // TODO: Add to selection, extend selection, etc.
+            // Check if we clicked on a segment
+            primaryTag = clickData.GetPrimaryTag();
+            intersectPoint = clickData.IntersectedSegments?.FirstOrDefault()?.Point;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error getting segment info: {ex.Message}");
+        }
+
+        if (intersectPoint != null)
+        {
+            // Use actual intersection point on the segment
+            coordX = intersectPoint.X;
+            coordY = intersectPoint.Y;
+            coordZ = intersectPoint.Z;
+        }
+
+        // Build coordinate list from all systems using the determined point
+        var systemCoordinates = new List<SystemCoordinate>();
+
+        var coordinateSystemJson = _globalData.SelectedProject?.CoordinateSystemJson;
+        if (!string.IsNullOrEmpty(coordinateSystemJson))
+        {
+            try
+            {
+                var coordinateManager = new CoordinateSystemManager();
+                var dtos = JsonSerializer.Deserialize<List<CoordinateSystemDto>>(coordinateSystemJson);
+
+                if (dtos != null && dtos.Count > 0)
+                {
+                    coordinateManager.ImportAll(dtos);
+
+                    // Calculate coordinates from intersection point (or world position)
+                    systemCoordinates = coordinateManager.GetAllSystemCoordinates(coordX, coordY);
+
+                    // Log all coordinates to console
+                    Console.WriteLine($"  Scene: X={coordX:F3}, Y={coordY:F3}, Z={coordZ:F3}");
+                    foreach (var sc in systemCoordinates)
+                    {
+                        Console.WriteLine($"  {sc.SystemName}: E={sc.E:F3}, N={sc.N:F3} {sc.Unit} [XEW={sc.XEW}]");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error parsing coordinate systems: {ex.Message}");
+            }
+        }
+
+        // Create and send message
+        SceneMessage message;
+
+        if (!string.IsNullOrEmpty(primaryTag))
+        {
+            // Clicked on a segment - add to selection
+            _selectedSegmentTags.Add(primaryTag);
+
+            // Create message with object tag AND system coordinates
+            message = SceneMessage.ObjectSelectedWithCoordinates(
+                primaryTag,
+                coordX,
+                coordY,
+                coordZ,
+                systemCoordinates
+            );
+
+            // Update Z coordinate (Coordinates method doesn't set it)
+            message.WorldZ = coordZ;
+
+            Console.WriteLine($"  Selected segment: {primaryTag}");
         }
         else
         {
-            SendMessage(SceneMessage.Coordinates(clickData.WorldX, clickData.WorldY));
+            // Clicked on empty space - just coordinates
+            message = SceneMessage.Coordinates(
+                coordX,
+                coordY,
+                null,
+                systemCoordinates
+            );
         }
+
+        SendMessage(message);
+        NotifySelectionChanged();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"HandleSingleClick EXCEPTION: {ex.Message}");
+        Console.WriteLine($"Stack: {ex.StackTrace}");
+    }
+}
+    
+/// <summary>
+/// Handle double-click - select and zoom/focus
+/// </summary>
+private void HandleDoubleClick(SceneClickData clickData)
+{
+    Console.WriteLine($"Draw.HandleDoubleClick at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        
+    var primaryTag = clickData.GetPrimaryTag();
+        
+    if (!string.IsNullOrEmpty(primaryTag))
+    {
+        // Select this segment
+        _selectedSegmentTags.Clear();
+        _selectedSegmentTags.Add(primaryTag);
+            
+        var intersectPoint = clickData.IntersectedSegments?.FirstOrDefault()?.Point;
+            
+        SendMessage(SceneMessage.ObjectSelected(
+            primaryTag,
+            $"Double-clicked: {primaryTag} - Opening details...",
+            intersectPoint?.X,
+            intersectPoint?.Y,
+            intersectPoint?.Z
+        ));
+            
+        NotifySelectionChanged();
+            
+        // TODO: Trigger zoom-to-object, open detail panel, etc.
+        Console.WriteLine($"  Double-clicked on: {primaryTag}");
+    }
+    else
+    {
+        SendCoordinatesMessage(clickData);
+    }
+}
+    
+    /// <summary>
+    /// Handle Shift+Click - add to selection (extend)
+    /// </summary>
+    private void HandleShiftClick(SceneClickData clickData)
+    {
+        Console.WriteLine($"Draw.HandleShiftClick at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        
+        var primaryTag = clickData.GetPrimaryTag();
+        
+        if (string.IsNullOrEmpty(primaryTag))
+        {
+            SendCoordinatesMessage(clickData);
+            return;
+        }
+        
+        // Add to selection (no toggle - shift always adds)
+        if (!_selectedSegmentTags.Contains(primaryTag))
+        {
+            _selectedSegmentTags.Add(primaryTag);
+            Console.WriteLine($"  Extended selection with: {primaryTag}");
+        }
+        
+        SendMessage(SceneMessage.ObjectsSelected(_selectedSegmentTags));
+        NotifySelectionChanged();
     }
     
+    /// <summary>
+    /// Handle Ctrl+Click - toggle segment in selection (multi-select)
+    /// </summary>
     private void HandleCtrlClick(SceneClickData clickData)
     {
-        Console.WriteLine($"Ctrl+Click at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
+        Console.WriteLine($"Draw.HandleCtrlClick at ({clickData.WorldX:F2}, {clickData.WorldY:F2})");
         
-        if (!string.IsNullOrEmpty(clickData.ObjectTag))
+        var primaryTag = clickData.GetPrimaryTag();
+        
+        if (string.IsNullOrEmpty(primaryTag))
         {
-            var text = $"  Ctrl-clicked on object: {clickData.ObjectTag}";
-            Console.WriteLine(text);
-            // TODO: Toggle selection, add/remove from multi-select, etc.
+            SendCoordinatesMessage(clickData);
+            return;
         }
+        
+        // Toggle selection
+        if (_selectedSegmentTags.Contains(primaryTag))
+        {
+            _selectedSegmentTags.Remove(primaryTag);
+            Console.WriteLine($"  Deselected: {primaryTag}");
+            SendMessage(SceneMessage.Info($"Removed from selection: {primaryTag}"));
+        }
+        else
+        {
+            _selectedSegmentTags.Add(primaryTag);
+            Console.WriteLine($"  Added to selection: {primaryTag}");
+            SendMessage(SceneMessage.Info($"Added to selection: {primaryTag}"));
+        }
+        
+        // Send updated selection message
+        SendMessage(SceneMessage.ObjectsSelected(_selectedSegmentTags));
+        NotifySelectionChanged();
     }
     
     private void HandlePinPlaced(SceneClickData clickData)
@@ -492,7 +644,98 @@ private void HandleSingleClick(SceneClickData clickData)
         // _globalData.RefPoints?.Add(new Vector3(x, y, z));
     }
     
+    /// <summary>
+    /// Clear all segment selections
+    /// </summary>
+    public void ClearSelection()
+    {
+        _selectedSegmentTags.Clear();
+        SendMessage(SceneMessage.Info("Selection cleared"));
+        NotifySelectionChanged();
+    }
     
+    /// <summary>
+    /// Select multiple segments programmatically
+    /// </summary>
+    public void SelectSegments(IEnumerable<string> tags)
+    {
+        _selectedSegmentTags.Clear();
+        foreach (var tag in tags)
+        {
+            _selectedSegmentTags.Add(tag);
+        }
+        
+        SendMessage(SceneMessage.ObjectsSelected(_selectedSegmentTags));
+        NotifySelectionChanged();
+    }
+    
+    /// <summary>
+    /// Notify listeners that selection changed
+    /// </summary>
+    private void NotifySelectionChanged()
+    {
+        OnSegmentSelectionChanged?.Invoke(_selectedSegmentTags.ToList());
+    }
+    
+    /// <summary>
+    /// Send coordinates message with all coordinate systems
+    /// </summary>
+    private void SendCoordinatesMessage(SceneClickData clickData)
+    {
+        // Build coordinate list from all systems
+        var systemCoordinates = new List<SystemCoordinate>();
+        
+        var coordinateSystemJson = _globalData.SelectedProject?.CoordinateSystemJson;
+        if (!string.IsNullOrEmpty(coordinateSystemJson))
+        {
+            try
+            {
+                var coordinateManager = new CoordinateSystemManager();
+                var dtos = JsonSerializer.Deserialize<List<CoordinateSystemDto>>(coordinateSystemJson);
+                
+                if (dtos != null && dtos.Count > 0)
+                {
+                    coordinateManager.ImportAll(dtos);
+                    systemCoordinates = coordinateManager.GetAllSystemCoordinates(
+                        clickData.WorldX, 
+                        clickData.WorldY
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error parsing coordinate systems: {ex.Message}");
+            }
+        }
+        
+        var message = SceneMessage.Coordinates(
+            clickData.WorldX, 
+            clickData.WorldY, 
+            null, // No object tag for empty click
+            systemCoordinates
+        );
+        
+        SendMessage(message);
+    }
+    
+    /// <summary>
+    /// Get all intersection data for external processing
+    /// Returns array of (tag, x, y, z) tuples
+    /// </summary>
+    public IEnumerable<(string Tag, float X, float Y, float Z)> GetIntersectedSegmentsFromClick(
+        SceneClickData clickData)
+    {
+        if (clickData.IntersectedSegments == null) 
+            yield break;
+            
+        foreach (var segment in clickData.IntersectedSegments)
+        {
+            if (segment.Point != null)
+            {
+                yield return (segment.Tag, segment.Point.X, segment.Point.Y, segment.Point.Z);
+            }
+        }
+    }
     
     
     private string GetObjectType(string tag)
@@ -508,21 +751,254 @@ private void HandleSingleClick(SceneClickData clickData)
     
 }
 
+/// <summary>
+/// Represents intersection point coordinates
+/// </summary>
+public class IntersectPoint
+{
+    [JsonPropertyName("x")]
+    public float X { get; set; }
+    
+    [JsonPropertyName("y")]
+    public float Y { get; set; }
+    
+    [JsonPropertyName("z")]
+    public float Z { get; set; }
+    
+    public Vector3 ToVector3() => new Vector3(X, Y, Z);
+    
+    public override string ToString() => $"({X:F2}, {Y:F2}, {Z:F2})";
+}
 
+
+/// <summary>
+/// Represents a single intersected segment from raycasting
+/// </summary>
+public class IntersectedSegment
+{
+    /// <summary>
+    /// The tag/identifier of the segment
+    /// </summary>
+    [JsonPropertyName("tag")]
+    public string Tag { get; set; } = "";
+    
+    /// <summary>
+    /// The 3D point where the ray intersected this segment
+    /// </summary>
+    [JsonPropertyName("point")]
+    public IntersectPoint? Point { get; set; }
+    
+    /// <summary>
+    /// Type of mesh (e.g., "ladder", "pipe", "equipment")
+    /// </summary>
+    [JsonPropertyName("meshType")]
+    public string? MeshType { get; set; }
+    
+    /// <summary>
+    /// Index of segment within merged mesh (-1 for non-merged)
+    /// </summary>
+    [JsonPropertyName("segmentIndex")]
+    public int SegmentIndex { get; set; } = -1;
+    
+    /// <summary>
+    /// Distance from camera to intersection point
+    /// </summary>
+    [JsonPropertyName("distance")]
+    public float Distance { get; set; }
+    
+    public override string ToString() => $"{Tag} at {Point}";
+}
+
+/// <summary>
+/// Complete click event data from the Three.js scene
+/// </summary>
 public class SceneClickData
 {
+/// <summary>
+    /// Type of click: "single", "double", "shift", "ctrl", "alt", "pinPlaced", "rightClick"
+    /// </summary>
     [JsonPropertyName("eventType")]
-    public string ClickType { get; set; } = "";  // "single", "double", "shift", "ctrl"
+    public string ClickType { get; set; } = "";
+    
+    /// <summary>
+    /// Screen X coordinate (pixels from left of canvas)
+    /// </summary>
+    [JsonPropertyName("screenX")]
     public float ScreenX { get; set; }
+    
+    /// <summary>
+    /// Screen Y coordinate (pixels from top of canvas)
+    /// </summary>
+    [JsonPropertyName("screenY")]
     public float ScreenY { get; set; }
+    
+    /// <summary>
+    /// World X coordinate (on Z=0 plane by default)
+    /// </summary>
+    [JsonPropertyName("worldX")]
     public float WorldX { get; set; }
+    
+    /// <summary>
+    /// World Y coordinate
+    /// </summary>
+    [JsonPropertyName("worldY")]
     public float WorldY { get; set; }
+    
+    /// <summary>
+    /// World Z coordinate
+    /// </summary>
+    [JsonPropertyName("worldZ")]
     public float WorldZ { get; set; }
+    
+    /// <summary>
+    /// Tag of the first/primary intersected object
+    /// </summary>
+    [JsonPropertyName("objectTag")]
     public string? ObjectTag { get; set; }
+    
+    /// <summary>
+    /// Layer of the intersected object
+    /// </summary>
+    [JsonPropertyName("objectLayer")]
     public int? ObjectLayer { get; set; }
-    public Vector3Json? IntersectPoint { get; set; }
+    
+    /// <summary>
+    /// Exact 3D point where ray hit the object
+    /// </summary>
+    [JsonPropertyName("intersectPoint")]
+    public IntersectPoint? IntersectPoint { get; set; }
+    
+    /// <summary>
+    /// Total number of objects intersected by the ray
+    /// </summary>
+    [JsonPropertyName("intersectCount")]
     public int IntersectCount { get; set; }
+    
+    /// <summary>
+    /// Type of mesh for the primary hit (e.g., "ladder")
+    /// </summary>
+    [JsonPropertyName("meshType")]
+    public string? MeshType { get; set; }
+    
+    /// <summary>
+    /// Segment index within merged mesh (-1 for non-merged)
+    /// </summary>
+    [JsonPropertyName("segmentIndex")]
+    public int SegmentIndex { get; set; } = -1;
+    
+    /// <summary>
+    /// List of all intersected object tags (simple list)
+    /// </summary>
+    [JsonPropertyName("allIntersectedTags")]
+    public List<string>? AllIntersectedTags { get; set; }
+    
+    /// <summary>
+    /// Full information about all intersected segments
+    /// </summary>
+    [JsonPropertyName("intersectedSegments")]
+    public List<IntersectedSegment>? IntersectedSegments { get; set; }
+    
+    /// <summary>
+    /// Whether Shift key was held during click
+    /// </summary>
+    [JsonPropertyName("shiftKey")]
     public bool ShiftKey { get; set; }
+    
+    /// <summary>
+    /// Whether Ctrl/Cmd key was held during click
+    /// </summary>
+    [JsonPropertyName("ctrlKey")]
     public bool CtrlKey { get; set; }
+    
+    /// <summary>
+    /// Whether Alt key was held during click
+    /// </summary>
+    [JsonPropertyName("altKey")]
     public bool AltKey { get; set; }
+    
+    /// <summary>
+    /// Mouse button (0=left, 1=middle, 2=right)
+    /// </summary>
+    [JsonPropertyName("button")]
+    public int Button { get; set; }
+    
+    /// <summary>
+    /// Timestamp of the event (ms since epoch)
+    /// </summary>
+    [JsonPropertyName("timestamp")]
+    public long Timestamp { get; set; }
+    
+    // ===== Helper Methods =====
+    
+    /// <summary>
+    /// Check if any object was clicked
+    /// </summary>
+    public bool HasIntersection => 
+        !string.IsNullOrEmpty(ObjectTag) || 
+        (IntersectedSegments != null && IntersectedSegments.Count > 0);
+    
+    /// <summary>
+    /// Get world position as Vector3
+    /// </summary>
+    public Vector3 WorldPosition => new Vector3(WorldX, WorldY, WorldZ);
+    
+    /// <summary>
+    /// Get exact intersection point as Vector3 (or world position if not available)
+    /// </summary>
+    public Vector3 GetIntersectionPoint()
+    {
+        return IntersectPoint?.ToVector3() ?? WorldPosition;
+    }
+    
+    /// <summary>
+    /// Get all tags from intersected segments
+    /// </summary>
+    public IEnumerable<string> GetAllTags()
+    {
+        if (IntersectedSegments != null && IntersectedSegments.Count > 0)
+        {
+            return IntersectedSegments.Select(s => s.Tag).Where(t => !string.IsNullOrEmpty(t));
+        }
+        
+        if (AllIntersectedTags != null && AllIntersectedTags.Count > 0)
+        {
+            return AllIntersectedTags.Where(t => !string.IsNullOrEmpty(t));
+        }
+        
+        if (!string.IsNullOrEmpty(ObjectTag))
+        {
+            return new[] { ObjectTag };
+        }
+        
+        return Enumerable.Empty<string>();
+    }
+    
+    /// <summary>
+    /// Get the first/primary tag
+    /// </summary>
+    public string? GetPrimaryTag()
+    {
+        if (IntersectedSegments != null && IntersectedSegments.Count > 0)
+        {
+            return IntersectedSegments[0].Tag;
+        }
+        return ObjectTag;
+    }
+
+    
+    /// <summary>
+    /// Get intersection points for all segments
+    /// </summary>
+    public IEnumerable<(string Tag, Vector3 Point)> GetAllIntersectionPoints()
+    {
+        if (IntersectedSegments == null) yield break;
+        
+        foreach (var segment in IntersectedSegments)
+        {
+            if (segment.Point != null)
+            {
+                yield return (segment.Tag, segment.Point.ToVector3());
+            }
+        }
+    }
 }

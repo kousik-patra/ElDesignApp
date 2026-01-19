@@ -40,6 +40,7 @@ export class MouseEventHandler {
         // Hover state
         this.hoveredObject = null;
         this.hoverTimeout = null;
+        this.hoveredSegmentTag = null;
 
         // Bound event handlers (for removal)
         this.boundHandlers = {};
@@ -57,7 +58,9 @@ export class MouseEventHandler {
             onDrag: null,
             onDragEnd: null,
             onRightClick: null,
-            onPinPlaced: null
+            onPinPlaced: null,
+            onSegmentClick: null,
+            onSegmentHover: null
         };
     }
 
@@ -175,9 +178,9 @@ export class MouseEventHandler {
         return worldPosition;
     }
 
-
     /**
      * Perform raycasting to find intersected objects
+     * Handle both regular meshes and merged segment meshes
      */
     getIntersectedObjects(event, filterFn = null) {
         const ndc = this.getMouseNDC(event);
@@ -185,19 +188,97 @@ export class MouseEventHandler {
 
         this.raycaster.setFromCamera(this.mouse, this.camera);
 
-        // Get all meshes with Tags
+        // Get all meshes with Tags OR merged segment meshes
         const meshes = [];
         this.scene.traverse((child) => {
-            if (child.isMesh && child.Tag) {
-                if (!filterFn || filterFn(child)) {
-                    meshes.push(child);
+            if (child.isMesh) {
+                // Include regular tagged meshes
+                if (child.Tag) {
+                    if (!filterFn || filterFn(child)) {
+                        meshes.push(child);
+                    }
+                }
+                // Include merged segment meshes
+                else if (child.isMergedSegmentMesh) {
+                    if (!filterFn || filterFn(child)) {
+                        meshes.push(child);
+                    }
                 }
             }
         });
 
         return this.raycaster.intersectObjects(meshes, false);
     }
+    
+    /**
+     * Extract segment information from intersection with merged mesh
+     * @param {Object} intersection - THREE.js intersection result
+     * @returns {Object|null} - Segment info or null
+     */
+    getSegmentFromIntersection(intersection) {
+        if (!intersection || !intersection.object) return null;
 
+        const obj = intersection.object;
+
+        // Check if it's a merged segment mesh
+        if (obj.isMergedSegmentMesh && obj.getSegmentFromIntersection) {
+            const segmentInfo = obj.getSegmentFromIntersection(intersection);
+            if (segmentInfo) {
+                return {
+                    tag: segmentInfo.tag,
+                    segmentIndex: segmentInfo.segmentIndex,
+                    originalIndex: segmentInfo.originalIndex,
+                    meshType: obj.Type || 'ladder',
+                    point: intersection.point
+                };
+            }
+        }
+
+        // Regular mesh with Tag
+        if (obj.Tag) {
+            return {
+                tag: obj.Tag,
+                segmentIndex: -1,
+                originalIndex: -1,
+                meshType: obj.Type || 'unknown',
+                point: intersection.point
+            };
+        }
+
+        return null;
+    }
+
+    /**
+     * Get all intersected segments (handles both single and merged meshes)
+     * @param {Object} event - Mouse event
+     * @returns {Array} - Array of {tag, point, meshType, ...}
+     */
+    getAllIntersectedSegments(event) {
+        const intersects = this.getIntersectedObjects(event);
+        const segments = [];
+        const seenTags = new Set();
+
+        for (const intersection of intersects) {
+            const segmentInfo = this.getSegmentFromIntersection(intersection);
+            if (segmentInfo && !seenTags.has(segmentInfo.tag)) {
+                seenTags.add(segmentInfo.tag);
+                segments.push({
+                    tag: segmentInfo.tag,
+                    point: {
+                        x: intersection.point.x,
+                        y: intersection.point.y,
+                        z: intersection.point.z
+                    },
+                    meshType: segmentInfo.meshType,
+                    segmentIndex: segmentInfo.segmentIndex,
+                    distance: intersection.distance
+                });
+            }
+        }
+
+        return segments;
+    }
+    
     /**
      * Get the layer of an object
      */
@@ -213,6 +294,7 @@ export class MouseEventHandler {
 
     /**
      * Build comprehensive click/event data object
+     * Include segment information for merged meshes
      */
     buildEventData(event, eventType) {
         const worldPos = this.getWorldPosition(event);
@@ -224,18 +306,32 @@ export class MouseEventHandler {
         let objectLayer = null;
         let intersectPoint = null;
         let objectData = null;
+        let meshType = null;
+        let segmentIndex = -1;
+
+        // Get ALL intersected segments for merged meshes
+        const allIntersectedSegments = this.getAllIntersectedSegments(event);
 
         if (intersects.length > 0) {
             const firstHit = intersects[0];
-            objectTag = firstHit.object.Tag || null;
+
+            // Check for merged segment mesh first
+            const segmentInfo = this.getSegmentFromIntersection(firstHit);
+            if (segmentInfo) {
+                objectTag = segmentInfo.tag;
+                meshType = segmentInfo.meshType;
+                segmentIndex = segmentInfo.segmentIndex;
+            } else {
+                objectTag = firstHit.object.Tag || null;
+            }
+
             objectLayer = this.getObjectLayer(firstHit.object);
             intersectPoint = {
                 x: firstHit.point.x,
                 y: firstHit.point.y,
                 z: firstHit.point.z
             };
-            // Include any custom data attached to the object
-            objectData = firstHit.object.userData || null;
+            //objectData = firstHit.object.userData || null;
         }
 
         return {
@@ -248,22 +344,18 @@ export class MouseEventHandler {
             objectTag: objectTag,
             objectLayer: objectLayer,
             intersectPoint: intersectPoint,
-            objectData: objectData,
+            //objectData: objectData,
             intersectCount: intersects.length,
-            allIntersectedTags: intersects.map(i => i.object.Tag).filter(Boolean),
+            meshType: meshType,
+            segmentIndex: segmentIndex,
+            // Array of all intersected tags (for multi-select or info)
+            allIntersectedTags: allIntersectedSegments.map(s => s.tag),
+            // Full segment info for Blazor
+            intersectedSegments: allIntersectedSegments,
             shiftKey: event.shiftKey,
             ctrlKey: event.ctrlKey || event.metaKey,
             altKey: event.altKey,
             button: event.button,
-            cameraPosition: {
-                x: this.camera.position.x,
-                y: this.camera.position.y,
-                z: this.camera.position.z
-            },
-            canvasWidth: this.renderer.domElement.getBoundingClientRect().width,
-            canvasHeight: this.renderer.domElement.getBoundingClientRect().height,
-            clientX: event.clientX,
-            clientY: event.clientY,
             timestamp: Date.now()
         };
     }
@@ -271,12 +363,16 @@ export class MouseEventHandler {
     // ============ EVENT HANDLERS ============
 
     onMouseDown(event) {
+        if (event.button !== 0) return;
+
         this.isMouseDown = true;
+        this.mouseDownPosition = { x: event.clientX, y: event.clientY };
         this.mouseDownTime = Date.now();
-        this.mouseDownPosition = {
-            x: event.clientX,
-            y: event.clientY
-        };
+
+        if (this.callbacks.onDragStart) {
+            const eventData = this.buildEventData(event, 'dragStart');
+            this.callbacks.onDragStart(eventData);
+        }
     }
 
     onMouseUp(event) {
@@ -305,7 +401,7 @@ export class MouseEventHandler {
         const clickType = this.getClickType(event);
         const eventData = this.buildEventData(event, clickType);
 
-        // Handle modified clicks immediately
+
         if (clickType !== 'single') {
             this.executeClick(eventData);
             return;
@@ -352,25 +448,52 @@ export class MouseEventHandler {
 
     handleHover(event) {
         const intersects = this.getIntersectedObjects(event);
-        const currentHovered = intersects.length > 0 ? intersects[0].object : null;
+        let currentHovered = null;
+        let currentSegmentTag = null;
 
-        // Check if hover target changed
-        if (currentHovered !== this.hoveredObject) {
-            // End hover on previous object
+        if (intersects.length > 0) {
+            const firstHit = intersects[0];
+            currentHovered = firstHit.object;
+
+            // Get segment tag for merged meshes
+            const segmentInfo = this.getSegmentFromIntersection(firstHit);
+            if (segmentInfo) {
+                currentSegmentTag = segmentInfo.tag;
+            } else {
+                currentSegmentTag = currentHovered.Tag;
+            }
+        }
+
+        // Check if hover target changed (including segment within merged mesh)
+        const hoverChanged = currentHovered !== this.hoveredObject ||
+            currentSegmentTag !== this.hoveredSegmentTag;
+
+        if (hoverChanged) {
+            // End hover on previous
             if (this.hoveredObject && this.callbacks.onHoverEnd) {
                 this.callbacks.onHoverEnd({
-                    objectTag: this.hoveredObject.Tag,
+                    objectTag: this.hoveredSegmentTag || this.hoveredObject.Tag,
                     objectLayer: this.getObjectLayer(this.hoveredObject)
                 });
             }
 
-            // Start hover on new object
-            if (currentHovered && this.callbacks.onHover) {
-                const eventData = this.buildEventData(event, 'hover');
-                this.callbacks.onHover(eventData);
+            // Start hover on new
+            if (currentHovered) {
+                if (this.callbacks.onHover) {
+                    const eventData = this.buildEventData(event, 'hover');
+                    this.callbacks.onHover(eventData);
+                }
+                // Segment-specific hover callback
+                if (currentSegmentTag && this.callbacks.onSegmentHover) {
+                    this.callbacks.onSegmentHover({
+                        tag: currentSegmentTag,
+                        meshType: currentHovered.Type || 'unknown'
+                    });
+                }
             }
 
             this.hoveredObject = currentHovered;
+            this.hoveredSegmentTag = currentSegmentTag;
         }
     }
 
@@ -402,14 +525,14 @@ export class MouseEventHandler {
     onMouseLeave(event) {
         this.isMouseDown = false;
 
-        // Clear hover state
         if (this.hoveredObject && this.callbacks.onHoverEnd) {
             this.callbacks.onHoverEnd({
-                objectTag: this.hoveredObject.Tag,
+                objectTag: this.hoveredSegmentTag || this.hoveredObject.Tag,
                 objectLayer: this.getObjectLayer(this.hoveredObject)
             });
         }
         this.hoveredObject = null;
+        this.hoveredSegmentTag = null;
     }
 
     /**
@@ -435,6 +558,13 @@ export class MouseEventHandler {
             if (pinPlaced) {
                 // Pin was placed, don't process as normal shift+click
                 return;
+            }
+        }
+
+        // ============ SEGMENT CLICK CALLBACK ============
+        if (eventData.intersectedSegments && eventData.intersectedSegments.length > 0) {
+            if (this.callbacks.onSegmentClick) {
+                this.callbacks.onSegmentClick(eventData);
             }
         }
 
@@ -512,6 +642,10 @@ export class MouseEventHandler {
      */
     notifyBlazor(eventData) {
         if (this.dotNetRef) {
+
+            // Debug: Log what we're sending
+            console.log('Sending to Blazor:', JSON.stringify(eventData, null, 2));
+            
             this.dotNetRef.invokeMethodAsync('OnSceneClick', JSON.stringify(eventData))
                 .catch(err => console.error('Error calling Blazor OnSceneClick:', err));
         }
@@ -535,6 +669,7 @@ export class MouseEventHandler {
         this.removeEventListeners();
         this.callbacks = {};
         this.hoveredObject = null;
+        this.hoveredSegmentTag = null;
         this.pendingClick = null;
     }
 }

@@ -137,5 +137,30 @@ namespace ElDesignApp.Models
                 ObjectTag = displayTag
             };
         }
+        
+        /// <summary>
+        /// Create a message for object selection WITH system coordinates
+        /// </summary>
+        public static SceneMessage ObjectSelectedWithCoordinates(
+            string objectTag,
+            double x,
+            double y,
+            double z,
+            List<SystemCoordinate>? systemCoordinates = null)
+        {
+            var coordText = BuildCoordinateText(x, y, systemCoordinates);
+    
+            return new SceneMessage
+            {
+                Type = SceneMessageType.ObjectSelected,
+                Text = $"Selected: {objectTag}\n{coordText}",
+                ObjectTag = objectTag,
+                WorldX = x,
+                WorldY = y,
+                WorldZ = z,
+                SystemCoordinates = systemCoordinates ?? new List<SystemCoordinate>()
+            };
+        }
+        
     }
 }

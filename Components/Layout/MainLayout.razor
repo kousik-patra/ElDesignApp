@@ -32,7 +32,14 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
-
+<div class="row float-left">
+    <footer class="bg-light text-center text-lg-start">
+        <div class="text-center p-1" style="background-color: rgba(0, 0, 0, 0.2);">
+            © 2023 Copyright: Encompass Electrical
+            <a class="text-dark" href="https://encompasselectrical.com/">Encompass - Electrical</a>
+        </div>
+    </footer>
+</div>
 @code {
     private string _currentPage = "";
     private string? _currentProjectId => GlobalData.SelectedProject?.UID.ToString();

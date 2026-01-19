@@ -157,17 +157,18 @@ public class SegmentRenderService : ISegmentRenderService, IAsyncDisposable
     public async Task DrawSegmentsAsync()
     {
         Console.WriteLine($"[SegmentRenderService] DrawSegmentsAsync called");
-        Console.WriteLine(Environment.StackTrace);
+        //Console.WriteLine(Environment.StackTrace);
         
         if (_globalData.Segments == null) return;
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        //var segments = _globalData.Segments.Take(10).ToList();  // ← ADD THIS
-        var segments = _globalData.Segments.Where(seg=> seg.Tag != null && seg.Tag.Contains("L0125")).ToList();
+        var segments = _globalData.Segments.Take(1000).ToList();
+        //var segments = _globalData.Segments.Where(seg=> seg.Tag != null && 
+        //                                                (seg.Tag.Contains("A11A-ECL-L058_B1-8")|| seg.Tag.Contains("A11A-ECL-L058_B1-9"))).ToList();
     
-        Console.WriteLine($"[TEST] Rendering {segments.Count} segments");
+        //Console.WriteLine($"[TEST] Rendering {segments.Count} segments");
 
-        //await DrawSegmentsAsync(_globalData.Segments);
-        await DrawSegmentsAsync(segments);
+        await DrawSegmentsAsync(_globalData.Segments);
+        //await DrawSegmentsAsync(segments);
     }
 
     /// <summary>
@@ -183,6 +184,7 @@ public class SegmentRenderService : ISegmentRenderService, IAsyncDisposable
 
         Console.WriteLine($"SegmentRenderService.DrawSegmentsAsync: Drawing {segments.Count} segments...");
 
+        
         try
         {
             // Prepare batch data
@@ -190,6 +192,9 @@ public class SegmentRenderService : ISegmentRenderService, IAsyncDisposable
             var jsonPointsArray = new List<string>();
             var colors = new List<string>();
             var opacities = new List<float>();
+            var opacity = 1.0f;
+
+            var colour = "[128, 128, 204]";
 
             foreach (var seg in segments)
             {
@@ -220,8 +225,10 @@ public class SegmentRenderService : ISegmentRenderService, IAsyncDisposable
                     "drawSegmentsBatch",
                     tags.ToArray(),
                     jsonPointsArray.ToArray(),
-                    colors.ToArray(),
-                    opacities.ToArray());
+                    colour,
+                    //colors.ToArray(),
+                    //opacities.ToArray()
+                    opacity);
 
                 _isRendered = true;
                 _isVisible = true;

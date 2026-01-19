@@ -132,6 +132,7 @@ class SceneManager {
         this.createControls();
         this.createLights();
         this.createHelpers();
+        this.setupShadows(this.renderer, this.scene);
 
         if (savedStateJson) {
             this.restoreState(savedStateJson);
@@ -884,6 +885,62 @@ class SceneManager {
     getMouseHandler() {
         return this.mouseHandler;
     }
+
+    setupShadows(renderer, scene) {
+        // ============================================================
+        // 1. RENDERER - Enable shadow maps
+        // ============================================================
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Softer shadows
+        // Other options:
+        // THREE.BasicShadowMap      - Fast, low quality
+        // THREE.PCFShadowMap        - Default, medium quality
+        // THREE.PCFSoftShadowMap    - Soft edges, better quality
+        // THREE.VSMShadowMap        - Very soft, can have artifacts
+
+        // ============================================================
+        // 2. DIRECTIONAL LIGHT - Main shadow-casting light
+        // ============================================================
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        directionalLight.position.set(100, 100, 100); // Adjust based on your scene scale
+        directionalLight.castShadow = true;
+
+        // Shadow camera (orthographic) - adjust based on your scene size
+        const shadowSize = 500; // Increase for larger scenes
+        directionalLight.shadow.camera.left = -shadowSize;
+        directionalLight.shadow.camera.right = shadowSize;
+        directionalLight.shadow.camera.top = shadowSize;
+        directionalLight.shadow.camera.bottom = -shadowSize;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 1000;
+
+        // Shadow map resolution (higher = sharper shadows, more GPU)
+        directionalLight.shadow.mapSize.width = 2048;  // Default: 512
+        directionalLight.shadow.mapSize.height = 2048;
+
+        // Shadow bias (prevents shadow acne)
+        directionalLight.shadow.bias = -0.0001;
+
+        scene.add(directionalLight);
+
+        // ============================================================
+        // 3. AMBIENT LIGHT - Fill light so shadows aren't pure black
+        // ============================================================
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5); // Soft ambient
+        scene.add(ambientLight);
+
+        // ============================================================
+        // 4. OPTIONAL: Hemisphere light for more natural lighting
+        // ============================================================
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
+        hemiLight.position.set(0, 100, 0);
+        scene.add(hemiLight);
+
+        console.log('Shadows configured');
+
+        return { directionalLight, ambientLight, hemiLight };
+    }
+    
 }
 
 // Singleton instance
