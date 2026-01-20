@@ -437,8 +437,7 @@
                                                             <text>
                                                                 <input class="form-control" type="text"
                                                                        value="@((string)val)"
-                                                                       @onblur="@OnBlur" @onkeydown="@KeyPressHandler"
-                                                                       @onkeypress:preventDefault
+                                                                       @onblur="@OnBlur" @onkeydown="@KeyPressHandler" @onclick:stopPropagation @onfocus:stopPropagation
                                                                        @oninput="e => { property.SetValue(_iteratedList[thisCellStatus.Seq], e?.Value?.ToString()); }"></text>
                                                         }
                                                         else
@@ -448,9 +447,7 @@
                                                                 <text>
                                                                     <input class="form-control" type="number"
                                                                            value="@((float)val)"
-                                                                           @onblur="@OnBlur"
-                                                                           @onkeydown="@KeyPressHandler"
-                                                                           @onkeypress:preventDefault
+                                                                           @onblur="@OnBlur" @onkeydown="@KeyPressHandler" @onclick:stopPropagation @onfocus:stopPropagation
                                                                            @oninput="e => { property.SetValue(_iteratedList[thisCellStatus.Seq], float.TryParse(e?.Value?.ToString(), out var f) ? f : (float)val); }"></text>
                                                             }
                                                             else if (property.PropertyType.Name == "Double")
@@ -458,9 +455,7 @@
                                                                 <text>
                                                                     <input class="form-control" type="number"
                                                                            value="@((double)val)"
-                                                                           @onblur="@OnBlur"
-                                                                           @onkeydown="@KeyPressHandler"
-                                                                           @onkeypress:preventDefault
+                                                                           @onblur="@OnBlur" @onkeydown="@KeyPressHandler" @onclick:stopPropagation @onfocus:stopPropagation
                                                                            @oninput="e => { property.SetValue(_iteratedList[thisCellStatus.Seq], double.TryParse(e?.Value?.ToString(), out var f) ? f : (double)val); }"></text>
                                                             }
                                                             else if (property.PropertyType.Name.Contains("Int"))
@@ -468,9 +463,7 @@
                                                                 <text>
                                                                     <input class="form-control" type="number" min="0"
                                                                            step="1" value="@((int)val)"
-                                                                           @onblur="@OnBlur"
-                                                                           @onkeydown="@KeyPressHandler"
-                                                                           @onkeypress:preventDefault
+                                                                           @onblur="@OnBlur" @onkeydown="@KeyPressHandler" @onclick:stopPropagation @onfocus:stopPropagation
                                                                            @oninput="e => { property.SetValue(_iteratedList[thisCellStatus.Seq], int.TryParse(e?.Value?.ToString(), out var f) ? f : (int)val); }"></text>
                                                             }
                                                             else if (property.PropertyType.Name == "Boolean")

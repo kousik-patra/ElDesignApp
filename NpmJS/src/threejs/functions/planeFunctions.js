@@ -61,7 +61,7 @@ function initPlaneFunctions(sceneManager) {
     _sceneManager = sceneManager;
     registerWindowFunctions();
 
-    console.log('[planeFunctions] Plane functions initialized');
+    //console.log('[planeFunctions] Plane functions initialized');
 }
 
 // ============================================================================
@@ -176,7 +176,7 @@ function registerWindowFunctions() {
             centrePlane(scene, planeTag, centreX, centreY, elevation);
         }
 
-        console.log(`[planeFunctions] drawPlane: '${planeTag}' added`);
+        //console.log(`[planeFunctions] drawPlane: '${planeTag}' added`);
         return true;
     };
 
@@ -190,7 +190,7 @@ function registerWindowFunctions() {
 
         const tag = resolveTag(planeTag);
         if (!tag) {
-            console.error('[planeFunctions] rotatePlane: No plane tag available');
+            //console.error('[planeFunctions] rotatePlane: No plane tag available');
             return false;
         }
 

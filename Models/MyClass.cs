@@ -318,7 +318,7 @@ public class BaseInfo
     [Display(Name = "Tag Description", Order = 7)]
     [RegularExpression(@"^([ .\/\a-zA-Z0-9]){0,255}$",
         ErrorMessage = "Tag Description should be 3 to 255 characters and can not contain any special characters")]
-    public string? TagDescription { get; set; } // Tag Description
+    public string? TagDesc { get; set; } // Tag Description
     [Display(Name = "Remark", Order = 90)] public string? Remark { get; set; } = "";
     
     [ExcludeFromExcelImport] 
@@ -347,25 +347,6 @@ public class Bus : BaseInfo, IBaseMethod
     public Bus()
     {
     }
-
-    // public Bus(string category, string tag, float vr, string sc, float xr = 10)
-    // {
-    //     Tag = tag;
-    //     VR = vr;
-    //     XR = xr;
-    //     Vit = new Complex(1, 0); // initialised
-    //     Sit = new Complex(0, 0); // initialised
-    //     Cn = new List<string>();
-    //     SC = sc;
-    //     ISC = SCFloat(SC, VR);
-    //     CordX = 0;
-    //     CordY = 0;
-    //     SLDL = 0;
-    //     Category = category;
-    //     UID = Guid.NewGuid();
-    //     return;
-    // }
-
     //Swing Bus or Slack Bus (aka reference bus): the voltage magnitude is known and voltage angle=0, real and reactive power not known
     //PV Bus or Generation bus: Real power and voltage magnitude known, reactive power and voltage angle unknown
     //PQ Bus or Load Bus: Real and reactive power known, voltage angle and magnitude unknown (motor)
@@ -653,6 +634,11 @@ public class BusDuct : Branch
     [Display(Name = "Length (m)", Order = 14)]
     public float L { get; set; } // Branch Length, m
     
+    [Display(Name = "Rated Current (A)", Order = 15)]
+    public float IR { get; set; }
+    [Display(Name = "Cross-section (sq.mm)", Order = 16)]
+    public float Size { get; set; }
+    
     public BusDuct()
     {
     }
@@ -776,9 +762,9 @@ public class Transformer : Branch
     [Range(1.0, 30.0, ErrorMessage = "% Impedance must be between 1% and 30%.")]
     public float Z { get; set; } // Impedance in percentage
     [Display(Name = "Primary Voltage", Order = 17)]
-    public float V1 { get; set; } // From (1) side Open Circuit Voltage
+    public float V1 { get; set; } // From (1) side (BfT) Open Circuit Voltage 
     [Display(Name = "Secondary Voltage", Order = 18)]
-    public float V2 { get; set; } // To (2) side Open Circuit Voltage
+    public float V2 { get; set; } // To (2) (BtT) side Open Circuit Voltage
 
     // BfT and BtT already defined
     //public string BfT { get; set; }     // Bus V1 (From side) Tag, it would be node
@@ -796,17 +782,23 @@ public class Transformer : Branch
 
 public class Switch : BaseInfo
 {
+    [Display(Name = "Rated Voltage (V)")]
     public float VR { get; set; } // Rated Voltage (V)
+    [Display(Name = "Rated Current (A)")]
     public float IR { get; set; } // Rated FLC (A)
+    [Display(Name = "Short Circuit Rating (X/XkA/XMVA)")]
     public string SC { get; set; } // Bus Short Circuit (e.g., 25kA, 325 MVA, 200MVA, 25) default unit kA
-    public float ISC { get; set; } // Bus Short Circuit Current in kA
+    public float ISC { get; set; } // Bus Short Circuit Current in kA (calculated)
 
     public string T1 { get; set; } // Bus Tag at Connection 1
     public string T2 { get; set; } // Bus Tag at Connection 2
+    [Display(Name = "T1-T2 Closed")]
     public bool Conn12 { get; set; } = true; // true -> Switch is Closed
 
     public string T3 { get; set; } = ""; // Bus Tag at Connection 3 (for 3-Way Switch)
+    [Display(Name = "T1-T3 Closed")]
     public bool Conn13 { get; set; } // Connection between T1 & T3: true -> Switch is Closed
+    [Display(Name = "T2-T3 Closed")]
     public bool Conn23 { get; set; } // Connection between T2 & T3: true -> Switch is Closed
 
     public void Update()

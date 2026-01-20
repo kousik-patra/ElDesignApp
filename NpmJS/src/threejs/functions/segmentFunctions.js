@@ -55,8 +55,8 @@ export function initSegmentFunctions(manager) {
  * @param {number[]} opacities - Array of opacity values
  */
 function drawSegmentsBatch(tags, jsonPointsArray, colors, opacities) {
-    console.log(`[SegmentFunctions] drawSegmentsBatch: Drawing ${tags.length} segments...`);
-    console.trace("WHO CALLED ME?"); 
+    //console.log(`[SegmentFunctions] drawSegmentsBatch: Drawing ${tags.length} segments...`);
+    //console.trace("WHO CALLED ME?"); 
 
     if (!sceneManager || !sceneManager.scene) {
         console.error("[SegmentFunctions] Scene not initialized!");
@@ -102,7 +102,7 @@ function drawSegmentsBatch(tags, jsonPointsArray, colors, opacities) {
                 });
             });
 
-            console.log(`[SegmentFunctions] Successfully added ${tags.length} segments`);
+            //console.log(`[SegmentFunctions] Successfully added ${tags.length} segments`);
             return true;
         }
 

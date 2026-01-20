@@ -511,7 +511,7 @@ else
 
                         <span class="toolbar-label ms-2">Description:</span>
                         <InputText class="form-control form-control-sm" style="width:180px"
-                                   @bind-Value="_newPlan.TagDescription" placeholder="Optional"/>
+                                   @bind-Value="_newPlan.TagDesc" placeholder="Optional"/>
 
                         <span class="toolbar-label ms-2">Remark:</span>
                         <InputText class="form-control form-control-sm" style="width:100px"
@@ -825,7 +825,7 @@ else
     // Display fields
     private readonly List<string> displayFields = new()
     {
-        "Tag", "TagDescription", "ImgThumbString", "X1", "X2", "Y1", "Y2", "Z", "Opacity",
+        "Tag", "TagDesc", "ImgThumbString", "X1", "X2", "Y1", "Y2", "Z", "Opacity",
         "Width", "Height", "ScaleX", "ScaleY", "CentreX", "CentreY",
         "GlobalE", "GlobalN", "KeyPlan"
     };
@@ -1654,7 +1654,7 @@ else
 
     private async Task DrawPlanInScene(PlotPlan plan)
     {
-        if (!await SafeJsInvoke("drawPlane", plan.Tag, plan.TagDescription, _newPlan.ImgString,_newPlan.Rotation,
+        if (!await SafeJsInvoke("drawPlane", plan.Tag, plan.TagDesc, _newPlan.ImgString,_newPlan.Rotation,
                 plan.ScaleX, plan.ScaleY, plan.CentreX, plan.CentreY, plan.Z, plan.Opacity))
         {
             _errorMessage = "Failed to draw plot plan in 3D view.";

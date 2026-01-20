@@ -21,7 +21,7 @@
     {
         var authState = await AuthState!;
         var userId = UserManager.GetUserId(authState.User);
-        
-        _userProjects = await ProjectAuth.GetUserProjectsAsync(userId);
+
+        if (userId != null) _userProjects = await ProjectAuth.GetUserProjectsAsync(userId);
     }
 }

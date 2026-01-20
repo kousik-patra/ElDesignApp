@@ -114,7 +114,7 @@ function drawPlaneMesh(rendererWidth, rendererHeight, planeTag, planeTagDescript
 
         planeMesh.updateMatrixWorld();
 
-        console.log(`[plane.js] Created plane: ${planeTag} at elevation ${elevation}`);
+        //console.log(`[plane.js] Created plane: ${planeTag} at elevation ${elevation}`);
         return planeMesh;
 
     } catch (e) {
@@ -150,7 +150,7 @@ function rotatePlane(scene, planeTag, angleRadians) {
 
         planeMesh.updateMatrixWorld();
 
-        console.log(`[plane.js] Rotated plane '${planeTag}' by ${(angleRadians * 180 / Math.PI).toFixed(1)}°`);
+        //console.log(`[plane.js] Rotated plane '${planeTag}' by ${(angleRadians * 180 / Math.PI).toFixed(1)}°`);
         return true;
 
     } catch (e) {
@@ -186,7 +186,7 @@ function setPlaneRotation(scene, planeTag, angleRadians) {
 
         planeMesh.updateMatrixWorld();
 
-        console.log(`[plane.js] Set plane '${planeTag}' rotation to ${(angleRadians * 180 / Math.PI).toFixed(1)}°`);
+        //console.log(`[plane.js] Set plane '${planeTag}' rotation to ${(angleRadians * 180 / Math.PI).toFixed(1)}°`);
         return true;
 
     } catch (e) {
@@ -229,7 +229,7 @@ function scalePlane(scene, planeTag, scaleX, scaleY) {
 
         planeMesh.updateMatrixWorld();
 
-        console.log(`[plane.js] Scaled plane '${planeTag}' to (${scaleX.toFixed(4)}, ${scaleY.toFixed(4)})`);
+        //console.log(`[plane.js] Scaled plane '${planeTag}' to (${scaleX.toFixed(4)}, ${scaleY.toFixed(4)})`);
         return true;
 
     } catch (e) {
@@ -275,7 +275,7 @@ function centrePlane(scene, planeTag, centreX, centreY, elevation = undefined) {
 
         planeMesh.updateMatrixWorld();
 
-        console.log(`[plane.js] Centred plane '${planeTag}' at (${centreX.toFixed(2)}, ${centreY.toFixed(2)}, ${z.toFixed(2)})`);
+        //console.log(`[plane.js] Centred plane '${planeTag}' at (${centreX.toFixed(2)}, ${centreY.toFixed(2)}, ${z.toFixed(2)})`);
         return true;
 
     } catch (e) {
@@ -309,7 +309,7 @@ function setPlaneElevation(scene, planeTag, elevation) {
 
         planeMesh.updateMatrixWorld();
 
-        console.log(`[plane.js] Set plane '${planeTag}' elevation to ${elevation.toFixed(2)}`);
+        //console.log(`[plane.js] Set plane '${planeTag}' elevation to ${elevation.toFixed(2)}`);
         return true;
 
     } catch (e) {
@@ -340,7 +340,7 @@ function setPlaneOpacity(scene, planeTag, opacity) {
             planeMesh.material.needsUpdate = true;
         }
 
-        console.log(`[plane.js] Set plane '${planeTag}' opacity to ${opacity.toFixed(2)}`);
+        //console.log(`[plane.js] Set plane '${planeTag}' opacity to ${opacity.toFixed(2)}`);
         return true;
 
     } catch (e) {
@@ -412,7 +412,7 @@ function repositionAllPlanes(scene, deltaX, deltaY) {
             planeMesh.updateMatrixWorld();
         });
 
-        console.log(`[plane.js] Repositioned ${planes.length} planes by (${deltaX.toFixed(2)}, ${deltaY.toFixed(2)})`);
+        //console.log(`[plane.js] Repositioned ${planes.length} planes by (${deltaX.toFixed(2)}, ${deltaY.toFixed(2)})`);
         return planes.length;
 
     } catch (e) {

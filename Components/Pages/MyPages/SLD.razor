@@ -557,7 +557,8 @@ else
 
     private static string _divString;
 
-    private ILogger _logger;
+    [Inject]
+    private ILogger<SegmentPage> _logger { get; set; } = default!;
 
     private string? loginUser;
 
@@ -909,7 +910,7 @@ else
             //
             //await MyTable.Update(itemslist, origialItemslist);
             var result = await Table.SyncListAsync(itemslist, origialItemslist, loginUser);
-            _logger.LogError( result.Errors.ToString());
+            _logger.LogError(result.Errors?.ToString());
             _logger.LogInformation($"Records Added: {result.Added}, Modified: {result.Modified} and Deleted: {result.Deleted}.");
             // clear cache invoking the parent page
             tableSuccessMessage = "Data updated to the Database";

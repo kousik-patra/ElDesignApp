@@ -535,7 +535,7 @@
                 var scaleX = plot.ScaleX * plot.RendererWidth / _rendererWidth;
                 var scaleY = plot.ScaleY * plot.RendererHeight / _rendererHeight;
                 await JSRuntime.InvokeVoidAsync("drawPlane", 
-                    plot.Tag, plot.TagDescription, plot.ImgString,
+                    plot.Tag, plot.TagDesc, plot.ImgString,
                     plot.Rotation,
                     scaleX, scaleY, 
                     plot.CentreX, plot.CentreY, 

@@ -642,10 +642,7 @@ export class MouseEventHandler {
      */
     notifyBlazor(eventData) {
         if (this.dotNetRef) {
-
-            // Debug: Log what we're sending
-            console.log('Sending to Blazor:', JSON.stringify(eventData, null, 2));
-            
+            //console.log('Sending to Blazor:', JSON.stringify(eventData, null, 2));            
             this.dotNetRef.invokeMethodAsync('OnSceneClick', JSON.stringify(eventData))
                 .catch(err => console.error('Error calling Blazor OnSceneClick:', err));
         }

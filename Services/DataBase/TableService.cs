@@ -1004,11 +1004,19 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         // Define the exclusion list
         var excludeList = new[] { "UID", "ProjectId", "UpdatedBy", "UpdatedOn"};
 
-        var properties = typeof(T).GetProperties()
-            .Where(p => sqlColumns.Contains(p.Name, StringComparer.OrdinalIgnoreCase)
-                         && !excludeList.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
-            .OrderBy(p => p.GetCustomAttribute<DisplayAttribute>()?.Order ?? int.MaxValue)
-            .ToList();
+        List<PropertyInfo> properties = [];
+        try
+        {
+            properties = typeof(T).GetProperties()
+                .Where(p => sqlColumns.Contains(p.Name, StringComparer.OrdinalIgnoreCase)
+                            && !excludeList.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
+                .OrderBy(p => p.GetCustomAttribute<DisplayAttribute>()?.GetOrder() ?? int.MaxValue)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
 
         if (properties.Count == 0)
         {

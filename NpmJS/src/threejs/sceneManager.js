@@ -150,14 +150,14 @@ class SceneManager {
         // Initialize pin cursor via WINDOW functions (ensures same module instance)
         if (window.initPinPlacementMode) {
             window.initPinPlacementMode(dotNetObjRef);
-            console.log('[SceneManager] initPinPlacementMode called via window');
+            //console.log('[SceneManager] initPinPlacementMode called via window');
         } else {
             console.warn('[SceneManager] window.initPinPlacementMode not available!');
         }
 
         if (window.setSceneReferences) {
             window.setSceneReferences(this.scene, this.camera, this.renderer);
-            console.log('[SceneManager] setSceneReferences called via window');
+            //console.log('[SceneManager] setSceneReferences called via window');
         } else {
             console.warn('[SceneManager] window.setSceneReferences not available!');
         }
@@ -179,7 +179,7 @@ class SceneManager {
 
         this.isInitialized = true;
         this.onContainerResize();
-        console.log('SceneManager: Initialized with axis helpers and mouse events');
+        //console.log('SceneManager: Initialized with axis helpers and mouse events');
         
         return true;
     }
@@ -250,7 +250,7 @@ class SceneManager {
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
 
-        console.log(`SceneManager: Renderer created with size ${width}x${height}`);
+        //console.log(`SceneManager: Renderer created with size ${width}x${height}`);
     }
 
     /**
@@ -396,7 +396,7 @@ class SceneManager {
         // this.gridHelper.layers.set(LAYERS.DEFAULT);
         // this.scene.add(this.gridHelper);
 
-        console.log('SceneManager: Axis helpers created');
+        //console.log('SceneManager: Axis helpers created');
     }
 
     /**
@@ -459,7 +459,7 @@ class SceneManager {
             window.setSceneReferences(this.scene, this.camera, this.renderer);
         }
 
-        console.log('SceneManager: Reattached to container');
+        //console.log('SceneManager: Reattached to container');
     }
 
     /**
@@ -483,7 +483,7 @@ class SceneManager {
             this.lastAddedPlaneTag = tag;
         }
 
-        console.log(`SceneManager: Added object '${tag}' to layer ${layer}`);
+        //console.log(`SceneManager: Added object '${tag}' to layer ${layer}`);
     }
 
     /**
@@ -502,7 +502,7 @@ class SceneManager {
                     this.lastAddedPlaneTag = null;
                 }
 
-                console.log(`SceneManager: Removed object '${tag}'`);
+                //console.log(`SceneManager: Removed object '${tag}'`);
                 return true;
             }
         }
@@ -535,7 +535,7 @@ class SceneManager {
         }
         objects.clear();
 
-        console.log(`SceneManager: Cleared layer ${layer}`);
+        //console.log(`SceneManager: Cleared layer ${layer}`);
     }
 
     /**
@@ -719,6 +719,9 @@ class SceneManager {
         // Throttle info panel updates (every 30 frames)
         let frameCount = 0;
         const INFO_UPDATE_INTERVAL = 30;
+
+        // Store render info before axis indicator overwrites it
+        let capturedRenderInfo = { calls: 0, triangles: 0 };
         
         const animate = () => {
             this.animationId = requestAnimationFrame(animate);
@@ -754,15 +757,24 @@ class SceneManager {
             this.renderer.setViewport(0, 0, width, height);
             this.renderer.render(this.scene, this.camera);
 
-            // Render axis indicator overlay
+            // ⭐ CAPTURE RENDER INFO IMMEDIATELY AFTER MAIN RENDER ⭐
+            // (Before axis indicator resets it!)
+            capturedRenderInfo = {
+                calls: this.renderer.info.render.calls,
+                triangles: this.renderer.info.render.triangles,
+                geometries: this.renderer.info.memory.geometries,
+                textures: this.renderer.info.memory.textures
+            };
+
+            // Render axis indicator overlay (this will reset renderer.info)
             if (this.axisIndicator) {
                 this.axisIndicator.render(this.renderer, width, height);
             }
 
-            // Update info panel (throttled)
+            // Update info panel using CAPTURED values (throttled)
             frameCount++;
             if (frameCount >= INFO_UPDATE_INTERVAL) {
-                self.updateInfoPanel();
+                self.updateInfoPanelWithData(capturedRenderInfo);
                 frameCount = 0;
             }
 
@@ -778,6 +790,31 @@ class SceneManager {
             cancelAnimationFrame(this.animationId);
             this.animationId = null;
         }
+    }
+
+
+    /**
+     * Update the info panel with provided render stats
+     * (Used to show main scene stats, not axis indicator stats)
+     */
+    updateInfoPanelWithData(renderInfo) {
+        if (!this.infoPanel) return;
+
+        const drawCallsEl = document.getElementById('info-drawcalls');
+        const trianglesEl = document.getElementById('info-triangles');
+        const geometriesEl = document.getElementById('info-geometries');
+
+        if (drawCallsEl) drawCallsEl.textContent = renderInfo.calls.toString();
+        if (trianglesEl) trianglesEl.textContent = renderInfo.triangles.toLocaleString();
+        if (geometriesEl) geometriesEl.textContent = renderInfo.geometries.toString();
+
+        // Store for external access
+        this.renderInfo = {
+            drawCalls: renderInfo.calls,
+            triangles: renderInfo.triangles,
+            geometries: renderInfo.geometries,
+            textures: renderInfo.textures || 0
+        };
     }
 
     /**
@@ -854,7 +891,7 @@ class SceneManager {
      * Clear all objects from all layers except infrastructure
      */
     clearAllLayers() {
-        console.log('SceneManager: Clearing all layers');
+        //console.log('SceneManager: Clearing all layers');
 
         for (const [layer, objects] of this.objectRegistry) {
             for (const [tag, mesh] of objects) {
@@ -876,7 +913,7 @@ class SceneManager {
             this.scene.remove(obj);
         });
 
-        console.log('SceneManager: All layers cleared');
+        //console.log('SceneManager: All layers cleared');
     }
 
     /**
@@ -936,7 +973,7 @@ class SceneManager {
         hemiLight.position.set(0, 100, 0);
         scene.add(hemiLight);
 
-        console.log('Shadows configured');
+        //console.log('Shadows configured');
 
         return { directionalLight, ambientLight, hemiLight };
     }

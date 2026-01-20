@@ -1459,8 +1459,8 @@ public class LayoutFunctionService : ILayoutFunctionService
         var polX = _myFunction.Polynomial(IRData, XData, 2);
         var polR = _myFunction.Polynomial(IRData, RData, 2);
         //
-        busDuct.Rl = (float)(polR[2] * busDuct.IR * busDuct.IR + polR[1] * busDuct.IR + polR[0]);
-        busDuct.Xl = (float)(polX[2] * busDuct.IR * busDuct.IR + polX[1] * busDuct.IR + polX[0]);
+        busDuct.Rl = (float)(polR[2] * ((Branch)busDuct).IR * ((Branch)busDuct).IR + polR[1] * ((Branch)busDuct).IR + polR[0]);
+        busDuct.Xl = (float)(polX[2] * ((Branch)busDuct).IR * ((Branch)busDuct).IR + polX[1] * ((Branch)busDuct).IR + polX[0]);
         busDuct.R = busDuct.Rl * busDuct.L / 1000;
         busDuct.X = busDuct.Xl * busDuct.L / 1000;
         //
