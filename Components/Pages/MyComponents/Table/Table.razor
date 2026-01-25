@@ -1,98 +1,41 @@
-@attribute [StreamRendering]
-
-@using System.ComponentModel.DataAnnotations
-@using System.Diagnostics
+@* @attribute [StreamRendering] *@
 @using System.IO
-@using System.Linq.Expressions
-@using System.Reflection
-@using System.Text.Json
 @using System.Xml.XPath
-@using ElDesignApp.Models
-@using ElDesignApp.Services
-@using ElDesignApp.Components.MyModals
 @using OfficeOpenXml;
+@using ElDesignApp.Services.Table
 
 @typeparam T where T : class, new()
 
 @inject NavigationManager MyNavigationManager
 @inject IJSRuntime Js;
-
-
-@using ElDesignApp.Services
-@using OfficeOpenXml
 @using LicenseContext = OfficeOpenXml.LicenseContext
 @inject IDataRetrievalService DataService
 @inject ITableService TableService
 @inject IGlobalDataService GlobalData
 @inject IMyFunctionService MyFunction
 @inject IMiscService MiscService
+@inject ITableJsInterop TableJs
 
-<style>
-
-    .tableFixHead {
-        height: 600px;
-        overflow-x: auto;
-        overflow-y: auto
-    }
-
-    .tableFixHead thead th {
-        position: sticky;
-        top: 0;
-        z-index: 2;
-    }
-
-    .tableFixHead tbody th {
-        position: sticky;
-        left: 0;
-        z-index: 1;
-    }
-
-    /* Hide the spinners */
-    input::-webkit-outer-spin-button,
-    input::-webkit-inner-spin-button {
-        -webkit-appearance: none;
-        margin: 0;
-    }
-
-    input[type="number"] {
-        -moz-appearance: textfield;
-    }
-
-</style>
+@implements IAsyncDisposable
 
 
-<script>
-    // Function to set width of dynamicDiv based on window size
-    function setDynamicDivWidth() {
-        var dynamicDiv = document.getElementById('dynamicDiv');
-        if (dynamicDiv) {
-            var windowWidth = window.innerWidth;
-            // Example calculation, adjust as per your requirements
-            var newWidth = windowWidth * 0.8; // 80% of window width
-            dynamicDiv.style.width = newWidth + 'px';
-            //console.log("width ", dynamicDiv.style.width);
-        }
-    }
-
-    // Run setDynamicDivWidth on page load and window resize
-    document.addEventListener('DOMContentLoaded', function () {
-        setDynamicDivWidth();
-    });
-    document.addEventListener('click', function () {
-        setDynamicDivWidth();
-    });
-
-    window.addEventListener('resize', function () {
-        setDynamicDivWidth();
-    });
-
-</script>
-
-<div id="dynamicDiv" class="container-fluid float-left">
+<div id="@_containerId" class="container-fluid float-left">
     <div class="row float-left">
         <h3>@Header</h3>
         @ChildContent
     </div>
+    
+    @if (_isProcessingExcel)
+    {
+        <div style="position:fixed; top:0; left:0; width:100%; height:100%; 
+                background:rgba(0,0,0,0.5); display:flex; 
+                justify-content:center; align-items:center; z-index:9999;">
+            <div style="background:white; padding:2rem; border-radius:12px; text-align:center;">
+                <img src="./images/loading-green_dots.gif" width="60" />
+                <h5 style="margin-top:1rem;">@_excelProgressMessage</h5>
+            </div>
+        </div>
+    }
     @if (List is null)
     {
         <div class="row float-left">
@@ -678,6 +621,7 @@
 
 
 @code {
+    
 
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public RenderFragment? Header { get; set; }
@@ -730,13 +674,39 @@
     /// Enable multi-select mode (Ctrl+Click, Shift+Click)
     /// </summary>
     [Parameter] public bool EnableMultiSelect { get; set; } = false;
+    
+    /// <summary>
+    /// Width of table as percentage of window width (0.0 - 1.0)
+    /// Default: 0.8 (80%)
+    /// </summary>
+    [Parameter] public double TableWidthPercentage { get; set; } = 0.8;
+    
+    /// <summary>
+    /// Minimum table width in pixels
+    /// Default: 300
+    /// </summary>
+    [Parameter] public int TableMinWidth { get; set; } = 300;
+    
+    /// <summary>
+    /// Maximum table width in pixels (0 = no maximum)
+    /// Default: 0
+    /// </summary>
+    [Parameter] public int TableMaxWidth { get; set; } = 0;
 
 
+    private readonly string _containerId = $"table-container-{Guid.NewGuid():N}";
+    private bool _jsInitialized = false;
+    private bool _isDisposed = false;
+    
     // Track last hovered item for OnRowHoverEnd
     private T? _lastHoveredItem = default;
 
     // Property for getting Tag from items
     private PropertyInfo? _tagProperty;
+    
+    
+    private bool _isProcessingExcel = false;
+    private string _excelProgressMessage = "";
     
     
     private List<PropertyInfo> _tableProperties = null!;
@@ -1001,10 +971,20 @@
         DoPagination();
     }
 
-    protected override Task OnAfterRenderAsync(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         //System.Diagnostics.Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
-        return base.OnAfterRenderAsync(firstRender);
+        
+        await base.OnAfterRenderAsync(firstRender);
+    
+        // Only initialize JS when:
+        // 1. Not already initialized
+        // 2. List has data (element is fully rendered)
+        if (!_jsInitialized && List != null && List.Any())
+        {
+            Debug.WriteLine($"[Table] Attempting JS init...");
+            await InitializeJavaScriptAsync();
+        }
     }
 
 
@@ -1016,18 +996,122 @@
         //return ShouldRenderAgain;
     }
 
-    public void Dispose()
-    {
-        //Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  Table-{typeof(T).Name} -  {MethodBase.GetCurrentMethod()?.Name}");
-        //System.Diagnostics.Debug.WriteLine("Table - Dispose");
-        
-        _iteratedList?.Clear();
-        _filteredList?.Clear();
-        _displayList?.Clear();
-        _importedItemsFromExcel?.Clear();
-        _cellStatusRecord?.Clear();
+    // public void Dispose()
+    // {
+    //     // Fire and forget the async disposal
+    //     _ = DisposeAsync();
+    // }
     
-        Debug.WriteLine($"Table<{typeof(T).Name}> disposed");
+    
+    public async ValueTask DisposeAsync()
+    {
+        // Prevent multiple disposal
+        if (_isDisposed)
+        {
+            return;
+        }
+        
+        _isDisposed = true;  // Set immediately to prevent new operations
+        
+        Debug.WriteLine($"[Table<{typeof(T).Name}>] DisposeAsync starting for '{_containerId}'...");
+
+        // Dispose JS instance
+        if (_jsInitialized)
+        {
+            try
+            {
+                await TableJs.DisposeInstanceAsync(_containerId);
+                Debug.WriteLine($"[Table<{typeof(T).Name}>] JS disposed for '{_containerId}'");
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit already disconnected - that's fine
+                Debug.WriteLine($"[Table<{typeof(T).Name}>] Circuit disconnected during dispose");
+            }
+            catch (ObjectDisposedException)
+            {
+                // Already disposed
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Table<{typeof(T).Name}>] Error disposing JS: {ex.Message}");
+            }
+            finally
+            {
+                _jsInitialized = false;
+            }
+        }
+
+        // Clear lists to free memory
+        _iteratedList = null;
+        _filteredList = null; 
+        _displayList = null; 
+        _importedItemsFromExcel = null;
+        _cellStatusRecord?.Clear();
+
+        Debug.WriteLine($"[Table<{typeof(T).Name}>] DisposeAsync completed");
+    }
+    
+    
+   
+    
+    /// <summary>
+    /// Initializes JavaScript functionality for the table
+    /// </summary>
+    private async Task InitializeJavaScriptAsync()
+    {
+        // Double-check we're not disposed and not already initialized
+        if (_jsInitialized || _isDisposed)
+            return;
+
+        try
+        {
+            // Small delay to ensure DOM is ready
+            await Task.Delay(50);
+            
+            // Check again after delay
+            if (_isDisposed)
+                return;
+            
+            var config = new TableResizeConfig
+            {
+                WidthPercentage = TableWidthPercentage,
+                MinWidth = TableMinWidth,
+                MaxWidth = TableMaxWidth
+            };
+
+            var success = await TableJs.InitializeDynamicResizeAsync(_containerId, config);
+            
+            if (success)
+            {
+                _jsInitialized = true;
+                Debug.WriteLine($"[Table<{typeof(T).Name}>] JS initialized for '{_containerId}'");
+            }
+            else
+            {
+                Debug.WriteLine($"[Table<{typeof(T).Name}>] JS init failed for '{_containerId}'");
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit disconnected, component is being disposed
+            Debug.WriteLine($"[Table<{typeof(T).Name}>] Circuit disconnected during JS init");
+        }
+        catch (ObjectDisposedException e)
+        {
+            // Component was disposed during initialization
+            Debug.WriteLine($"[Table<{typeof(T).Name}>] Component disposed during JS init");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Prerendering - JS not available yet
+            Debug.WriteLine($"[Table<{typeof(T).Name}>] JS not available: {ex.Message}");
+        }
+
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Table<{typeof(T).Name}>] JS init error: {ex.Message}");
+        }
     }
 
 
@@ -1062,88 +1146,88 @@
     }
 
     private async Task DoSubmit()
-{
-    if (_currentDblClickedCell.DblClickedStatus == false) return;
-    
-    var currentSeq = _currentDblClickedCell.Seq;
-    var currentProperty = typeof(T).GetProperty(_currentDblClickedCell.FieldName);
-    
-    if (currentProperty == null)
     {
-        ErrorMessage = $"Property '{_currentDblClickedCell.FieldName}' not found.";
-        return;
+        if (_currentDblClickedCell.DblClickedStatus == false) return;
+        
+        var currentSeq = _currentDblClickedCell.Seq;
+        var currentProperty = typeof(T).GetProperty(_currentDblClickedCell.FieldName);
+        
+        if (currentProperty == null)
+        {
+            ErrorMessage = $"Property '{_currentDblClickedCell.FieldName}' not found.";
+            return;
+        }
+        
+        // Safety check for index bounds
+        if (currentSeq < 0 || currentSeq >= _iteratedList.Count)
+        {
+            ErrorMessage = $"Invalid sequence index: {currentSeq}";
+            Debug.WriteLine($"DoSubmit: Invalid currentSeq {currentSeq}, _iteratedList.Count = {_iteratedList.Count}");
+            return;
+        }
+        
+        var currentValue = currentProperty.GetValue(_iteratedList[currentSeq]);
+        
+        // Get UID to find the correct item in ListOriginal
+        var uidProperty = typeof(T).GetProperty("UID");
+        if (uidProperty == null)
+        {
+            ErrorMessage = "UID property not found on type.";
+            return;
+        }
+        
+        var currentuid = (Guid)uidProperty.GetValue(_iteratedList[currentSeq]);
+        
+        // Find the original item by UID instead of using index
+        var originalItemIndex = ListOriginal?.FindIndex(item => 
+            (Guid)uidProperty.GetValue(item) == currentuid) ?? -1;
+        
+        if (originalItemIndex < 0 || ListOriginal == null)
+        {
+            ErrorMessage = $"Original item with UID {currentuid} not found.";
+            Debug.WriteLine($"DoSubmit: Item with UID {currentuid} not found in ListOriginal");
+            return;
+        }
+        
+        var originalItem = ListOriginal[originalItemIndex];
+        var previousValue = currentProperty.GetValue(List[currentSeq]);
+        
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name} " +
+                        $":Record # {currentSeq + 1} field '{currentProperty.Name}' : '{previousValue}' being changed to '{currentValue}'");
+        
+        // Validate the input data
+        _iteratedList[currentSeq] = ValidatedGeneralInput(_iteratedList[currentSeq], currentProperty, _iteratedList, List);
+    
+        // If Validated then only update List as per changed value (IterateList)
+        if (ErrorMessage == "")
+        {
+            List[currentSeq] = _iteratedList[currentSeq];
+        }
+    
+        _selectedRecord = currentSeq + 1;
+        _selectedColumn = currentProperty.Name;
+        StateHasChanged();
+        
+        // Further validation at Parent Component - now using the correct original item
+        var args = (
+            _iteratedList[currentSeq],      // Current edited item
+            currentuid,                      // UID of the item
+            currentProperty,                 // Property being changed
+            originalItem,                    // ✅ FIXED: Original item found by UID
+            List,                            // Current working list
+            ListOriginal,                    // Original list
+            SuccessMessage, 
+            WarningMessage, 
+            InfoMessage, 
+            ErrorMessage
+        );
+    
+        await AutoCheck.InvokeAsync(args!);
+    
+        _currentDblClickedCell.DblClickedStatus = false;
+        _currentDblClickedCell.Edited = true;
+        DoFilter();
     }
-    
-    // Safety check for index bounds
-    if (currentSeq < 0 || currentSeq >= _iteratedList.Count)
-    {
-        ErrorMessage = $"Invalid sequence index: {currentSeq}";
-        Debug.WriteLine($"DoSubmit: Invalid currentSeq {currentSeq}, _iteratedList.Count = {_iteratedList.Count}");
-        return;
-    }
-    
-    var currentValue = currentProperty.GetValue(_iteratedList[currentSeq]);
-    
-    // Get UID to find the correct item in ListOriginal
-    var uidProperty = typeof(T).GetProperty("UID");
-    if (uidProperty == null)
-    {
-        ErrorMessage = "UID property not found on type.";
-        return;
-    }
-    
-    var currentuid = (Guid)uidProperty.GetValue(_iteratedList[currentSeq]);
-    
-    // Find the original item by UID instead of using index
-    var originalItemIndex = ListOriginal?.FindIndex(item => 
-        (Guid)uidProperty.GetValue(item) == currentuid) ?? -1;
-    
-    if (originalItemIndex < 0 || ListOriginal == null)
-    {
-        ErrorMessage = $"Original item with UID {currentuid} not found.";
-        Debug.WriteLine($"DoSubmit: Item with UID {currentuid} not found in ListOriginal");
-        return;
-    }
-    
-    var originalItem = ListOriginal[originalItemIndex];
-    var previousValue = currentProperty.GetValue(List[currentSeq]);
-    
-    Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name} " +
-                    $":Record # {currentSeq + 1} field '{currentProperty.Name}' : '{previousValue}' being changed to '{currentValue}'");
-    
-    // Validate the input data
-    _iteratedList[currentSeq] = ValidatedGeneralInput(_iteratedList[currentSeq], currentProperty, _iteratedList, List);
-
-    // If Validated then only update List as per changed value (IterateList)
-    if (ErrorMessage == "")
-    {
-        List[currentSeq] = _iteratedList[currentSeq];
-    }
-
-    _selectedRecord = currentSeq + 1;
-    _selectedColumn = currentProperty.Name;
-    StateHasChanged();
-    
-    // Further validation at Parent Component - now using the correct original item
-    var args = (
-        _iteratedList[currentSeq],      // Current edited item
-        currentuid,                      // UID of the item
-        currentProperty,                 // Property being changed
-        originalItem,                    // ✅ FIXED: Original item found by UID
-        List,                            // Current working list
-        ListOriginal,                    // Original list
-        SuccessMessage, 
-        WarningMessage, 
-        InfoMessage, 
-        ErrorMessage
-    );
-
-    await AutoCheck.InvokeAsync(args!);
-
-    _currentDblClickedCell.DblClickedStatus = false;
-    _currentDblClickedCell.Edited = true;
-    DoFilter();
-}
 
     private async Task DoCellButton(CellStatus cell)
     {
@@ -1461,6 +1545,27 @@
         StateHasChanged();
     }
 
+    private (PropertyInfo? Uid, PropertyInfo? Tag) GetUiDnTagProperty<T>()
+    {
+        try
+        {
+            // Use StringComparer.OrdinalIgnoreCase to prevent crashes on duplicate names with different casing
+            var propertyMap = typeof(T).GetProperties()
+                .ToDictionary(p => p.Name.Trim(), p => p, StringComparer.OrdinalIgnoreCase);
+
+            propertyMap.TryGetValue("UID", out var uidProperty);
+            propertyMap.TryGetValue("Tag", out var tagProperty);
+
+            return (uidProperty, tagProperty);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e.Message);
+            // Return empty/nulls if the try block fails
+            return (null, null);
+        }
+    }
+    
 
 private async Task AppendRecord()
 {
@@ -1476,9 +1581,7 @@ private async Task AppendRecord()
         return;
     }
 
-    var propertyMap = typeof(T).GetProperties().ToDictionary(p => p.Name.Trim(), p => p);
-    var uidProperty = propertyMap.TryGetValue("UID", out var uidProp) ? uidProp : null;
-    var tagProperty = propertyMap.TryGetValue("Tag", out var tagProp) ? tagProp : null;
+    var (uidProperty,tagProperty) = GetUiDnTagProperty<T>();
 
     // Build existing UID and Tag sets from current list
     var existingUIDs = new HashSet<object>();
@@ -1628,158 +1731,173 @@ private async Task AppendRecord()
 
 private async Task ReplaceRecord()
 {
-    _importValidationErrors.Clear();
-    _importValidationWarnings.Clear();
-    _importedSuccessCount = 0;
-    _importedSkippedCount = 0;
-
-    if (_importedItemsFromExcel == null || !_importedItemsFromExcel.Any())
+    
+    _isProcessingExcel = true;
+    _excelProgressMessage = "Processing import...";
+    StateHasChanged();
+    await Task.Delay(50);
+    
+    try
     {
-        ErrorMessage = "No records to replace with.";
-        StateHasChanged();
-        return;
-    }
+        _importValidationErrors.Clear();
+        _importValidationWarnings.Clear();
+        _importedSuccessCount = 0;
+        _importedSkippedCount = 0;
 
-    var propertyMap = typeof(T).GetProperties().ToDictionary(p => p.Name.Trim(), p => p);
-    var uidProperty = propertyMap.TryGetValue("UID", out var uidProp) ? uidProp : null;
-    var tagProperty = propertyMap.TryGetValue("Tag", out var tagProp) ? tagProp : null;
-
-    // Validate imported items for internal duplicates
-    var validatedItems = new List<T>();
-    var seenUIDs = new HashSet<object>();
-    var seenTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    var rowNumber = 2; // Excel starts data at row 2
-
-    foreach (var item in _importedItemsFromExcel)
-    {
-        var canAdd = true;
-        var itemIdentifier = $"Row {rowNumber}";
-        string tagValue = null;
-
-        // Check UID (if property exists)
-        if (uidProperty != null)
+        if (_importedItemsFromExcel == null || !_importedItemsFromExcel.Any())
         {
-            var uidValue = uidProperty.GetValue(item);
-            if (uidValue == null || uidValue.Equals(Guid.Empty))
-            {
-                _importValidationErrors.Add($"{itemIdentifier}: Missing or empty UID");
-                canAdd = false;
-            }
-            else if (!seenUIDs.Add(uidValue))
-            {
-                _importValidationErrors.Add($"{itemIdentifier}: Duplicate UID '{uidValue}' within imported data");
-                canAdd = false;
-            }
+            ErrorMessage = "No records to replace with.";
+            StateHasChanged();
+            return;
         }
+        
+        var (uidProperty,tagProperty) = GetUiDnTagProperty<T>();
 
-        // Check Tag (if property exists) - REQUIRED, cannot be empty
-        if (tagProperty != null)
+        // Validate imported items for internal duplicates
+        var validatedItems = new List<T>();
+        var seenUIDs = new HashSet<object>();
+        var seenTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var rowNumber = 2; // Excel starts data at row 2
+
+        foreach (var item in _importedItemsFromExcel)
         {
-            tagValue = tagProperty.GetValue(item)?.ToString()?.Trim();
-            
-            if (string.IsNullOrWhiteSpace(tagValue))
+            var canAdd = true;
+            var itemIdentifier = $"Row {rowNumber}";
+            string tagValue = null;
+
+            // Check UID (if property exists)
+            if (uidProperty != null)
             {
-                _importValidationErrors.Add($"{itemIdentifier}: Tag is required and cannot be empty");
-                canAdd = false;
-            }
-            else
-            {
-                // Update identifier with tag for better error messages
-                itemIdentifier = $"Row {rowNumber} (Tag: '{tagValue}')";
-                
-                if (!seenTags.Add(tagValue))
+                var uidValue = uidProperty.GetValue(item);
+                if (uidValue == null || uidValue.Equals(Guid.Empty))
                 {
-                    _importValidationErrors.Add($"{itemIdentifier}: Duplicate Tag '{tagValue}' within imported data");
+                    _importValidationErrors.Add($"{itemIdentifier}: Missing or empty UID");
+                    canAdd = false;
+                }
+                else if (!seenUIDs.Add(uidValue))
+                {
+                    _importValidationErrors.Add($"{itemIdentifier}: Duplicate UID '{uidValue}' within imported data");
                     canAdd = false;
                 }
             }
-        }
-        
-        // Validate using Data Annotations
-        if (canAdd)
-        {
-            var validationErrors = ValidateItem(item);
-            if (validationErrors.Any())
+
+            // Check Tag (if property exists) - REQUIRED, cannot be empty
+            if (tagProperty != null)
             {
-                foreach (var validationError in validationErrors)
+                tagValue = tagProperty.GetValue(item)?.ToString()?.Trim();
+
+                if (string.IsNullOrWhiteSpace(tagValue))
                 {
-                    _importValidationErrors.Add($"{itemIdentifier}: {validationError}");
+                    _importValidationErrors.Add($"{itemIdentifier}: Tag is required and cannot be empty");
+                    canAdd = false;
                 }
-                canAdd = false;
+                else
+                {
+                    // Update identifier with tag for better error messages
+                    itemIdentifier = $"Row {rowNumber} (Tag: '{tagValue}')";
+
+                    if (!seenTags.Add(tagValue))
+                    {
+                        _importValidationErrors.Add($"{itemIdentifier}: Duplicate Tag '{tagValue}' within imported data");
+                        canAdd = false;
+                    }
+                }
             }
-        }
-        
 
-        // Add to validated list
-        if (canAdd)
+            // Validate using Data Annotations
+            if (canAdd)
+            {
+                var validationErrors = ValidateItem(item);
+                if (validationErrors.Any())
+                {
+                    foreach (var validationError in validationErrors)
+                    {
+                        _importValidationErrors.Add($"{itemIdentifier}: {validationError}");
+                    }
+
+                    canAdd = false;
+                }
+            }
+
+
+            // Add to validated list
+            if (canAdd)
+            {
+                await CallUpdateMethodIfExists(item);
+                validatedItems.Add(item);
+                _importedSuccessCount++;
+            }
+            else
+            {
+                _importedSkippedCount++;
+            }
+
+            rowNumber++;
+        }
+
+        // Only replace if we have valid items
+        if (!validatedItems.Any())
         {
-            await CallUpdateMethodIfExists(item);
-            validatedItems.Add(item);
-            _importedSuccessCount++;
+            ErrorMessage = "No valid records found to replace with. All imported records failed validation. Operation cancelled.";
+
+            // Show detailed errors
+            if (_importValidationErrors.Any())
+            {
+                var errorDetail = string.Join("; ", _importValidationErrors.Take(10));
+                if (_importValidationErrors.Count > 10)
+                {
+                    errorDetail += $"... and {_importValidationErrors.Count - 10} more error(s)";
+                }
+
+                ErrorMessage += $" Errors: {errorDetail}";
+            }
+
+            StateHasChanged();
+            return;
         }
-        else
+
+        // Perform the replacement
+        var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
+
+        List = JsonSerializer.Deserialize<List<T>>(
+            JsonSerializer.Serialize(validatedItems, jsonSerializerOption),
+            jsonSerializerOption);
+
+        _iteratedList = JsonSerializer.Deserialize<List<T>>(
+            JsonSerializer.Serialize(validatedItems, jsonSerializerOption),
+            jsonSerializerOption);
+
+
+        // Update messages
+        ResetMassages();
+
+        SuccessMessage = $"{_importedSuccessCount} valid record(s) replaced the existing list successfully.";
+
+        if (_importedSkippedCount > 0)
         {
-            _importedSkippedCount++;
+            WarningMessage = $"{_importedSkippedCount} record(s) from import were skipped due to validation errors.";
         }
 
-        rowNumber++;
-    }
-
-    // Only replace if we have valid items
-    if (!validatedItems.Any())
-    {
-        ErrorMessage = "No valid records found to replace with. All imported records failed validation. Operation cancelled.";
-        
-        // Show detailed errors
         if (_importValidationErrors.Any())
         {
-            var errorDetail = string.Join("; ", _importValidationErrors.Take(10));
-            if (_importValidationErrors.Count > 10)
+            var errorSummary = string.Join("; ", _importValidationErrors.Take(5));
+            if (_importValidationErrors.Count > 5)
             {
-                errorDetail += $"... and {_importValidationErrors.Count - 10} more error(s)";
+                errorSummary += $"... and {_importValidationErrors.Count - 5} more error(s)";
             }
-            ErrorMessage += $" Errors: {errorDetail}";
+
+            InfoMessage = $"Note - Validation errors found: {errorSummary}";
+
+            // Log all errors for debugging
+            Debug.WriteLine($"=== Import Replace Validation Errors ({_importValidationErrors.Count}) ===");
+            _importValidationErrors.ForEach(e => Debug.WriteLine(e));
         }
-        
+    }
+    finally
+    {
+        _isProcessingExcel = false;
         StateHasChanged();
-        return;
     }
-
-    // Perform the replacement
-    var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
-    
-    List = JsonSerializer.Deserialize<List<T>>(
-        JsonSerializer.Serialize(validatedItems, jsonSerializerOption), 
-        jsonSerializerOption);
-    
-    _iteratedList = JsonSerializer.Deserialize<List<T>>(
-        JsonSerializer.Serialize(validatedItems, jsonSerializerOption), 
-        jsonSerializerOption);
-
-    // Update messages
-    ResetMassages();
-    
-    SuccessMessage = $"{_importedSuccessCount} valid record(s) replaced the existing list successfully.";
-
-    if (_importedSkippedCount > 0)
-    {
-        WarningMessage = $"{_importedSkippedCount} record(s) from import were skipped due to validation errors.";
-    }
-
-    if (_importValidationErrors.Any())
-    {
-        var errorSummary = string.Join("; ", _importValidationErrors.Take(5));
-        if (_importValidationErrors.Count > 5)
-        {
-            errorSummary += $"... and {_importValidationErrors.Count - 5} more error(s)";
-        }
-        InfoMessage = $"Note - Validation errors found: {errorSummary}";
-        
-        // Log all errors for debugging
-        Debug.WriteLine($"=== Import Replace Validation Errors ({_importValidationErrors.Count}) ===");
-        _importValidationErrors.ForEach(e => Debug.WriteLine(e));
-    }
-
     DoPagination();
     StateHasChanged();
     _showInputFile = false;
@@ -1900,12 +2018,37 @@ private async Task CallUpdateMethodIfExists(T item)
         // download total records to excel
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} : Table {typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
         //
-        var excelBytes = TableService.ExportToExcel<T>(_iteratedList);
-        await Js.InvokeVoidAsync("saveAsFile", $"{typeof(T).Name}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", Convert.ToBase64String(excelBytes));
+        // var excelBytes = TableService.ExportToExcel<T>(_iteratedList);
+        // await Js.InvokeVoidAsync("saveAsFile", $"{typeof(T).Name}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", Convert.ToBase64String(excelBytes));
+        //
+        // if (_iteratedList == null) return;
+        // _displayMsgAction = _iteratedList.Count + " record(s) saved in Excel successfully.";
+        // Debug.WriteLine($"Table - downloading {_iteratedList.Count} records");
+        
+        
+        if (_iteratedList == null || !_iteratedList.Any())
+        {
+            WarningMessage = "No data to download.";
+            return;
+        }
 
-        if (_iteratedList == null) return;
-        _displayMsgAction = _iteratedList.Count + " record(s) saved in Excel successfully.";
-        Debug.WriteLine($"Table - downloading {_iteratedList.Count} records");
+        try
+        {
+            var excelBytes = TableService.ExportToExcel<T>(_iteratedList);
+            var filename = $"{typeof(T).Name}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            
+            // Use the JS Interop service instead of direct IJSRuntime call
+            await TableJs.SaveAsFileAsync(filename, Convert.ToBase64String(excelBytes));
+
+            _displayMsgAction = $"{_iteratedList.Count} record(s) saved in Excel successfully.";
+            Debug.WriteLine($"Table - downloading {_iteratedList.Count} records");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Failed to download: {ex.Message}";
+            Debug.WriteLine($"[Table<{typeof(T).Name}>] Download error: {ex}");
+        }
+        
     }
     
     private async Task DownloadTemplate()
@@ -1913,11 +2056,40 @@ private async Task CallUpdateMethodIfExists(T item)
         // download template to excel for data import
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} : Table {typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
         //
-        var excelBytes = await TableService.ExportExcelTemplateAsync<T>();
-        await Js.InvokeVoidAsync("saveAsFile", $"{typeof(T).Name}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", Convert.ToBase64String(excelBytes));
+        // var excelBytes = await TableService.ExportExcelTemplateAsync<T>();
+        // await Js.InvokeVoidAsync("saveAsFile", $"{typeof(T).Name}_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx", Convert.ToBase64String(excelBytes));
+        //
+        // _displayMsgAction = $"Table {typeof(T).Name} template generated successfully.";
+        // Debug.WriteLine($"Table - downloading {typeof(T).Name} templates");
+        
+        try
+        {
+            var excelBytes = await TableService.ExportExcelTemplateAsync<T>();
+            var filename = $"{typeof(T).Name}_Template_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+            
+            await TableJs.SaveAsFileAsync(filename, Convert.ToBase64String(excelBytes));
 
-        _displayMsgAction = $"Table {typeof(T).Name} template generated successfully.";
-        Debug.WriteLine($"Table - downloading {typeof(T).Name} templates");
+            _displayMsgAction = $"Table {typeof(T).Name} template generated successfully.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Failed to generate template: {ex.Message}";
+            Debug.WriteLine($"[Table<{typeof(T).Name}>] Template error: {ex}");
+        }
+        
+    }
+    
+    // Helper method to focus on cell input after double-click
+    private async Task FocusEditingCellAsync()
+    {
+        if (_currentDblClickedCell == null || !_currentDblClickedCell.DblClickedStatus)
+            return;
+
+        // Build a selector for the currently editing cell
+        var cellSelector = $"#{_containerId} tbody tr:nth-child({_currentDblClickedCell.Seq + 1}) td input, " +
+                           $"#{_containerId} tbody tr:nth-child({_currentDblClickedCell.Seq + 1}) td select";
+
+        await TableJs.FocusCellInputAsync(cellSelector);
     }
     
 
@@ -2035,22 +2207,43 @@ private async Task CallUpdateMethodIfExists(T item)
     public void DoPagination()
     {
         //System.Diagnostics.Debug.WriteLine("Table - Pagination");
-        //
+    
+        _fieldSearchStringList ??= [..Enumerable.Repeat("", _tableProperties.Count)];
+    
         if (_recordsPerPage < 1) _recordsPerPage = 10;
-        _maxDisplayPage = Math.Max(1, (_filteredList.Count - 1) / _recordsPerPage + 1);
-        //
+    
+        // Call DoFilter first, THEN calculate pagination
+        DoFilter();
+    
+        _maxDisplayPage = Math.Max(1, ((_filteredList?.Count ?? 0) - 1) / _recordsPerPage + 1);
         if (_displayPageNo < 1) _displayPageNo = 1;
         if (_displayPageNo > _maxDisplayPage) _displayPageNo = _maxDisplayPage;
-        //
-        DoFilter();
+        
     }
 
     /// <summary>
     /// </summary>
     public void DoFilter()
     {
-        _filteredList = GetFilteredList(_tableProperties, List, _filterInputString, _fieldSearchStringList, _searchRecordSeq);
-        _displayList = _filteredList.Skip((_displayPageNo - 1) * _recordsPerPage).Take(Math.Min(_filteredList.Count, _recordsPerPage)).ToList();
+        if (List == null || _tableProperties == null)
+        {
+            _filteredList = new List<T>();
+            _displayList = new List<T>();
+            _seqList.Clear();
+            _cellStatusRecord.Clear();
+            return;
+        }
+    
+        _fieldSearchStringList ??= [..Enumerable.Repeat("", _tableProperties.Count)];
+    
+        _filteredList = GetFilteredList(_tableProperties, List, _filterInputString, _fieldSearchStringList, _searchRecordSeq) 
+                        ?? [];
+    
+        _displayList = _filteredList
+            .Skip((_displayPageNo - 1) * _recordsPerPage)
+            .Take(Math.Min(_filteredList.Count, _recordsPerPage))
+            .ToList();
+    
         _seqList.Clear();
         _displayList.ForEach(list => _seqList.Add(List.IndexOf(list)));
         _cellStatusRecord.Clear();
@@ -2068,6 +2261,14 @@ private async Task CallUpdateMethodIfExists(T item)
     /// <returns></returns>
     public List<T> GetFilteredList(List<PropertyInfo> properties, List<T> list, string searchString, List<string> searchStringList, int? searchRecordSeq)
     {
+        if (list == null || !list.Any())
+        {
+            return new List<T>();
+        }
+    
+        searchStringList ??= new List<string>();
+        searchString ??= "";
+        
         //System.Diagnostics.Debug.WriteLine($"GetFilteredList called for {list.Count} items");
         //check if there is no input in the search strings, then return the list
         if (searchRecordSeq == null && string.Join("", searchStringList) == "" && searchString == "") return list;

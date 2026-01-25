@@ -26,6 +26,7 @@ using Resend;
 using ElDesignApp.Constants;
 using ElDesignApp.Models;
 using ElDesignApp.Services.Rendering;
+using ElDesignApp.Services.Table;
 using OfficeOpenXml;
 using ICacheService = ElDesignApp.Services.Cache.ICacheService;
 using IGlobalDataService = ElDesignApp.Services.Global.IGlobalDataService;
@@ -100,6 +101,7 @@ builder.Services.AddDistributedMemoryCache();
     builder.Services.AddScoped<PinPlacementService>();
     builder.Services.AddScoped<CoordinateSystemManager>();
     builder.Services.AddScoped<ISegmentRenderService, SegmentRenderService>();
+    builder.Services.AddScoped<ITableJsInterop, TableJsInterop>();
 
     builder.Services.AddScoped<IDbConnection>(sp => 
         new SqlConnection(sp.GetRequiredService<IConfiguration>()

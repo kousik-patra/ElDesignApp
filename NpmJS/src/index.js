@@ -12,6 +12,7 @@ import {
 } from "./threejs/objects/refPoint";
 // Import pin cursor module
 import * as PinCursor from './threejs/events/pinCursor'
+import TableModule from '../src/misc/table';
 
 
 // Expose sceneManager to window
@@ -28,6 +29,28 @@ window.getCurrentPinTag = PinCursor.getCurrentPinTag;
 window.isPinModeActive = PinCursor.isPinModeActive;
 window.isShiftPressed = PinCursor.isShiftPressed;
 window.setSceneReferences = PinCursor.setSceneReferences;
+
+
+// Create namespace on window for Blazor JS Interop
+window.ElDesignApp = window.ElDesignApp || {};
+
+// Attach modules to namespace
+window.ElDesignApp.Table = TableModule;
+
+// Legacy support: Keep saveAsFile at root level if it was used directly before
+// This maintains backward compatibility
+window.saveAsFile = TableModule.saveAsFile;
+
+// Export for ES module usage (if needed)
+export { TableModule };
+
+// Log initialization in development
+if (process.env.NODE_ENV === 'development') {
+    console.log('[ElDesignApp] JavaScript modules initialized', {
+        Table: Object.keys(TableModule)
+    });
+}
+
 
 // ===== Expose pin management functions to window for Blazor interop =====
 window.addPinMarker = function(x, y, z = 0, tag = null) {
@@ -177,14 +200,14 @@ window.checkElementExists = function(elementId) {
 };
 
 // ============ FILE SAVE ============
-window.saveAsFile = function(fileName, bytesBase64) {
-    var link = document.createElement('a');
-    link.download = fileName;
-    link.href = "data:application/octet-stream;base64," + bytesBase64;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-};
+// window.saveAsFile = function(fileName, bytesBase64) {
+//     var link = document.createElement('a');
+//     link.download = fileName;
+//     link.href = "data:application/octet-stream;base64," + bytesBase64;
+//     document.body.appendChild(link);
+//     link.click();
+//     document.body.removeChild(link);
+// };
 
 // ========== UPDATE DOM ELEMENT BY ID =========
 window.updateElementById = (id, text, color="black") => {

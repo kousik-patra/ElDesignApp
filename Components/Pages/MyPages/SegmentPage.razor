@@ -1,6 +1,9 @@
 ﻿@page "/segment"
 @using ElDesignApp.Services.Rendering
 @using Microsoft.AspNetCore.Authorization
+@using ElDesignApp.Components.Pages.MyComponents.Table
+
+
 @attribute [Authorize(Policy = "RequireUser")]
 
 @rendermode InteractiveServer

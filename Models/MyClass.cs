@@ -549,14 +549,19 @@ public class SCBusVal
 /// </summary>
 public class Branch : BaseInfo
 {
-
-    [Display(Name = "Category", Order = 11)]
+    [ExcludeFromExcelExport]
     public string Category { get; set; } // Category: Transformer, Cable, BusDuct, Reactor, OHL
 
-    [Display(Name = "Bus From Tag", Order = 12)]
+
+    [Required] [Display(Name = "Bus From Tag")]
+    [RegularExpression(@"^([ .\/\a-zA-Z0-9]){3,100}$",
+        ErrorMessage = "Bus From Tag should be 3 to 100 characters and can not contain any special characters")]
     public string BfT { get; set; } // Bus From Tag
 
-    [Display(Name = "Bus To Tag", Order = 13)]
+    [Required] [Display(Name = "Bus To Tag")]
+    [RegularExpression(@"^([ .\/\a-zA-Z0-9]){3,100}$",
+        ErrorMessage = "Bus From Tag should be 3 to 100 characters and can not contain any special characters")]
+
     public string BtT { get; set; } // Bus To Tag
     
     
@@ -634,8 +639,6 @@ public class BusDuct : Branch
     [Display(Name = "Length (m)", Order = 14)]
     public float L { get; set; } // Branch Length, m
     
-    [Display(Name = "Rated Current (A)", Order = 15)]
-    public float IR { get; set; }
     [Display(Name = "Cross-section (sq.mm)", Order = 16)]
     public float Size { get; set; }
     
@@ -695,13 +698,13 @@ public class CableBranch : Branch
         // BranchBusUpdate from the Razor Page where Bus List is already available
     }
     [IncludeExcelExport]
-    [Display(Name = "Length (m)", Order = 14)]
+    [Display(Name = "Length (m)", Order = 17)]
     public float L { get; set; } // Branch Length, m
     
-    [Display(Name = "Cable Description", Order = 15)]
+    [Display(Name = "Cable Description", Order = 18)]
     [RegularExpression(
         @"^([1-9][R][x])?[0-9][C][x]((0[\.]5)|1|(1[\.]5)|(2[\.]5)|4|6|10|16|25|35|50|70|95|120|150|185|240|300|400|500|630|800|1000)[ ]{0,2}[A-Z]{0,4}[a-z]{0,4}$",
-        ErrorMessage = "[0-9]Rx[0-9]Cx??? format only acceptable (e.g., 2Rx3Cx185 Al or 7Cx1.5")]
+        ErrorMessage = "[0-9]Rx[0-9]Cx??? format only acceptable (e.g., 2Rx3Cx185 Al or 7Cx1.5)")]
     public string CblDesc { get; set; } // Cable Size Description (Similar to Excel Input)
     
     // below are the generated field and therefore not to be included in downloaded .xls file

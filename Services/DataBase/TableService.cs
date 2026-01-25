@@ -1132,7 +1132,7 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         // Get exportable properties (exclude those marked with ExcludeFromExcelExport)
         var properties = typeof(T).GetProperties()
             .Where(p => !p.GetCustomAttributes(typeof(ExcludeFromExcelExportAttribute), false).Any())
-            .OrderBy(p => p.GetCustomAttribute<DisplayAttribute>()?.Order ?? int.MaxValue)
+            .OrderBy(p => p.GetCustomAttribute<DisplayAttribute>()?.GetOrder() ?? int.MaxValue)
             .ToList();
 
         // Write headers

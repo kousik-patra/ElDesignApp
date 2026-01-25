@@ -1,0 +1,249 @@
+/* ============================================================================
+   Table.razor.css - Blazor Isolated CSS for Table Component
+   
+   ORGANIZATION:
+   1. Existing Styles (your original CSS - preserved)
+   2. Sticky Header Fixes (important addition)
+   3. Cell Editing Styles (for inline editing)
+   4. Row Status Colors (Bootstrap overrides)
+   5. Optional Enhancements (can remove if not needed)
+   ============================================================================ */
+
+
+/* ============================================================================
+   SECTION 1: EXISTING STYLES (Preserved from your original CSS)
+   ============================================================================ */
+
+/* Multi-select success highlighting */
+.table-success {
+    background-color: rgba(25, 135, 84, 0.25) !important;
+}
+
+tr.table-success:hover {
+    background-color: rgba(25, 135, 84, 0.4) !important;
+}
+
+/* Fixed header table container */
+.tableFixHead {
+    height: 600px;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+/* Sticky header */
+.tableFixHead thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+/* Sticky first column */
+.tableFixHead tbody th {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+}
+
+/* Hide number input spinners - Chrome, Safari, Edge, Opera */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* Hide number input spinners - Firefox */
+input[type="number"] {
+    -moz-appearance: textfield;
+}
+
+
+/* ============================================================================
+   SECTION 2: STICKY HEADER FIXES (Important - prevents content showing through)
+   ============================================================================ */
+
+/* Ensure sticky headers have solid background */
+.tableFixHead thead th {
+    background-color: #fff;
+    /* Add subtle shadow for depth when scrolling */
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* For dark/striped tables, match the header background */
+.table-striped .tableFixHead thead th,
+.table-bordered .tableFixHead thead th {
+    background-color: #f8f9fa;
+}
+
+/* Sticky first column background */
+.tableFixHead tbody th {
+    background-color: #fff;
+}
+
+/* Handle striped rows for sticky column */
+.table-striped tbody tr:nth-of-type(odd) th {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+
+/* ============================================================================
+   SECTION 3: CELL EDITING STYLES (For inline editing functionality)
+   ============================================================================ */
+
+/* Input fields inside table cells */
+td input.form-control,
+td select.form-control {
+    min-width: 60px;
+    padding: 0.2rem 0.4rem;
+    font-size: inherit;
+    height: auto;
+}
+
+/* Focus state for editing inputs */
+td input.form-control:focus,
+td select.form-control:focus {
+    box-shadow: 0 0 0 0.15rem rgba(13, 110, 253, 0.25);
+    border-color: #86b7fe;
+    outline: none;
+}
+
+/* Make select dropdown fit cell better */
+td select.form-control {
+    padding-right: 1.5rem;
+}
+
+
+/* ============================================================================
+   SECTION 4: ROW STATUS COLORS (Complement your existing Bootstrap usage)
+   ============================================================================ */
+
+/* Selected row - primary blue */
+tr.table-primary {
+    background-color: rgba(13, 110, 253, 0.15) !important;
+}
+
+tr.table-primary:hover {
+    background-color: rgba(13, 110, 253, 0.25) !important;
+}
+
+/* Edited row - warning yellow */
+tr.table-warning {
+    background-color: rgba(255, 193, 7, 0.2) !important;
+}
+
+tr.table-warning:hover {
+    background-color: rgba(255, 193, 7, 0.35) !important;
+}
+
+/* Added row - info blue */
+tr.table-info {
+    background-color: rgba(13, 202, 240, 0.2) !important;
+}
+
+tr.table-info:hover {
+    background-color: rgba(13, 202, 240, 0.35) !important;
+}
+
+/* Deleted row - danger red */
+tr.table-danger {
+    background-color: rgba(220, 53, 69, 0.2) !important;
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+tr.table-danger:hover {
+    background-color: rgba(220, 53, 69, 0.35) !important;
+}
+
+/* Edited cell highlight */
+td.table-active {
+    background-color: rgba(255, 243, 205, 0.5) !important;
+}
+
+
+/* ============================================================================
+   SECTION 5: OPTIONAL ENHANCEMENTS (Remove if not needed)
+   ============================================================================ */
+
+/* --- 5a. Filter Input Row Styling --- */
+.tableFixHead thead tr:first-child th {
+    /* Filter row - slightly different background */
+    background-color: #f8f9fa;
+    padding: 0.3rem;
+}
+
+.tableFixHead thead tr:first-child input.form-control {
+    font-size: 0.85rem;
+    padding: 0.2rem 0.4rem;
+}
+
+.tableFixHead thead tr:first-child input.form-control::placeholder {
+    color: #adb5bd;
+    font-style: italic;
+}
+
+/* --- 5b. Clickable Row Cursor --- */
+.table-hover tbody tr {
+    cursor: pointer;
+}
+
+/* --- 5c. Cell Button Styling --- */
+td button.btn-sm {
+    padding: 0.1rem 0.3rem;
+    font-size: 0.75rem;
+    line-height: 1.2;
+}
+
+/* --- 5d. Pagination Input Styling --- */
+input[type="number"].pagination-input {
+    width: 50px;
+    text-align: center;
+    padding: 0.2rem;
+}
+
+/* --- 5e. Print Styles --- */
+@media print {
+    /* Hide interactive elements when printing */
+    .btn-toolbar,
+    .btn-group,
+    input[type="text"],
+    input[type="number"],
+    .pagination-controls {
+        display: none !important;
+    }
+
+    /* Remove fixed height for printing */
+    .tableFixHead {
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    /* Remove sticky positioning for print */
+    .tableFixHead thead th,
+    .tableFixHead tbody th {
+        position: static !important;
+    }
+
+    /* Remove hover effects */
+    tr:hover {
+        background-color: inherit !important;
+    }
+
+    /* Ensure deleted rows are clearly marked */
+    tr.table-danger {
+        text-decoration: line-through !important;
+        opacity: 1 !important;
+    }
+}
+
+/* --- 5f. Responsive Adjustments --- */
+@media (max-width: 768px) {
+    .tableFixHead {
+        height: 400px;
+    }
+
+    td input.form-control,
+    td select.form-control {
+        min-width: 50px;
+        font-size: 0.8rem;
+    }
+}
