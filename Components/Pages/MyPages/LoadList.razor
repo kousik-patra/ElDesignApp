@@ -47,10 +47,10 @@
             <Table List="_list"
                    ListOriginal="_listDb"
                    T="Load"
-                   AutoCheck="AutoCheckOnTableChange"
-                   Update="@UpdateTableChange"
-                   Discard="@DiscardTableChange"
-                   Refresh="TableRefresh"
+                   AutoCheckParentCallback="AutoCheckOnTableChange"
+                   UpdateParentCallback="@UpdateTableChange"
+                   DiscardParentCallback="@DiscardTableChange"
+                   RefreshParentCallback="TableRefresh"
                    SuccessMessage="@_tableSuccessMessage"
                    InfoMessage="@_tableInfoMessage"
                    WarningMessage="@_tableWarningMessage"
@@ -83,10 +83,10 @@
 @*             <Table List="_list" *@
 @*                    ListOriginal="_listDb" *@
 @*                    T="Load" *@
-@*                    AutoCheck="AutoCheckOnTableChange" *@
-@*                    Update="@UpdateTableChange" *@
-@*                    Discard="@DiscardTableChange" *@
-@*                    Refresh="TableRefresh" *@
+@*                    AutoCheckParentCallback="AutoCheckParentCallbackOnTableChange" *@
+@*                    UpdateParentCallback="@UpdateParentCallbackTableChange" *@
+@*                    DiscardParentCallback="@DiscardParentCallbackTableChange" *@
+@*                    RefreshParentCallback="TableRefreshParentCallback" *@
 @*                    SuccessMessage="@_tableSuccessMessage" *@
 @*                    InfoMessage="@_tableInfoMessage" *@
 @*                    WarningMessage="@_tableWarningMessage" *@
@@ -226,7 +226,7 @@
         {
             _isLoading = false;
             _isProcessing = false;
-            StateHasChanged(); // Update UI after loading/processing
+            StateHasChanged(); // UpdateParentCallback UI after loading/processing
         }
 
         await base.OnInitializedAsync();
@@ -420,7 +420,7 @@
     
         System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
                                            $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - " +
-                                           $"First Render:{firstRender} Refresh: {isRefresh} Load Child? {_loadChild}");
+                                           $"First Render:{firstRender} RefreshParentCallback: {isRefresh} Load Child? {_loadChild}");
     }
 
     private void LogResult(string? info, string? warning, string? error )

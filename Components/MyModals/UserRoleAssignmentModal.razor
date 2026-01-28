@@ -68,7 +68,7 @@
                                     {
                                         <button class="btn btn-success flex-fill" 
                                                 @onclick="@(() => SaveEdit())">
-                                                <i class="bi bi-check-circle"></i> Update
+                                                <i class="bi bi-check-circle"></i> UpdateParentCallback
                                         </button>
                                         <button class="btn btn-secondary flex-fill"
                                                 @onclick="@(() => CancelEdit())">
@@ -517,7 +517,7 @@ private async Task LoadData()
             assignment.RemovedBy = _currentUserId;
             assignment.RemovedOn = DateTime.Now;
             
-            // Update with all changed fields
+            // UpdateParentCallback with all changed fields
             await Table.UpdateFieldsAsync(
                 assignment, 
                 "IsActive", 
@@ -605,7 +605,7 @@ private async Task LoadData()
                 return;
             }
 
-            // Update the assignment
+            // UpdateParentCallback the assignment
             _editingAssignment.CustomRoleName = selectedRole.CustomRoleName;
 
             await Table.UpdateFieldsAsync(_editingAssignment, "CustomRoleName");

@@ -37,13 +37,6 @@
 }
 else
 {
-    <div class="alert alert-warning">
-        DEBUG SLD: Loads=@(_loads?.Count ?? -1), 
-        Buses=@(_buses?.Count ?? -1), 
-        Transformers=@(_transformers?.Count ?? -1)
-    </div>
-    
-    
     <div class="align-content-center" style="background-color:beige">
         <h4>SLD: Loads, Buses, Transformers, CableBranches, Switches...</h4>
         <button type="submit" @onclick="@(() => { tablesHide = !tablesHide; })" class="btn btn-info"
@@ -84,9 +77,9 @@ else
                            T="Load"
                            Fields="@loadFieldList"
                            TableWidthPx="1200px"
-                           AutoCheck="@AutoCheckOnTableChange"
-                           Update="@UpdateOnTableChange"
-                           Discard="@DiscardTableChange"
+                           AutoCheckParentCallback="@AutoCheckOnTableChange"
+                           UpdateParentCallback="@UpdateOnTableChange"
+                           DiscardParentCallback="@DiscardTableChange"
                            ActionMessage="@_tableActionMessage"
                            SuccessMessage="@_tableSuccessMessage"
                            InfoMessage="@_tableInfoMessage"
@@ -107,9 +100,9 @@ else
                            ListOriginal="GlobalData.Buses"
                            T="Bus"
                            Fields="@busFieldList"
-                           AutoCheck="@AutoCheckOnTableChange"
-                           Update="@UpdateOnTableChange"
-                           Discard="@DiscardTableChange"
+                           AutoCheckParentCallback="@AutoCheckOnTableChange"
+                           UpdateParentCallback="@UpdateOnTableChange"
+                           DiscardParentCallback="@DiscardTableChange"
                            ActionMessage="@_tableActionMessage"
                            SuccessMessage="@_tableSuccessMessage"
                            InfoMessage="@_tableInfoMessage"
@@ -130,9 +123,9 @@ else
                            ListOriginal="GlobalData.Transformers"
                            T="Transformer"
                            Fields="@transformerFieldList"
-                           AutoCheck="AutoCheckOnTableChange"
-                           Update="@UpdateOnTableChange"
-                           Discard="@DiscardTableChange"
+                           AutoCheckParentCallback="AutoCheckOnTableChange"
+                           UpdateParentCallback="@UpdateOnTableChange"
+                           DiscardParentCallback="@DiscardTableChange"
                            ActionMessage="@_tableActionMessage"
                            SuccessMessage="@_tableSuccessMessage"
                            InfoMessage="@_tableInfoMessage"
@@ -153,9 +146,9 @@ else
                            ListOriginal="GlobalData.CableBranches"
                            T="CableBranch"
                            Fields="@cableBranchFieldList"
-                           AutoCheck="@AutoCheckOnTableChange"
-                           Update="@UpdateOnTableChange"
-                           Discard="@DiscardTableChange"
+                           AutoCheckParentCallback="@AutoCheckOnTableChange"
+                           UpdateParentCallback="@UpdateOnTableChange"
+                           DiscardParentCallback="@DiscardTableChange"
                            ActionMessage="@_tableActionMessage"
                            SuccessMessage="@_tableSuccessMessage"
                            InfoMessage="@_tableInfoMessage"
@@ -176,9 +169,9 @@ else
                            ListOriginal="GlobalData.BusDucts"
                            T="BusDuct"
                            Fields="@busDuctFieldList"
-                           AutoCheck="@AutoCheckOnTableChange"
-                           Update="@UpdateOnTableChange"
-                           Discard="@DiscardTableChange"
+                           AutoCheckParentCallback="@AutoCheckOnTableChange"
+                           UpdateParentCallback="@UpdateOnTableChange"
+                           DiscardParentCallback="@DiscardTableChange"
                            ActionMessage="@_tableActionMessage"
                            SuccessMessage="@_tableSuccessMessage"
                            InfoMessage="@_tableInfoMessage"
@@ -199,9 +192,10 @@ else
                            ListOriginal="GlobalData.Switches"
                            T="Switch"
                            Fields="@switchFieldList"
-                           AutoCheck="@AutoCheckOnTableChange"
-                           Update="@UpdateOnTableChange"
-                           Discard="@DiscardTableChange"
+                           AutoCheckParentCallback="@AutoCheckOnTableChange"
+                           AutoCheckParentFunc="AutoCheckOnTableChange"
+                           UpdateParentCallback="@UpdateOnTableChange"
+                           DiscardParentCallback="@DiscardTableChange"
                            ActionMessage="@_tableActionMessage"
                            SuccessMessage="@_tableSuccessMessage"
                            InfoMessage="@_tableInfoMessage"
@@ -264,10 +258,10 @@ else
             <div>
                 <button type="submit" @onclick="@DrawKeySLD" class="btn btn-info " style="float:left;">Draw SLD
                     - @sLD</button>
-                <button type="submit" @onclick="@UpdateSLD" class="btn btn-success " style="float:right;">Update SLD
+                <button type="submit" @onclick="@UpdateSLD" class="btn btn-success " style="float:right;">UpdateParentCallback SLD
                 </button>
                 <button type="submit" @onclick="@UpdateStudyResultsToClientPage" class="btn btn-info "
-                        style="float:right;">Refresh Study Results
+                        style="float:right;">RefreshParentCallback Study Results
                 </button>
                 <button type="submit" @onclick="@SaveResult" class="btn btn-success " style="float:right;">Save Study
                     Results
@@ -655,7 +649,7 @@ else
             {
                 item.Category = "Transformer"; // Category
                 item.Save2DB = true;
-                // Branch PU Impedance Update is possible after assigning the Base Voltages as per the source to bus connection map
+                // Branch PU Impedance UpdateParentCallback is possible after assigning the Base Voltages as per the source to bus connection map
                 _buses = LayoutFunction.BranchBusUpdate(item.Tag, item.Category, item.BfT, item.BtT, _buses);
             });
             //
@@ -702,7 +696,7 @@ else
             Debug.WriteLine(displayText);
             await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
             
-            // Update Load so that Power values and cable sizes are calculated
+            // UpdateParentCallback Load so that Power values and cable sizes are calculated
             _loads.ForEach(item =>
             {
                 LayoutFunction.LoadUpdate(item);
@@ -781,7 +775,7 @@ else
     }
 
 
-    private List<List<T>?> GetItemsNOriginalItems<T>(T item)
+    private (List<T>? items, List<T>? itemsOriginal) GetItemsNOriginalItems<T>()
     {
         var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
         List<T>? items = new();
@@ -804,6 +798,10 @@ else
                 items = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(_switches, jsonSerializerOptions), jsonSerializerOptions);
                 itemsOriginal = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(GlobalData.Switches, jsonSerializerOptions), jsonSerializerOptions);
                 break;
+            case "BusDuct":
+                items = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(_busDucts, jsonSerializerOptions), jsonSerializerOptions);
+                itemsOriginal = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(GlobalData.BusDucts, jsonSerializerOptions), jsonSerializerOptions);
+                break;
             case "Item1":
                 // items = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(Item1, jsonSerializerOptions), jsonSerializerOptions);
                 // itemsOriginal = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(GlobalData.Item1, jsonSerializerOptions), jsonSerializerOptions);
@@ -812,13 +810,16 @@ else
                 // items = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(Item2, jsonSerializerOptions), jsonSerializerOptions);
                 // itemsOriginal = JsonConvert.DeserializeObject<List<T>>(JsonConvert.SerializeObject(GlobalData.Item2, jsonSerializerOptions), jsonSerializerOptions);
                 break;
+            default:
+                Console.WriteLine($"Error: Type '{typeof(T).Name}' case is not defined.");
+                break;
         }
 
-        return new List<List<T>?> { items, itemsOriginal };
+        return ( items, itemsOriginal);
     }
 
 
-    private void SetItems<T>(List<T> inputList)
+    private void SetItems<T>(List<T>? inputList)
     {
         var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
         
@@ -839,19 +840,61 @@ else
             case "Switch":
                 _switches = JsonSerializer.Deserialize<List<Switch>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
                 break;
+            case "BusDuct":
+                _busDucts = JsonSerializer.Deserialize<List<BusDuct>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
             case "Item1":
                 //Item1 = JsonConvert.DeserializeObject<List<Item1>>(JsonConvert.SerializeObject(inputList, jsonSerializerOptions), jsonSerializerOptions);
                 break;
             case "Item2":
                 //Item2 = JsonConvert.DeserializeObject<List<Item2>>(JsonConvert.SerializeObject(inputList, jsonSerializerOptions), jsonSerializerOptions);
                 break;
+                default:
+                Console.WriteLine($"Error: Type '{typeof(T).Name}' case is not defined.");
+                break;
+        }
+    }
+    
+    private void SetGlobalData<T>(List<T>? inputList)
+    {
+        var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+        
+        switch (typeof(T).Name)
+        {
+            case "CableBranch":
+                GlobalData.CableBranches = JsonSerializer.Deserialize<List<CableBranch>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Load":
+                GlobalData.Loads = JsonSerializer.Deserialize<List<Load>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Bus":
+                GlobalData.Buses = JsonSerializer.Deserialize<List<Bus>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Transformer":
+                GlobalData.Transformers = JsonSerializer.Deserialize<List<Transformer>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Switch":
+                GlobalData.Switches = JsonSerializer.Deserialize<List<Switch>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "BusDuct":
+                GlobalData.BusDucts = JsonSerializer.Deserialize<List<BusDuct>>(JsonSerializer.Serialize(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Item1":
+                //Item1 = JsonConvert.DeserializeObject<List<Item1>>(JsonConvert.SerializeObject(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            case "Item2":
+                //Item2 = JsonConvert.DeserializeObject<List<Item2>>(JsonConvert.SerializeObject(inputList, jsonSerializerOptions), jsonSerializerOptions);
+                break;
+            default:
+                Console.WriteLine($"Error: Type '{typeof(T).Name}' case is not defined.");
+                break;
         }
     }
 
-    protected async void AutoCheckOnTableChange<T>((T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
+    protected async Task<(T iteratedItem, string _tableSuccessMessage, string _tableInfoMessage, string _tableWarningMessage, string _tableErrorMessage)> AutoCheckOnTableChange<T>((T iteratedItem, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
     {
         // Access the parameters from args
-        var item = args.Item1;
+        var iteratedItem = args.iteratedItem;
         var uid = args.Item2;
         var propertyInfo = args.Item3;
         var originalItem = args.Item4;
@@ -867,7 +910,7 @@ else
         if (anyFurtherValidation)
         {
             // additional validation
-            Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : {propertyInfo.Name} further validation checks at parent side...");
+            Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : {propertyInfo.Name} further validation checks at parent side...");
             _tableErrorMessage += "";
             // additional validation
             _tableSuccessMessage += "";
@@ -886,7 +929,7 @@ else
                 {
                     // Invoke the method on the instance obj
                     // null because MyMethod does not take any parameters
-                    methodInfo.Invoke(item, null);
+                    methodInfo.Invoke(iteratedItem, null);
                 }
             }
 
@@ -899,12 +942,14 @@ else
                 {
                     // Invoke the method on the instance obj
                     // null because MyMethod does not take any parameters
-                    methodCableRXUpdate.Invoke(item, null);
+                    methodCableRXUpdate.Invoke(iteratedItem, null);
                 }
             }
 
             _tableActionMessage = _tableInfoMessage;
         }
+
+        return (iteratedItem, _tableSuccessMessage, _tableInfoMessage, _tableWarningMessage, _tableErrorMessage);
 
         //var itemsNOriginalItems = GetItemsNOriginalItems(item);
         //SetItems(itemsCurrent);
@@ -933,8 +978,14 @@ else
             _tableActionMessage = _tableSuccessMessage;
             
             // reassign the Table List and original list
-            GetItemsNOriginalItems(itemslist);
+            
+            // Set the list _cableBranches/_lods/_transformers/_busDucts/etc. as per the changed table
+            var items = GetItemsNOriginalItems<T>().items;
             SetItems(itemslist);
+            
+            // Set the Global Data of Transformers/Buses/CableBranches/etc. as per the changed Table
+            // Updated Global Data is now becoming the original list
+            SetGlobalData(itemslist);
             
             StateHasChanged();
         
@@ -949,11 +1000,11 @@ else
             // So, the pattern will be: "NavMenu_CableData_*"
             var pattern = $"NavMenu_{typeof(T).Name}_*";
             await CacheService.RemoveByPatternAsync(pattern);
-            System.Diagnostics.Debug.WriteLine($"Attempted to clear all cache for pattern: {pattern}");
+            Console.WriteLine($"Attempted to clear all cache for pattern: {pattern}");
         }
         catch (Exception e)
         {
-            throw; // TODO handle exception
+            Console.WriteLine($"Error: {e.Message}");
         }
     }
 
@@ -969,12 +1020,14 @@ else
     public void DiscardTableChange<T>((T item, List<T> list, List<T> originalList) args)
     {
         ResetTableMessages();
-        Debug.WriteLine($"{DateTime.Now.ToString("hh.mm.ss.ffffff")} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
+        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
         var item = args.Item1;
         List<T> origialItemslist = args.Item3;
         //
-        GetItemsNOriginalItems(item);
-        SetItems(origialItemslist);
+        var originalItems = GetItemsNOriginalItems<T>().itemsOriginal;
+        
+        // Set the list _cableBranches/_lods/_transformers/_busDucts/etc. as per the originalList
+        SetItems(originalItems);
         _tableSuccessMessage = "All changes discarded";
         _tableActionMessage = _tableSuccessMessage;
         StateHasChanged();

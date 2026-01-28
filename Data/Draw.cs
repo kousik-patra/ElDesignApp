@@ -498,7 +498,7 @@ private void HandleSingleClick(SceneClickData clickData)
                 systemCoordinates
             );
 
-            // Update Z coordinate (Coordinates method doesn't set it)
+            // UpdateParentCallback Z coordinate (Coordinates method doesn't set it)
             message.WorldZ = coordZ;
 
             Console.WriteLine($"  Selected segment: {primaryTag}");

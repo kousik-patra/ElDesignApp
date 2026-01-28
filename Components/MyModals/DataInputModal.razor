@@ -78,7 +78,7 @@
                     case ModalDialogType.AppendReplaceDiscard:
                         <button type="button" class="btn btn-success" @onclick="@ModalAppend">Append</button>
                         <button type="button" class="btn btn-warning" @onclick="@ModalReplace">Replace</button>
-                        <button type="button" class="btn btn-danger" @onclick="@ModalDiscard">Discard</button>
+                        <button type="button" class="btn btn-danger" @onclick="@ModalDiscard">DiscardParentCallback</button>
                         break;
                 }
             </div>
@@ -170,7 +170,7 @@
 
     private Task ModalDiscard()
     {
-        return OnClose.InvokeAsync((Item, "Discard"));
+        return OnClose.InvokeAsync((Item, "DiscardParentCallback"));
     }
     
     private string? GetStringValue(PropertyInfo prop)

@@ -96,10 +96,10 @@
                     <Table List="Segments"
                            ListOriginal="GlobalData.Segments"
                            T="Segment"
-                           AutoCheck="@AutoCheckOnTableChange"
-                           Update="@UpdateOnTableChange"
-                           Discard="@DiscardTableChange"
-                           Refresh="@RefreshTableChange"
+                           AutoCheckParentCallback="@AutoCheckOnTableChange"
+                           UpdateParentCallback="@UpdateOnTableChange"
+                           DiscardParentCallback="@DiscardTableChange"
+                           RefreshParentCallback="@RefreshTableChange"
                            OnRowClicked="@OnSegmentRowClicked"
                            OnRowHover="@OnSegmentRowHover"
                            OnRowHoverEnd="@OnSegmentRowHoverEnd"
@@ -130,9 +130,9 @@
                     <Table List="Sleeves"
                            ListOriginal="GlobalData.Sleeves"
                            T="Sleeve"
-                           AutoCheck="@AutoCheckOnTableChange"
-                           Update="@UpdateOnTableChange"
-                           Discard="@DiscardTableChange"
+                           AutoCheckParentCallback="@AutoCheckOnTableChange"
+                           UpdateParentCallback="@UpdateOnTableChange"
+                           DiscardParentCallback="@DiscardTableChange"
                            ActionMessage="@tableActionMessage"
                            SuccessMessage="@tableSuccessMessage"
                            InfoMessage="@tableInfoMessage"
@@ -158,9 +158,9 @@
                     <Table List="Equipments"
                            ListOriginal="GlobalData.Equipments"
                            T="Equipment"
-                           AutoCheck="@AutoCheckOnTableChange"
-                           Update="@UpdateOnTableChange"
-                           Discard="@DiscardTableChange"
+                           AutoCheckParentCallback="@AutoCheckOnTableChange"
+                           UpdateParentCallback="@UpdateOnTableChange"
+                           DiscardParentCallback="@DiscardTableChange"
                            ActionMessage="@tableActionMessage"
                            SuccessMessage="@tableSuccessMessage"
                            InfoMessage="@tableInfoMessage"
@@ -586,7 +586,7 @@ else
         //
         // Calculate Accessories as per the Segment List updated by the User which is saved in the DB
         //var SegmentDB = await MyTable.GetList(new Segment(), GlobalData.SelectedProject);
-        //SegmentDB.ForEach(item => item.Update());
+        //SegmentDB.ForEach(item => item.UpdateParentCallback());
         var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
         var segmentDb = JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(GlobalData.Segments, jsonSerializerOptions), jsonSerializerOptions);
         var watch = Stopwatch.StartNew();
@@ -626,7 +626,7 @@ else
             // //order segments as horizontal segments first
             // //
             // SegmentDB = SegmentDB.OrderBy(o => Math.Abs(o.End1.Z - o.End2.Z)).ToList();
-            // // Update Segment Face based on dx, dy and dz and in case dz>>0 then as per adjacent segment
+            // // UpdateParentCallback Segment Face based on dx, dy and dz and in case dz>>0 then as per adjacent segment
             // SegmentDB = MyFunction.FaceUpdate(SegmentDB);
             // // face parallel  check later and remove this
             // SegmentDB.RemoveAll(s => Vector3.Cross(s.End1 - s.End2, s.Face).Length() < 0.01);
@@ -699,7 +699,7 @@ else
             {
                 foreach (var slv in Sleeve4DB)
                 {
-                    // Update Sleeve Parameters
+                    // UpdateParentCallback Sleeve Parameters
                     LayoutFunction.SleeveUpdate(slv);
                     //
                     // create node at both ends of the sleeve

@@ -565,7 +565,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         // public Load(string c, string t, string bt, Complex s, float v) v in kV, s in PU with Sb w/o voltage correction
         // foreach (Load load in loads) { Loads.Add(new Load(load.Category, load.Tag, load.BfT, load.Scpu, load.VR, load.DR)); }
         Loads = JsonSerializer.Deserialize<List<Load>>(JsonSerializer.Serialize(loads, jsonOptions), jsonOptions);
-        // Update PU value of S in complex w.r.t Sb
+        // UpdateParentCallback PU value of S in complex w.r.t Sb
         Loads.ForEach(load => _layoutFunction.LoadUpdatePU(load));
         //
         // Prepare for Load Flow

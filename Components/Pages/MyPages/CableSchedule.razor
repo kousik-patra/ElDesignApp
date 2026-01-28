@@ -26,9 +26,9 @@
         <Table List="_tableItems"
                ListOriginal="_dbItems"
                T="Cable"
-               AutoCheck="AutoCheckOnTableChange"
-               Update="UpdateOnTableChange"
-               Discard="DiscardTableChange"
+               AutoCheckParentCallback="AutoCheckOnTableChange"
+               UpdateParentCallback="UpdateOnTableChange"
+               DiscardParentCallback="DiscardTableChange"
                SelectedItem="SelectedInTable"
                SuccessMessage="@tableSuccessMessage"
                InfoMessage="@tableInfoMessage"
@@ -327,7 +327,7 @@ else
 
     private async Task UpdateLocation(ChangeEventArgs e, Cable cable, string end)
     {
-        Debug.WriteLine($"Update {end} Location for tag '{cable.Tag}' in DB");
+        Debug.WriteLine($"UpdateParentCallback {end} Location for tag '{cable.Tag}' in DB");
 
         if (end == "Origin")
         {
@@ -444,7 +444,7 @@ else
             //await MyTable.UpdateParameter(cable, cable.UID, new List<string>() { "RouteVectorAutoS", "RouteVectorManualS", "RouteVectorAutoArrangedS", "Route", "LengthCal", "JSONRoutePoints", "Remark" });
             //await MyTable.UpdateItem(cable, cable.UID);
 
-            // do not update the DB, this shall be done by the "Update" Button only in the Table
+            // do not update the DB, this shall be done by the "UpdateParentCallback" Button only in the Table
             //
             ResetMassages();
             resultMessage = $"Origin and Destination information of cable '{cable.Tag}' is reset.";
@@ -465,7 +465,7 @@ else
         {
             var cable = _tableItems.Find(item => item.UID == selectedCable.UID);
             cable = ClearRoute(cable);
-            // do not update the DB, this shall be done by the "Update" Button only
+            // do not update the DB, this shall be done by the "UpdateParentCallback" Button only
             //await MyTable.UpdateParameter(cable, cable.UID, new List<string>() { "RouteVectorAutoS", "RouteVectorManualS", "RouteVectorAutoArrangedS", "Route", "LengthCal", "JSONRoutePoints", "Remark" });
             ResetMassages();
             resultMessage = $"Route of cable '{cable.Tag}' is cleared.";
@@ -488,7 +488,7 @@ else
             {
                 Debug.WriteLine($"Clearing routes of all {cables.Count} cables.");
                 cables.ForEach(cable => { cable = ClearRoute(cable); });
-                // do not update the DB, this shall be done by the "Update" Button only
+                // do not update the DB, this shall be done by the "UpdateParentCallback" Button only
                 //await MyTable.UpdateParameterItems(cables[0], '('+String.Join(",",guidstrings)+')', new List<string>() { "RouteVectorAutoS", "RouteVectorManualS", "RouteVectorAutoArrangedS", "Route", "LengthCal", "JSONRoutePoints", "Remark" });
                 resultMessage = $"Routes of of all {cables.Count} earlier routed cables out of total {_tableItems.Count} cable are cleared.";
             }
@@ -841,7 +841,7 @@ else
                 if ((originWasNull && !string.IsNullOrEmpty(cable.Origin)) || (destinationWasNull && !string.IsNullOrEmpty(cable.Destination)))
                 {
                     // update Origin and Destination data into the database to avoid repeat in next execution
-                    // below awai is not done in this function. this to be done by the Update function in the Table
+                    // below awai is not done in this function. this to be done by the UpdateParentCallback function in the Table
                     //await UpdateItem(cable, cable.UID);
                 }
 

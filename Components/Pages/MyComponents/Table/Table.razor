@@ -137,13 +137,13 @@
                                 <!-- Third Button Group -->
                                 <div class="btn-group" role="group" aria-label="Third group">
                                     <button @onclick="ParentRefresh" data-toggle="button"
-                                            class="btn btn-outline-info" title="Refresh Data">Refresh
+                                            class="btn btn-outline-info" title="RefreshParentCallback Data">Refresh
                                     </button>
                                     <button @onclick="ParentDiscard" data-toggle="button"
-                                            class="btn btn-outline-warning" title="Discard Changes">Discard
+                                            class="btn btn-outline-warning" title="DiscardParentCallback Changes">Discard
                                     </button>
                                     <button @onclick="ParentUpdate" data-toggle="button" class="btn btn-outline-success"
-                                            title="Verify and Update Changes">Update
+                                            title="Verify and UpdateParentCallback Changes">Update
                                     </button>
                                     <button @onclick="DownloadData" data-toggle="button" class="btn btn-outline-primary"
                                             title="Download the table">Download Data
@@ -631,10 +631,12 @@
     [Parameter] public string[]? Fields { get; set; } // field list to display
     [Parameter] public List<List<string>>? Button { get; set; } // field list where button needed
     [Parameter] public List<List<string>>? ButtonText { get; set; } // text in the buttons
-    [Parameter] public EventCallback<(T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string)> AutoCheck { get; set; }
-    [Parameter] public EventCallback Refresh { get; set; }
-    [Parameter] public EventCallback<(T, List<T>, List<T>)> Discard { get; set; }
-    [Parameter] public EventCallback<(T, List<T>, List<T>, string, string, string, string)> Update { get; set; }
+    [Parameter] public EventCallback<(T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string)> AutoCheckParentCallback { get; set; }
+    [Parameter] public Func<(T iteratedItem, Guid uid, PropertyInfo pi, T item, List<T> list1, List<T> list2, string s1, string s2, string s3, string s4), 
+        Task<(T iteratedItem, string success, string info, string warn, string error)>> AutoCheckParentFunc { get; set; }
+    [Parameter] public EventCallback RefreshParentCallback { get; set; }
+    [Parameter] public EventCallback<(T, List<T>, List<T>)> DiscardParentCallback { get; set; }
+    [Parameter] public EventCallback<(T, List<T>, List<T>, string, string, string, string)> UpdateParentCallback { get; set; }
     [Parameter] public EventCallback<Guid> SetSelectedUid { get; set; }
     [Parameter] public EventCallback<(T, Guid)> SelectedItem { get; set; }
     [Parameter] public string? ActionMessage { get; set; }
@@ -668,7 +670,7 @@
     /// List of selected item tags (for multi-select visual feedback)
     /// Uses the Tag property of the items
     /// </summary>
-    [Parameter] public List<string> SelectedItems { get; set; } = new();
+    [Parameter] public List<string> SelectedItems { get; set; } = [];
 
     /// <summary>
     /// Enable multi-select mode (Ctrl+Click, Shift+Click)
@@ -805,32 +807,12 @@
     }
 
 
-    private Expression<Func<TPropertyType>>? ValueExpression<TPropertyType>(PropertyInfo property)
-    {
-        try
-        {
-            if (List != null)
-            {
-                var constant = Expression.Constant(List[0]);
-                var exp = Expression.Property(constant, property!.Name);
-                return Expression.Lambda<Func<TPropertyType>>(exp);
-            }
-        }
-        catch (Exception e)
-        {
-            Debug.WriteLine($"Exception {e.Message}");
-        }
-
-        return null;
-    }
-    
-   
-
+ 
 
     protected override void OnInitialized()
     {
      // Log method entry for debugging
-    System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name}");
+    Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name}");
 
     // Initialize database metadata
     _dbMaster = GlobalData.DBMasters?.Where(m => m.DBName == typeof(T).Name).ToList() ?? [];
@@ -853,7 +835,7 @@
             : allProperties;
 
     // Log for debugging
-    System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name} : " +
+    Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name} : " +
                                       $"Found {_dbMaster.Count} metadata entries, {Fields?.Length ?? 0} fields, {_tableProperties.Count} properties");
 
     // Set Seq and CellCSS properties
@@ -865,10 +847,15 @@
     _uidProperty = allProperties.FirstOrDefault(p => p.Name == "UID");
     if (_uidProperty == null)
     {
-        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name} : Warning - UID property not found");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name} : Warning - 'UID' property not found");
     }
 
     _tagProperty = typeof(T).GetProperty("Tag");
+    if (_tagProperty == null)
+    {
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name} : Warning - 'Tag' property not found");
+    }
+
 
     // Initialize property indexing (0 = not indexed, 1 = ascending, 2 = descending)
     _propertyIndexed.Clear();
@@ -939,8 +926,8 @@
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Warning: Could not get column names for {typeof(T).Name}: {ex.Message}");
-            _sqlFieldsNames = new List<string>();
+            Console.WriteLine($"Warning: Could not get DB column names for '{typeof(T).Name}': {ex.Message}");
+            _sqlFieldsNames = [];
         }
         
         // Get current user information
@@ -948,11 +935,11 @@
         {
             var (_, userName) = await MiscService.GetCurrentUserInfoAsync();
             _loginUser = userName ?? "Guest";
-            Debug.WriteLine($"Current user: {_loginUser}");
+            Console.WriteLine($"Current user: {_loginUser}");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error getting user info: {ex.Message}");
+            Console.WriteLine($"Error getting user info: {ex.Message}");
             _loginUser = "Guest";
         }
     
@@ -982,7 +969,7 @@
         // 2. List has data (element is fully rendered)
         if (!_jsInitialized && List != null && List.Any())
         {
-            Debug.WriteLine($"[Table] Attempting JS init...");
+            Console.WriteLine($"[Table] Attempting JS init...");
             await InitializeJavaScriptAsync();
         }
     }
@@ -1013,7 +1000,7 @@
         
         _isDisposed = true;  // Set immediately to prevent new operations
         
-        Debug.WriteLine($"[Table<{typeof(T).Name}>] DisposeAsync starting for '{_containerId}'...");
+        Console.WriteLine($"[Table<{typeof(T).Name}>] DisposeAsync starting for '{_containerId}'...");
 
         // Dispose JS instance
         if (_jsInitialized)
@@ -1132,7 +1119,7 @@
 
     protected void OnBlur()
     {
-        // this function to work if the current double clickked cell is still active
+        // this function to work if the current double clicked cell is still active
         if (_currentDblClickedCell.DblClickedStatus == false) return;
         var currentSeq = _currentDblClickedCell.Seq;
         var currentProperty = _tableProperties.Where(p => p.Name == _currentDblClickedCell.FieldName).ToList()[0];
@@ -1147,7 +1134,7 @@
 
     private async Task DoSubmit()
     {
-        if (_currentDblClickedCell.DblClickedStatus == false) return;
+        if (!_currentDblClickedCell.DblClickedStatus) return;
         
         var currentSeq = _currentDblClickedCell.Seq;
         var currentProperty = typeof(T).GetProperty(_currentDblClickedCell.FieldName);
@@ -1172,7 +1159,7 @@
         var uidProperty = typeof(T).GetProperty("UID");
         if (uidProperty == null)
         {
-            ErrorMessage = "UID property not found on type.";
+            ErrorMessage = $"UID property not found on type '{typeof(T).Name}'.";
             return;
         }
         
@@ -1185,7 +1172,7 @@
         if (originalItemIndex < 0 || ListOriginal == null)
         {
             ErrorMessage = $"Original item with UID {currentuid} not found.";
-            Debug.WriteLine($"DoSubmit: Item with UID {currentuid} not found in ListOriginal");
+            Debug.WriteLine($"DoSubmit: Item with UID {currentuid} not found in ListOriginal. Could be a newly added item.");
             return;
         }
         
@@ -1222,7 +1209,9 @@
             ErrorMessage
         );
     
-        await AutoCheck.InvokeAsync(args!);
+         await AutoCheckParentCallback.InvokeAsync(args!);
+         var abc = await AutoCheckParentFunc.Invoke(args!);
+         
     
         _currentDblClickedCell.DblClickedStatus = false;
         _currentDblClickedCell.Edited = true;
@@ -1675,7 +1664,7 @@ private async Task AppendRecord()
             var clonedItem = JsonSerializer.Deserialize<T>(
                 JsonSerializer.Serialize(item, jsonSerializerOption), 
                 jsonSerializerOption);
-            // Call Update method if it exists
+            // Call UpdateParentCallback method if it exists
             await CallUpdateMethodIfExists(clonedItem);
             List.Add(clonedItem);
             _iteratedList.Add(JsonSerializer.Deserialize<T>(
@@ -1823,6 +1812,7 @@ private async Task ReplaceRecord()
             // Add to validated list
             if (canAdd)
             {
+                // call Update method of the class to update all parameters of the newly added item
                 await CallUpdateMethodIfExists(item);
                 validatedItems.Add(item);
                 _importedSuccessCount++;
@@ -1962,13 +1952,8 @@ private async Task CallUpdateMethodIfExists(T item)
             updatedOnProperty.SetValue(item, DateTime.Now);
             Debug.WriteLine($"Set UpdatedOn to '{DateTime.Now}' for {itemType.Name}");
         }
-        else if (updatedOnProperty != null && updatedOnProperty.PropertyType == typeof(DateTime?))
-        {
-            updatedOnProperty.SetValue(item, DateTime.Now);
-            Debug.WriteLine($"Set UpdatedOn to '{DateTime.Now}' for {itemType.Name}");
-        }
         
-        // Check for async Update method first (UpdateAsync)
+        // Check for async Update method first (UpdateAsync) of the object class
         var updateAsyncMethod = itemType.GetMethod("UpdateAsync", 
             BindingFlags.Public | BindingFlags.Instance);
         
@@ -1979,8 +1964,8 @@ private async Task CallUpdateMethodIfExists(T item)
             return;
         }
         
-        // Check for synchronous Update method
-        var updateMethod = itemType.GetMethod("Update", 
+        // Check for synchronous Update method of the object class
+        var updateMethod = itemType.GetMethod("UpdateParentCallback", 
             BindingFlags.Public | BindingFlags.Instance, 
             null, 
             Type.EmptyTypes, 
@@ -1988,7 +1973,7 @@ private async Task CallUpdateMethodIfExists(T item)
         
         if (updateMethod != null)
         {
-            Debug.WriteLine($"Calling Update() on {itemType.Name}");
+            Debug.WriteLine($"Calling UpdateParentCallback() on {itemType.Name}");
             
             // Check if it returns a Task
             if (updateMethod.ReturnType == typeof(Task))
@@ -2003,7 +1988,7 @@ private async Task CallUpdateMethodIfExists(T item)
         }
         else
         {
-            Debug.WriteLine($"No Update() or UpdateAsync() method found on {itemType.Name}");
+            Debug.WriteLine($"No Update() or UpdateAsync() method found on {itemType.Name} object.");
         }
     }
     catch (Exception ex)
@@ -2102,14 +2087,14 @@ private async Task CallUpdateMethodIfExists(T item)
         //System.Diagnostics.Debug.WriteLine("Table - ParentAutoCheck");
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} : Table {typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
         return Task.CompletedTask;
-        //await AutoCheck.InvokeAsync();
+        //await AutoCheckParentCallback.InvokeAsync();
     }
 
     /// <summary>
     /// </summary>
     private async Task ParentUpdate()
     {
-        //System.Diagnostics.Debug.WriteLine("Table - Update");
+        //System.Diagnostics.Debug.WriteLine("Table - UpdateParentCallback");
         // this is to update parent side main data as per this child component
         // update the list by removing the deleted items
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} : Table {typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
@@ -2119,7 +2104,7 @@ private async Task CallUpdateMethodIfExists(T item)
 
 
         // update the DB always through Parent as there could be different business logic
-        // await myTable.Update(List);
+        // await myTable.UpdateParentCallback(List);
         // // clear cache invoking the parent page
 
         // delete form the list all the items, which are identified for the deletion
@@ -2151,13 +2136,13 @@ private async Task CallUpdateMethodIfExists(T item)
         }
         
         var args = (currentItem, List, ListOriginal, SuccessMessage, WarningMessage, InfoMessage, ErrorMessage);
-        await Update.InvokeAsync(args!);
+        await UpdateParentCallback.InvokeAsync(args!);
     }
     
     
     private async Task ParentRefresh()
     {
-        await Refresh.InvokeAsync();
+        await RefreshParentCallback.InvokeAsync();
     }
     
 
@@ -2167,16 +2152,16 @@ private async Task CallUpdateMethodIfExists(T item)
     {
         // although discard is done at Child component, however on parent side the List is not reset
         // hence only reset at Child component is not sufficient
-        //await Discard.InvokeAsync();
-        //System.Diagnostics.Debug.WriteLine("Table - Discard");
+        // await DiscardParentCallback.InvokeAsync();
+        // System.Diagnostics.Debug.WriteLine("Table - DiscardParentCallback");
         // this is to discard all changes at child side data
         // and reset back to the parameterised backup list
         // however this is done now from parent side
-        //IterateList = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(BackupList));
-        //BackupList to use for Discard Change Function
-        //BackupList should not be altered in this Component
-        //List = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(BackupList));
-        //DoPagination();
+        // IterateList = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(BackupList));
+        // BackupList to use for DiscardParentCallback Change Function
+        // BackupList should not be altered in this Component
+        // List = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(BackupList));
+        // DoPagination();
         //
         // all selected reset
         SelectedItemUid = new Guid();
@@ -2192,7 +2177,7 @@ private async Task CallUpdateMethodIfExists(T item)
         }
     
         var args = (currentItem, List, ListOriginal);
-        await Discard.InvokeAsync(args!);
+        await DiscardParentCallback.InvokeAsync(args!);
     }
 
     /// <summary>
