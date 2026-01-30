@@ -397,7 +397,7 @@ else
 
             await Table.InsertAsync(assignment);
             
-            // RefreshParentCallback cache
+            // Refresh cache
             await DataService.RefreshCache();
             
             await LoadProjectAssignments();
@@ -432,7 +432,7 @@ else
             await Table.UpdateFieldsByUidAsync(assignment, assignment.UID,
                 [nameof(assignment.IsActive), nameof(assignment.RemovedBy), nameof(assignment.RemovedOn)]);
 
-            // RefreshParentCallback cache
+            // Refresh cache
             await DataService.RefreshCache();
             
             await LoadProjectAssignments();
@@ -459,7 +459,7 @@ else
             await Table.UpdateFieldsByUidAsync(assignment, assignment.UID,
                 [nameof(assignment.IsProjectAdmin)]);
 
-            // RefreshParentCallback cache
+            // Refresh cache
             await DataService.RefreshCache();
             
             // Reload assignments
@@ -555,7 +555,7 @@ else
                     await JS.InvokeVoidAsync("alert", $"Project created but role seeding failed: {ex.Message}");
                 }
                 
-                // RefreshParentCallback cache to show new data
+                // Refresh cache to show new data
                 await DataService.RefreshCache();
                 await LoadProjects();
             }
@@ -598,7 +598,7 @@ else
                 }
             }
             
-            // RefreshParentCallback cache to show new data
+            // Refresh cache to show new data
             await DataService.RefreshCache();
             
             await JS.InvokeVoidAsync("alert", $"Successfully seeded default roles for {projectsSeeded} projects!");

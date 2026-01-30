@@ -25,17 +25,18 @@
         @ChildContent
     </div>
     
+    
     @if (_isProcessingExcel)
     {
-        <div style="position:fixed; top:0; left:0; width:100%; height:100%; 
-                background:rgba(0,0,0,0.5); display:flex; 
-                justify-content:center; align-items:center; z-index:9999;">
-            <div style="background:white; padding:2rem; border-radius:12px; text-align:center;">
-                <img src="./images/loading-green_dots.gif" width="60" />
-                <h5 style="margin-top:1rem;">@_excelProgressMessage</h5>
+        <div class="overlay-backdrop">
+            <div class="overlay-card">
+                <div class="overlay-spinner"></div>
+                <div class="overlay-title">@_excelProgressMessage</div>
+                <div class="overlay-message">This may take a moment...</div>
             </div>
         </div>
     }
+
     @if (List is null)
     {
         <div class="row float-left">
@@ -137,13 +138,13 @@
                                 <!-- Third Button Group -->
                                 <div class="btn-group" role="group" aria-label="Third group">
                                     <button @onclick="ParentRefresh" data-toggle="button"
-                                            class="btn btn-outline-info" title="RefreshParentCallback Data">Refresh
+                                            class="btn btn-outline-info" title="Refresh Data">Refresh
                                     </button>
                                     <button @onclick="ParentDiscard" data-toggle="button"
-                                            class="btn btn-outline-warning" title="DiscardParentCallback Changes">Discard
+                                            class="btn btn-outline-warning" title="Discard Changes">Discard
                                     </button>
                                     <button @onclick="ParentUpdate" data-toggle="button" class="btn btn-outline-success"
-                                            title="Verify and UpdateParentCallback Changes">Update
+                                            title="Verify and Update Changes">Update
                                     </button>
                                     <button @onclick="DownloadData" data-toggle="button" class="btn btn-outline-primary"
                                             title="Download the table">Download Data
@@ -706,11 +707,6 @@
     // Property for getting Tag from items
     private PropertyInfo? _tagProperty;
     
-    
-    private bool _isProcessingExcel = false;
-    private string _excelProgressMessage = "";
-    
-    
     private List<PropertyInfo> _tableProperties = null!;
     private List<DBMaster>? _dbMaster;
     private List<T>? _iteratedList;
@@ -734,6 +730,10 @@
 
     private bool _showInputFile;
     private bool _showBasicModal;
+
+    private bool _isProcessingExcel = false;
+    private string _excelProgressMessage = "";
+
 
     private PropertyInfo? SeqProperty { get; set; }
     private PropertyInfo? CssProperty { get; set; }
@@ -1558,164 +1558,179 @@
 
 private async Task AppendRecord()
 {
-    _importValidationErrors.Clear();
-    _importValidationWarnings.Clear();
-    _importedSuccessCount = 0;
-    _importedSkippedCount = 0;
-
-    if (_importedItemsFromExcel == null || !_importedItemsFromExcel.Any())
+    _isProcessingExcel = true;
+    _excelProgressMessage = "Processing import...";
+    StateHasChanged();
+    await Task.Delay(50);
+try
     {
-        ErrorMessage = "No records to append.";
-        StateHasChanged();
-        return;
-    }
+        _importValidationErrors.Clear();
+        _importValidationWarnings.Clear();
+        _importedSuccessCount = 0;
+        _importedSkippedCount = 0;
 
-    var (uidProperty,tagProperty) = GetUiDnTagProperty<T>();
-
-    // Build existing UID and Tag sets from current list
-    var existingUIDs = new HashSet<object>();
-    var existingTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-    if (List != null)
-    {
-        foreach (var item in List)
+        if (_importedItemsFromExcel == null || !_importedItemsFromExcel.Any())
         {
+            ErrorMessage = "No records to append.";
+            StateHasChanged();
+            return;
+        }
+
+        var (uidProperty, tagProperty) = GetUiDnTagProperty<T>();
+
+        // Build existing UID and Tag sets from current list
+        var existingUIDs = new HashSet<object>();
+        var existingTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (List != null)
+        {
+            foreach (var item in List)
+            {
+                if (uidProperty != null)
+                {
+                    var uid = uidProperty.GetValue(item);
+                    if (uid != null) existingUIDs.Add(uid);
+                }
+
+                if (tagProperty != null)
+                {
+                    var tag = tagProperty.GetValue(item)?.ToString();
+                    if (!string.IsNullOrWhiteSpace(tag)) existingTags.Add(tag);
+                }
+            }
+        }
+
+        // Validate and add imported items
+        var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
+        var rowNumber = 2; // Excel starts data at row 2 (row 1 is header)
+
+        foreach (var item in _importedItemsFromExcel)
+        {
+            var canAdd = true;
+            var itemIdentifier = $"Row {rowNumber}";
+            string tagValue = null;
+
+            // Check UID (if property exists)
             if (uidProperty != null)
             {
-                var uid = uidProperty.GetValue(item);
-                if (uid != null) existingUIDs.Add(uid);
-            }
-
-            if (tagProperty != null)
-            {
-                var tag = tagProperty.GetValue(item)?.ToString();
-                if (!string.IsNullOrWhiteSpace(tag)) existingTags.Add(tag);
-            }
-        }
-    }
-
-    // Validate and add imported items
-    var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
-    var rowNumber = 2; // Excel starts data at row 2 (row 1 is header)
-
-    foreach (var item in _importedItemsFromExcel)
-    {
-        var canAdd = true;
-        var itemIdentifier = $"Row {rowNumber}";
-        string tagValue = null;
-
-        // Check UID (if property exists)
-        if (uidProperty != null)
-        {
-            var uidValue = uidProperty.GetValue(item);
-            if (uidValue == null || uidValue.Equals(Guid.Empty))
-            {
-                _importValidationErrors.Add($"{itemIdentifier}: Missing or empty UID");
-                canAdd = false;
-            }
-            else if (!existingUIDs.Add(uidValue))
-            {
-                _importValidationErrors.Add($"{itemIdentifier}: Duplicate UID '{uidValue}'");
-                canAdd = false;
-            }
-        }
-
-        // Check Tag (if property exists) - REQUIRED, cannot be empty
-        if (tagProperty != null)
-        {
-            tagValue = tagProperty.GetValue(item)?.ToString()?.Trim();
-            
-            if (string.IsNullOrWhiteSpace(tagValue))
-            {
-                _importValidationErrors.Add($"{itemIdentifier}: Tag is required and cannot be empty");
-                canAdd = false;
-            }
-            else
-            {
-                // Update identifier with tag for better error messages
-                itemIdentifier = $"Row {rowNumber} (Tag: '{tagValue}')";
-                
-                if (!existingTags.Add(tagValue))
+                var uidValue = uidProperty.GetValue(item);
+                if (uidValue == null || uidValue.Equals(Guid.Empty))
                 {
-                    _importValidationErrors.Add($"{itemIdentifier}: Duplicate Tag '{tagValue}' - already exists in current list");
+                    _importValidationErrors.Add($"{itemIdentifier}: Missing or empty UID");
+                    canAdd = false;
+                }
+                else if (!existingUIDs.Add(uidValue))
+                {
+                    _importValidationErrors.Add($"{itemIdentifier}: Duplicate UID '{uidValue}'");
                     canAdd = false;
                 }
             }
-        }
-        
-        // Validate using Data Annotations
-        if (canAdd)
-        {
-            var validationErrors = ValidateItem(item);
-            if (validationErrors.Any())
+
+            // Check Tag (if property exists) - REQUIRED, cannot be empty
+            if (tagProperty != null)
             {
-                foreach (var validationError in validationErrors)
+                tagValue = tagProperty.GetValue(item)?.ToString()?.Trim();
+
+                if (string.IsNullOrWhiteSpace(tagValue))
                 {
-                    _importValidationErrors.Add($"{itemIdentifier}: {validationError}");
+                    _importValidationErrors.Add($"{itemIdentifier}: Tag is required and cannot be empty");
+                    canAdd = false;
                 }
-                canAdd = false;
+                else
+                {
+                    // Update identifier with tag for better error messages
+                    itemIdentifier = $"Row {rowNumber} (Tag: '{tagValue}')";
+
+                    if (!existingTags.Add(tagValue))
+                    {
+                        _importValidationErrors.Add($"{itemIdentifier}: Duplicate Tag '{tagValue}' - already exists in current list");
+                        canAdd = false;
+                    }
+                }
             }
-        }
-        
 
-        // Add item if validation passed
-        if (canAdd)
-        {
-            var clonedItem = JsonSerializer.Deserialize<T>(
-                JsonSerializer.Serialize(item, jsonSerializerOption), 
-                jsonSerializerOption);
-            // Call UpdateParentCallback method if it exists
-            await CallUpdateMethodIfExists(clonedItem);
-            List.Add(clonedItem);
-            _iteratedList.Add(JsonSerializer.Deserialize<T>(
-                JsonSerializer.Serialize(item, jsonSerializerOption), 
-                jsonSerializerOption));
-            
-            _importedSuccessCount++;
-        }
-        else
-        {
-            _importedSkippedCount++;
+            // Validate using Data Annotations
+            if (canAdd)
+            {
+                var validationErrors = ValidateItem(item);
+                if (validationErrors.Any())
+                {
+                    foreach (var validationError in validationErrors)
+                    {
+                        _importValidationErrors.Add($"{itemIdentifier}: {validationError}");
+                    }
+
+                    canAdd = false;
+                }
+            }
+
+
+            // Add item if validation passed
+            if (canAdd)
+            {
+                var clonedItem = JsonSerializer.Deserialize<T>(
+                    JsonSerializer.Serialize(item, jsonSerializerOption),
+                    jsonSerializerOption);
+                // Call Update method if it exists
+                await CallUpdateMethodIfExists(clonedItem);
+                List.Add(clonedItem);
+                _iteratedList.Add(JsonSerializer.Deserialize<T>(
+                    JsonSerializer.Serialize(item, jsonSerializerOption),
+                    jsonSerializerOption));
+
+                _importedSuccessCount++;
+            }
+            else
+            {
+                _importedSkippedCount++;
+            }
+
+            rowNumber++;
         }
 
-        rowNumber++;
+        // Update messages
+        ResetMassages();
+
+        if (_importedSuccessCount > 0)
+        {
+            SuccessMessage = $"{_importedSuccessCount} record(s) successfully appended to the list.";
+        }
+
+        if (_importedSkippedCount > 0)
+        {
+            WarningMessage = $"{_importedSkippedCount} record(s) skipped due to validation errors.";
+        }
+
+        if (_importValidationErrors.Any())
+        {
+            var errorSummary = string.Join("; ", _importValidationErrors.Take(5));
+            if (_importValidationErrors.Count > 5)
+            {
+                errorSummary += $"... and {_importValidationErrors.Count - 5} more error(s)";
+            }
+
+            ErrorMessage = $"Validation errors found: {errorSummary}";
+
+            // Log all errors for debugging
+            Debug.WriteLine($"=== Import Append Validation Errors ({_importValidationErrors.Count}) ===");
+            _importValidationErrors.ForEach(e => Debug.WriteLine(e));
+        }
+
+        if (_importedSuccessCount == 0)
+        {
+            ErrorMessage = "No records were appended. All imported records failed validation.";
+        }
     }
 
-    // Update messages
-    ResetMassages();
+finally
+{
     
-    if (_importedSuccessCount > 0)
-    {
-        SuccessMessage = $"{_importedSuccessCount} record(s) successfully appended to the list.";
-    }
-
-    if (_importedSkippedCount > 0)
-    {
-        WarningMessage = $"{_importedSkippedCount} record(s) skipped due to validation errors.";
-    }
-
-    if (_importValidationErrors.Any())
-    {
-        var errorSummary = string.Join("; ", _importValidationErrors.Take(5));
-        if (_importValidationErrors.Count > 5)
-        {
-            errorSummary += $"... and {_importValidationErrors.Count - 5} more error(s)";
-        }
-        ErrorMessage = $"Validation errors found: {errorSummary}";
-        
-        // Log all errors for debugging
-        Debug.WriteLine($"=== Import Append Validation Errors ({_importValidationErrors.Count}) ===");
-        _importValidationErrors.ForEach(e => Debug.WriteLine(e));
-    }
-
-    if (_importedSuccessCount == 0)
-    {
-        ErrorMessage = "No records were appended. All imported records failed validation.";
-    }
-
     DoPagination();
-    StateHasChanged();
     _showInputFile = false;
+    _isProcessingExcel = false;
+    StateHasChanged();
+}
+
 }
 
 private async Task ReplaceRecord()
@@ -1965,7 +1980,7 @@ private async Task CallUpdateMethodIfExists(T item)
         }
         
         // Check for synchronous Update method of the object class
-        var updateMethod = itemType.GetMethod("UpdateParentCallback", 
+        var updateMethod = itemType.GetMethod("Update", 
             BindingFlags.Public | BindingFlags.Instance, 
             null, 
             Type.EmptyTypes, 
@@ -1973,7 +1988,7 @@ private async Task CallUpdateMethodIfExists(T item)
         
         if (updateMethod != null)
         {
-            Debug.WriteLine($"Calling UpdateParentCallback() on {itemType.Name}");
+            Debug.WriteLine($"Calling Update() on {itemType.Name}");
             
             // Check if it returns a Task
             if (updateMethod.ReturnType == typeof(Task))
@@ -2094,7 +2109,6 @@ private async Task CallUpdateMethodIfExists(T item)
     /// </summary>
     private async Task ParentUpdate()
     {
-        //System.Diagnostics.Debug.WriteLine("Table - UpdateParentCallback");
         // this is to update parent side main data as per this child component
         // update the list by removing the deleted items
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} : Table {typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name}");
@@ -2104,7 +2118,6 @@ private async Task CallUpdateMethodIfExists(T item)
 
 
         // update the DB always through Parent as there could be different business logic
-        // await myTable.UpdateParentCallback(List);
         // // clear cache invoking the parent page
 
         // delete form the list all the items, which are identified for the deletion
@@ -2153,12 +2166,11 @@ private async Task CallUpdateMethodIfExists(T item)
         // although discard is done at Child component, however on parent side the List is not reset
         // hence only reset at Child component is not sufficient
         // await DiscardParentCallback.InvokeAsync();
-        // System.Diagnostics.Debug.WriteLine("Table - DiscardParentCallback");
         // this is to discard all changes at child side data
         // and reset back to the parameterised backup list
         // however this is done now from parent side
         // IterateList = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(BackupList));
-        // BackupList to use for DiscardParentCallback Change Function
+        // BackupList to use for Discard Change Function
         // BackupList should not be altered in this Component
         // List = JsonSerializer.Deserialize<List<T>>(JsonSerializer.Serialize(BackupList));
         // DoPagination();

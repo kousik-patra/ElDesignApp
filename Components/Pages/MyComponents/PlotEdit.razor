@@ -1048,7 +1048,7 @@ else
     {
         _newPlan.XEW = eastWest;
 
-        // UpdateParentCallback project settings if this is the key plan
+        // Update project settings if this is the key plan
         if (IsKeyPlan && GlobalData.SelectedProject != null)
         {
             GlobalData.SelectedProject.XEW = eastWest;
@@ -1336,7 +1336,7 @@ else
 
             _successMessage = $"Plot plan '{_newPlan.Tag}' saved successfully.";
             
-            // RefreshParentCallback list
+            // Refresh list
             _plotPlans = await PlotPlanService.GetAllAsync();
             await LoadCoordinateSystems();
 
@@ -1703,7 +1703,7 @@ else
     private async Task ConfirmAndDiscard()
     {
         bool confirmed = await JsRuntime.InvokeAsync<bool>("confirm",
-            "⚠️ DiscardParentCallback this plot plan?\n\nAll changes will be lost.\n\nContinue?");
+            "⚠️ Discard this plot plan?\n\nAll changes will be lost.\n\nContinue?");
 
         if (confirmed)
         {

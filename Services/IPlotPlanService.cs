@@ -30,7 +30,7 @@ public interface IPlotPlanService
     Task<bool> SavePlotPlanAsync(PlotPlan plan);
     
     /// <summary>
-    /// UpdateParentCallback an existing plot plan
+    /// Update an existing plot plan
     /// </summary>
     Task<bool> UpdatePlotPlanAsync(PlotPlan plan, params string[] fieldNames);
     
@@ -50,7 +50,7 @@ public interface IPlotPlanService
     Task<PlotPlan?> GetKeyPlanAsync();
     
     /// <summary>
-    /// RefreshParentCallback plot plans from database
+    /// Refresh plot plans from database
     /// </summary>
     Task RefreshAsync();
     
@@ -169,10 +169,10 @@ public class PlotPlanService : IPlotPlanService
     {
         try
         {
-            // RefreshParentCallback cache and get plot plans from database
+            // Refresh cache and get plot plans from database
             var (plotPlans, _, _, _) = await _dataService.RefreshCacheAndReadFromDb<PlotPlan>();
             
-            // UpdateParentCallback global data
+            // Update global data
             _globalData.PlotPlans = plotPlans ?? new List<PlotPlan>();
             
             // Filter by current project if one is selected
@@ -211,7 +211,7 @@ public class PlotPlanService : IPlotPlanService
             {
                 plan.KeyPlan = true;
                 
-                // UpdateParentCallback project's global reference
+                // Update project's global reference
                 if (_globalData.SelectedProject != null)
                 {
                     _globalData.SelectedProject.XEW = plan.XEW;
@@ -232,7 +232,7 @@ public class PlotPlanService : IPlotPlanService
 
             await _tableService.InsertAsync(plan);
             
-            // RefreshParentCallback cache
+            // Refresh cache
             await RefreshAsync();
             
             Debug.WriteLine($"Plot plan '{plan.Tag}' saved successfully. KeyPlan: {plan.KeyPlan}");
@@ -277,7 +277,7 @@ public class PlotPlanService : IPlotPlanService
             // Remove from global data
             _globalData.PlotPlans?.Remove(plan);
             
-            // RefreshParentCallback cache
+            // Refresh cache
             await RefreshAsync();
             
             Debug.WriteLine($"Plot plan '{plan.Tag}' deleted successfully.");
@@ -331,7 +331,7 @@ public class PlotPlanService : IPlotPlanService
                 }
             }
 
-            // UpdateParentCallback project reference point
+            // Update project reference point
             if (_globalData.SelectedProject != null)
             {
                 _globalData.SelectedProject.GlobalE = newKeyPlan.GlobalE;
@@ -343,7 +343,7 @@ public class PlotPlanService : IPlotPlanService
             newKeyPlan.KeyPlan = true;
             await _tableService.UpdateFieldsAsync(newKeyPlan, "KeyPlan");
 
-            // RefreshParentCallback cache
+            // Refresh cache
             await RefreshAsync();
 
             Debug.WriteLine($"'{newKeyPlan.Tag}' is now the key plan.");

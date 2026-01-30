@@ -125,17 +125,17 @@ public interface ITableService
     Task<int> InsertAsync<T>(T item) where T : class;
     
     /// <summary>
-    /// UpdateParentCallback all fields of an item (identified by UID or unique fields)
+    /// Update all fields of an item (identified by UID or unique fields)
     /// </summary>
     Task<int> UpdateAsync<T>(T item) where T : class?;
 
     /// <summary>
-    /// UpdateParentCallback specific fields of an item (auto-detects by UID or unique fields)
+    /// Update specific fields of an item (auto-detects by UID or unique fields)
     /// </summary>
     Task<int> UpdateFieldsAsync<T>(T item, params string[] fields) where T : class;
 
     /// <summary>
-    /// UpdateParentCallback specific fields by UID
+    /// Update specific fields by UID
     /// </summary>
     Task<int> UpdateFieldsByUidAsync<T>(T item, Guid uid, IEnumerable<string> fields) where T : class;
 
@@ -512,7 +512,7 @@ public class TableService : ITableService
     }
     
     /// <summary>
-/// UpdateParentCallback all fields of an item (identified by UID or unique fields)
+/// Update all fields of an item (identified by UID or unique fields)
 /// </summary>
 public async Task<int> UpdateAsync<T>(T item) where T : class
 {
@@ -522,12 +522,12 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
     var dbColumns = await GetColumnNamesAsync(tableName);
 
     if (dbColumns.Count == 0)
-        throw new TableServiceException($"No columns found for table '{tableName}'", tableName, "UpdateParentCallback");
+        throw new TableServiceException($"No columns found for table '{tableName}'", tableName, "Update");
 
     // Build WHERE clause
     var (whereClause, whereParams) = BuildWhereClause(item);
     if (string.IsNullOrEmpty(whereClause))
-        throw new TableServiceException("Cannot determine record identity for update. Provide UID or unique field.", tableName, "UpdateParentCallback");
+        throw new TableServiceException("Cannot determine record identity for update. Provide UID or unique field.", tableName, "Update");
 
     // Get properties that match DB columns (excluding the identifier used in WHERE)
     var identifierFields = whereParams.Keys.Select(k => k.TrimStart('@')).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -585,7 +585,7 @@ public async Task<int> UpdateAsync<T>(T item) where T : class
         // Build WHERE clause
         var (whereClause, whereParams) = BuildWhereClause(item);
         if (string.IsNullOrEmpty(whereClause))
-            throw new TableServiceException("Cannot determine record identity for update. Provide UID or unique field.", tableName, "UpdateParentCallback");
+            throw new TableServiceException("Cannot determine record identity for update. Provide UID or unique field.", tableName, "Update");
 
         // Build SET clause
         var setClauses = validFields.Select(f => $"[{f}] = @{f}");

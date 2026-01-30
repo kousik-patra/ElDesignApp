@@ -325,7 +325,7 @@ public class BaseInfo
     [Display(Name = "Updated By", Order = 91)] public string UpdatedBy { get; set; } = "KP";
     
     [ExcludeFromExcelImport] 
-    [Display(Name = "UpdateParentCallback Date Time", Order = 92)] public DateTime UpdatedOn { get; set; }
+    [Display(Name = "Update Date Time", Order = 92)] public DateTime UpdatedOn { get; set; }
 
     [ExcludeFromExcelImport] 
     [ExcludeFromExcelExport]

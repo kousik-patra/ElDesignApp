@@ -852,10 +852,7 @@ public class Segment : BaseInfo, IBaseMethod
     public List<List<string>>? AllowableTypesArray { get; set; } // multiple array of segments as one entry
     public string? AllowableTypesArrayS { get; set; }
     public string? ParentTagForArrayS { get; set; }
-    public string? UpdatedBy { get; set; }
-    public DateTime UpdatedDateTime { get; set; }
     public string? UpdatedDateTimeString { get; set; }
-    public string? Remarks { get; set; }
     public bool Selected { get; set; }
     public string? CableWay { get; set; }
     public string? CableWayBranch { get; set; }
@@ -1417,6 +1414,62 @@ public class Sleeve : BaseInfo, ICloneable
 
     
 }
+
+
+/// <summary>
+/// </summary>
+public class Trench : BaseInfo, ICloneable
+{
+
+    public string? Service { get; set; } // EHT/Lighting/Power
+    public double Width1 { get; set; } // width in m at End1
+    public double Width2 { get; set; } // width in m at End2
+    public double Height1 { get; set; } // width in m at End1
+    public double Height2 { get; set; } // width in m at End1
+    public Vector3 End1 { get; set; }
+    public string? End1S { get; set; }
+    public Vector3 End2 { get; set; }
+    public string? End2S { get; set; }
+    public string CoordSystem { get; set; }
+    public string WBS { get; set; }
+
+    public bool Selected { get; set; }
+    public string CableWay { get; set; }
+    public string CableWayBranch { get; set; }
+
+
+    
+    public Trench() { }
+    public object Clone()
+    {
+        var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
+        var trench = (Trench)MemberwiseClone();
+        return trench;
+    }
+}
+
+public class Structure : BaseInfo, ICloneable
+{
+
+    public string? Type { get; set; } // I-beam/Angle/Channel
+    public string Dimension { get; set; } // Dimension JSON string as per section height thickness profile etc.
+    public Vector3 End1 { get; set; }
+    public string? End1S { get; set; }
+    public Vector3 End2 { get; set; }
+    public string? End2S { get; set; }
+    public string CoordSystem { get; set; }
+    public string WBS { get; set; }
+
+  
+    public Structure() { }
+    public object Clone()
+    {
+        var jsonSerializerOption = new JsonSerializerOptions { IncludeFields = true };
+        var structure = (Structure)MemberwiseClone();
+        return structure;
+    }
+}
+
 
 public class NodeParentChild
 {

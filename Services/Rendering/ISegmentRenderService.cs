@@ -104,7 +104,7 @@ public interface ISegmentRenderService
     Task FocusOnSelectionAsync();
     
     /// <summary>
-    /// UpdateParentCallback a single segment's appearance (e.g., after data change)
+    /// Update a single segment's appearance (e.g., after data change)
     /// </summary>
     Task UpdateSegmentAsync(Segment segment);
     
@@ -308,7 +308,7 @@ public class SegmentRenderService : ISegmentRenderService, IAsyncDisposable
                     _selectedTags.ToArray(), false);
             }
 
-            // UpdateParentCallback selection state
+            // Update selection state
             _selectedTags.Clear();
             _selectedTags.AddRange(tagList);
 
@@ -464,7 +464,7 @@ public class SegmentRenderService : ISegmentRenderService, IAsyncDisposable
     }
 
     /// <summary>
-    /// UpdateParentCallback a single segment's appearance
+    /// Update a single segment's appearance
     /// </summary>
     public async Task UpdateSegmentAsync(Segment segment)
     {

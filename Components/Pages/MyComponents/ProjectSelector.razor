@@ -77,7 +77,7 @@
                         </select>
                     </div>
                     <div class="col-auto">
-                        <button class="btn btn-outline-secondary" @onclick="RefreshProjects" title="RefreshParentCallback">
+                        <button class="btn btn-outline-secondary" @onclick="RefreshProjects" title="Refresh">
                             <i class="bi bi-arrow-clockwise"></i>
                         </button>
                     </div>
@@ -273,7 +273,7 @@
             {
                 GlobalData.SetSelectedProject(selectedProject);
                 
-                // UpdateParentCallback ProjectContextService (for new authorization)
+                // Update ProjectContextService (for new authorization)
                 await ProjectContext.SetCurrentProjectAsync(selectedProject.UID);
                 
                 // Reload user roles for new project
@@ -281,7 +281,7 @@
                 
                 Debug.WriteLine($"Selected Project: {selectedProject.Tag}");
                 
-                // RefreshParentCallback cache
+                // Refresh cache
                 await Refresh();
                 
     
@@ -335,7 +335,7 @@
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error in RefreshParentCallback: {ex.Message}");
+            Debug.WriteLine($"Error in Refresh: {ex.Message}");
         }
     }
 

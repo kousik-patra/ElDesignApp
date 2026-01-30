@@ -117,6 +117,8 @@ public interface IGlobalDataService
     List<Segment>? RawSegments { get; set; }
     /// <summary>Gets or sets the global data.</summary>
     List<Segment>? Segments { get; set; }
+    List<Trench>? Trenches { get; set; }
+    List<Structure>? Structures { get; set; }
 
     /// <summary>Gets or sets the global data.</summary>
     List<Segment>? Trays { get; set; }
@@ -490,6 +492,9 @@ public class GlobalDataService : IGlobalDataService
 
     /// <summary>Gets or sets the global data.</summary>
     public List<Segment>? Segments { get; set; } = [];
+    
+    public List<Trench>? Trenches { get; set; } = [];
+    public List<Structure>? Structures { get; set; } = [];
 
     /// <summary>Gets or sets the global data.</summary>
     public List<Segment>? Trays { get; set; } = [];

@@ -455,7 +455,7 @@
         
         // Step 4: Exclude any pV or pq bus, which are not connected to grid, i.e., having Base Voltage still zero
         // Decide baseMVA (typically largest of Pv or PQ ceiling to multiples of 10MVA
-        // UpdateParentCallback pvBus and pqBus voltage and powers into the per unit values
+        // Update pvBus and pqBus voltage and powers into the per unit values
         var (swingBusesNR, pvBusesNR, pqBusesNR,baseMVA) = 
                 FilterUnconnectedBuses(busesWithBaseVoltage, filterSwingBuses, updatedPVBuses, updatedPQBuses, filteredTransformers);
             
@@ -819,7 +819,7 @@
                 bool isReverse = origBranch.FromBus == currentBus ? false : true;
                 var nextBus = isReverse ? origBranch.FromBus : origBranch.ToBus;
 
-                // UpdateParentCallback voltage: V_next = V_current - V_drop (if reverse) or V_current + V_drop (if not reverse)
+                // Update voltage: V_next = V_current - V_drop (if reverse) or V_current + V_drop (if not reverse)
                 var nextVoltage = isReverse ? currentVoltage + voltageDrop : currentVoltage - voltageDrop;
 
                 // Extract magnitude and angle
@@ -859,7 +859,7 @@
                 var simplifiedCurrentWithFullChargingCurrent = simplifiedCurrent + fullChargingCurrentSimplified;
                 var chargingCurrentCurrentBranch = new Complex(0, origBranch.CapacitiveAdmittance) * currentVoltage / 3.0;
                 var intermediateCurrent = simplifiedCurrentWithFullChargingCurrent - accumulatedChargingCurrent;
-                // UpdateParentCallback accumulated charging current to include the current branch for the next iteration
+                // Update accumulated charging current to include the current branch for the next iteration
                 accumulatedChargingCurrent += chargingCurrentCurrentBranch;
 
                 // Create new Branch object for the intermediate branch
@@ -884,7 +884,7 @@
                 // Add to branchResultsAll
                 branchResultsAll.Add(newBranch);
 
-                // UpdateParentCallback current bus and voltage for the next iteration
+                // Update current bus and voltage for the next iteration
                 currentBus = nextBus;
                 currentVoltage = nextVoltage;
             }
@@ -1211,7 +1211,7 @@ public void Solve(string solveMethod)
             corrections = SolveLinearSystemGaussianElimination(jacobian, mismatches);
             // Or use SolveLinearSystemSparseMatrix if preferred
 
-            // Step 3.4: UpdateParentCallback variables
+            // Step 3.4: Update variables
             UpdateVariables(corrections);
 
             // Check Q limits for PV buses after update (violation check)
@@ -1472,18 +1472,18 @@ public void Solve(string solveMethod)
         }
 
 
-        // Step 3.4: UpdateParentCallback voltage angles and magnitudes
+        // Step 3.4: Update voltage angles and magnitudes
         private void UpdateVariables(double[] corrections)
         {
             var idx = 0;
-            // UpdateParentCallback angles for non-swing buses
+            // Update angles for non-swing buses
             for (var i = 0; i < n; i++)
             {
                 if (buses[i].Type == "Swing") continue;
                 buses[i].Angle += corrections[idx++];
             }
 
-            // UpdateParentCallback voltages for PQ and Isolated buses
+            // Update voltages for PQ and Isolated buses
             for (var i = 0; i < n; i++)
             {
                 if (buses[i].Type != "PQ" && buses[i].Type != "Isolated") continue;
@@ -1660,7 +1660,7 @@ public void Solve(string solveMethod)
             return busReplacements.ContainsKey(busTag) ? busReplacements[busTag] : busTag;
         }
 
-        // UpdateParentCallback PV buses
+        // Update PV buses
         var updatedPVBuses = pvBuses
             .Select(bus => (
                 Tag: ReplaceBusTag(bus.Tag),
@@ -1671,7 +1671,7 @@ public void Solve(string solveMethod)
             ))
             .ToList();
 
-        // UpdateParentCallback PQ buses
+        // Update PQ buses
         var updatedPQBuses = pqBuses
             .Select(bus => (
                 Tag: ReplaceBusTag(bus.Tag),
@@ -1684,7 +1684,7 @@ public void Solve(string solveMethod)
             ))
             .ToList();
 
-        // UpdateParentCallback cable branches
+        // Update cable branches
         var updatedCableBranches = cableBranches
             .Select(cable => (
                 cable.Tag,
@@ -1695,7 +1695,7 @@ public void Solve(string solveMethod)
             ))
             .ToList();
 
-        // UpdateParentCallback transformers
+        // Update transformers
         var updatedTransformers = transformers
             .Select(transformer => (
                 transformer.Tag,
@@ -2201,7 +2201,7 @@ public void Solve(string solveMethod)
                     combinedOriginalBranches.AddRange(branch1.OriginalBranches);
                     combinedOriginalBranches.AddRange(branch2.OriginalBranches);
                     //
-                    // UpdateParentCallback temporary table
+                    // Update temporary table
                     branchMappings.Remove(branch1);
                     branchMappings.Remove(branch2);
                     branchMappings.Add((bus1, bus2, combinedOriginalBranches));

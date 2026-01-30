@@ -27,7 +27,54 @@
 </div>
 <br>
 
-@if (_loadChild)
+@if (!_loadChild)
+{
+    <div class="loading-card">
+        <div class="loading-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"/>
+            </svg>
+        </div>
+        
+        <h4 class="loading-title">Loading Segment Data</h4>
+        <p class="loading-message">@_loadingMessage</p>
+        
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: @(LoadingPercentage)%"></div>
+            </div>
+            <div class="progress-text">@LoadingPercentage%</div>
+        </div>
+        
+        <div class="loading-steps">
+            <div class="step @(_loadingStep >= 1 ? "completed" : _loadingStep == 0 ? "active" : "")">
+                <span class="step-dot"></span>
+                <span class="step-label">Buses</span>
+            </div>
+            <div class="step @(_loadingStep >= 2 ? "completed" : _loadingStep == 1 ? "active" : "")">
+                <span class="step-dot"></span>
+                <span class="step-label">Transformers</span>
+            </div>
+            <div class="step @(_loadingStep >= 3 ? "completed" : _loadingStep == 2 ? "active" : "")">
+                <span class="step-dot"></span>
+                <span class="step-label">Cables</span>
+            </div>
+            <div class="step @(_loadingStep >= 4 ? "completed" : _loadingStep == 3 ? "active" : "")">
+                <span class="step-dot"></span>
+                <span class="step-label">Bus Ducts</span>
+            </div>
+            <div class="step @(_loadingStep >= 5 ? "completed" : _loadingStep == 4 ? "active" : "")">
+                <span class="step-dot"></span>
+                <span class="step-label">Loads</span>
+            </div>
+            <div class="step @(_loadingStep >= 6 ? "completed" : _loadingStep == 5 ? "active" : "")">
+                <span class="step-dot"></span>
+                <span class="step-label">Switches</span>
+            </div>
+        </div>
+    </div>
+}
+else
 {
     <div class="container-fluid">
         <div class="row">
@@ -185,27 +232,27 @@
     <br/>
     <br/>
 }
-else
-{
-    <h5>loading data </h5>
-    <img src="./images/loading-green_dots.gif" asp-append-version="true" width="256" alt=""/>
-}
-
-@if (_isProcessing)
-{
-    <h5>processing data </h5>
-    <img src="./images/working.gif" asp-append-version="true" width="300" alt=""/>
-}
 
 
 @code {
+    
+    // Progress tracking
+    private int _loadingStep = 0;
+    private int _totalLoadingSteps = 9;  // Total number of data loads
+    private string _loadingMessage = "Initializing...";
+    
+    // Calculate percentage
+    private int LoadingPercentage => (int)((double)_loadingStep / _totalLoadingSteps * 100);
+    
     private Plot PlotRef { get; set; } // Reference to the Plot component
     private bool _loadChild;
     private readonly bool[] _tab = new bool[10];
 
-    public static List<Segment> Segments = [];
-    public static List<Sleeve> Sleeves = [];
-    public static List<Equipment> Equipments = [];
+    public List<Segment> Segments = [];
+    public List<Trench> Trenches = [];
+    public List<Structure> Structures = [];
+    public List<Sleeve> Sleeves = [];
+    public List<Equipment> Equipments = [];
 
 
     private readonly string[] _tabName =
@@ -220,7 +267,6 @@ else
     ];
 
     private bool _isDisabledBttnSaveSegmentResultToDb = true;
-    private bool _isProcessing = false;
     private bool _displayNsaveAccessories = true; // change to false later
 
     private string tableActionMessage = "";
@@ -270,26 +316,19 @@ else
             var (userId, userName) = await MiscService.GetCurrentUserInfoAsync();
             loginUser = userName ?? "Guest";
 
-
-            // load existing plot plans for the selected project
-            // (GlobalData.PlotPlans, string logInfo, string logWarning, string logError)
-            //     = await DataService.ReadFromCacheOrDb<PlotPlan>();
-            // Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} " +
-            //                 $"Info: {logInfo}, Warning: {logWarning}, Error: {logError}");
-            //
-            // load raw segments
             var logInfo = "";
             var logWarning = "";
             var logError = "";
             
-            (Segments, logInfo, logWarning, logError)
-                = await DataService.ReadFromCacheOrDb<Segment>();
-            
-            var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
-            Console.WriteLine(displayText);
-            await JsRuntime.InvokeVoidAsync("consoleLog", displayText);
-            _isProcessing = true;
+            // Step 1: Raw segments
+            _loadingMessage = "Loading raw segments...";
+            _loadingStep = 0;
             StateHasChanged();
+            await Task.Delay(10); // Allow UI to update
+
+            (Segments, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Segment>();
+            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
+
             // update Raw segments
             Segments.ForEach(segment => LayoutFunction.SegmentUpdate(segment));
             // remove any segments having zero lengths (same End1 and End2)
@@ -301,10 +340,24 @@ else
             Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Face assigned for {Segments.Count}.");
             Segments = Table.AssignSequence(Segments);
             Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Sequence assigned for total {Segments.Count} raw Segments");
-            _isProcessing = false;
+
+                    
+            _loadingStep = 1;
             StateHasChanged();
+            await Task.Delay(10);
+
+            // Step 2: Trenches
+            _loadingMessage = "Loading Cable Trenches...";
+            // read trenches
+            (Trenches, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Trench>();
+            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
             
-            // load sleeves
+            _loadingStep = 2;
+            StateHasChanged();
+            await Task.Delay(10);
+            
+            // Step 3: Sleeves
+            _loadingMessage = "Loading Sleeves...";
             (Sleeves, _, _, _) = await DataService.ReadFromCacheOrDb<Sleeve>();
 
             // generate Points based on ENU PointS (point string in the DB)
@@ -312,34 +365,53 @@ else
             Sleeves = Table.AssignSequence(Sleeves);
             Console.WriteLine($"Total sleeves in the DB : {Sleeves.Count}");
 
-            // read trenches
-            //GlobalData.Trences = await ReadFromCacheOrDB(new Trench());
-            //System.Diagnostics.Debug.WriteLine($"Total trenches in the DB : {GlobalData.Trences.Count}");
+            _loadingStep = 3;
+            StateHasChanged();
+            await Task.Delay(10);
+            
+            // Step 4: Structural steel members
+            (Structures, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Structure>();
+            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
 
-            // read structural steel members
-            //GlobalData.Structures = await ReadFromCacheOrDB(new Structure());
-            //System.Diagnostics.Debug.WriteLine($"Total structural steel members in the DB : {GlobalData.Structures.Count}");
-
-            // load Equipment
+            _loadingStep = 4;
+            StateHasChanged();
+            await Task.Delay(10);
+            
+            // Step 5: Equipment
             (Equipments, _, _, _) = await DataService.ReadFromCacheOrDb<Equipment>( );
             Equipments = Table.AssignSequence(Equipments);
             Console.WriteLine($"Total equipment in the DB : {Equipments.Count}");
             
+            _loadingStep = 5;
+            StateHasChanged();
+            await Task.Delay(10);
             
-            
-            
+            // Step 9: Finalizing
+            _loadingMessage = "Finalizing...";
             // as all the Tables are now updated, assign the same to Global Tables
             
             var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
             
             GlobalData.Segments = JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(Segments, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.Trenches = JsonSerializer.Deserialize<List<Trench>>(JsonSerializer.Serialize(Trenches, jsonSerializerOptions), jsonSerializerOptions);
             GlobalData.Sleeves = JsonSerializer.Deserialize<List<Sleeve>>(JsonSerializer.Serialize(Sleeves, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.Structures = JsonSerializer.Deserialize<List<Structure>>(JsonSerializer.Serialize(Structures, jsonSerializerOptions), jsonSerializerOptions);
             GlobalData.Equipments = JsonSerializer.Deserialize<List<Equipment>>(JsonSerializer.Serialize(Equipments, jsonSerializerOptions), jsonSerializerOptions);
   
 
-            _loadChild = true;
             Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
+            
+            _loadingStep = 9;
+            _loadingMessage = "Complete!";
             StateHasChanged();
+            await Task.Delay(200); // Brief pause to show 100%
+
+            // Done!
+            _loadChild = true;
+        
+            StateHasChanged();
+            
+            
         }
     }
 
@@ -586,7 +658,7 @@ else
         //
         // Calculate Accessories as per the Segment List updated by the User which is saved in the DB
         //var SegmentDB = await MyTable.GetList(new Segment(), GlobalData.SelectedProject);
-        //SegmentDB.ForEach(item => item.UpdateParentCallback());
+        //SegmentDB.ForEach(item => item.Update());
         var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
         var segmentDb = JsonSerializer.Deserialize<List<Segment>>(JsonSerializer.Serialize(GlobalData.Segments, jsonSerializerOptions), jsonSerializerOptions);
         var watch = Stopwatch.StartNew();
@@ -626,7 +698,7 @@ else
             // //order segments as horizontal segments first
             // //
             // SegmentDB = SegmentDB.OrderBy(o => Math.Abs(o.End1.Z - o.End2.Z)).ToList();
-            // // UpdateParentCallback Segment Face based on dx, dy and dz and in case dz>>0 then as per adjacent segment
+            // // Update Segment Face based on dx, dy and dz and in case dz>>0 then as per adjacent segment
             // SegmentDB = MyFunction.FaceUpdate(SegmentDB);
             // // face parallel  check later and remove this
             // SegmentDB.RemoveAll(s => Vector3.Cross(s.End1 - s.End2, s.Face).Length() < 0.01);
@@ -699,7 +771,7 @@ else
             {
                 foreach (var slv in Sleeve4DB)
                 {
-                    // UpdateParentCallback Sleeve Parameters
+                    // Update Sleeve Parameters
                     LayoutFunction.SleeveUpdate(slv);
                     //
                     // create node at both ends of the sleeve

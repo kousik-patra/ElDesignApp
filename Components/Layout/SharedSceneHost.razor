@@ -296,7 +296,7 @@
     {
         InvokeAsync(async () =>
         {
-            // UpdateParentCallback JS cursor state
+            // Update JS cursor state
             if (_isInitialized)
             {
                 await JSRuntime.InvokeVoidAsync("setPinModeActive", 
@@ -408,10 +408,10 @@
             // Advance to next tag
             var nextTag = PinService.GetNextTag();
             
-            // UpdateParentCallback JS with new tag
+            // Update JS with new tag
             await JSRuntime.InvokeVoidAsync("updatePinModeTag", nextTag);
             
-            // UpdateParentCallback message
+            // Update message
             if (nextTag != null)
             {
                 _currentMessage = SceneMessage.Info($"✓ Placed '{tag}' - Next: '{nextTag}'");
