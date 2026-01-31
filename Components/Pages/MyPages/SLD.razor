@@ -46,32 +46,41 @@
             </div>
             <div class="progress-text">@LoadingPercentage%</div>
         </div>
-        
+
         <div class="loading-steps">
-            <div class="step @(_loadingStep >= 1 ? "completed" : _loadingStep == 0 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Buses</span>
-            </div>
-            <div class="step @(_loadingStep >= 2 ? "completed" : _loadingStep == 1 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Transformers</span>
-            </div>
-            <div class="step @(_loadingStep >= 3 ? "completed" : _loadingStep == 2 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Cables</span>
-            </div>
-            <div class="step @(_loadingStep >= 4 ? "completed" : _loadingStep == 3 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Bus Ducts</span>
-            </div>
-            <div class="step @(_loadingStep >= 5 ? "completed" : _loadingStep == 4 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Loads</span>
-            </div>
-            <div class="step @(_loadingStep >= 6 ? "completed" : _loadingStep == 5 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Switches</span>
-            </div>
+            
+            @for (int i = 0; i < _loadingTables.Length ; i++)
+            {
+                <div class="step @(_loadingStep >= i+1 ? "completed" : _loadingStep == i ? "active" : "")">
+                    <span class="step-dot"></span>
+                    <span class="step-label">@_loadingTables[i] </span>
+                </div>
+            }
+            @* *@
+            @* <div class="step @(_loadingStep >= 1 ? "completed" : _loadingStep == 0 ? "active" : "")"> *@
+            @*     <span class="step-dot"></span> *@
+            @*     <span class="step-label">Buses</span> *@
+            @* </div> *@
+            @* <div class="step @(_loadingStep >= 2 ? "completed" : _loadingStep == 1 ? "active" : "")"> *@
+            @*     <span class="step-dot"></span> *@
+            @*     <span class="step-label">Transformers</span> *@
+            @* </div> *@
+            @* <div class="step @(_loadingStep >= 3 ? "completed" : _loadingStep == 2 ? "active" : "")"> *@
+            @*     <span class="step-dot"></span> *@
+            @*     <span class="step-label">Cables</span> *@
+            @* </div> *@
+            @* <div class="step @(_loadingStep >= 4 ? "completed" : _loadingStep == 3 ? "active" : "")"> *@
+            @*     <span class="step-dot"></span> *@
+            @*     <span class="step-label">Bus Ducts</span> *@
+            @* </div> *@
+            @* <div class="step @(_loadingStep >= 5 ? "completed" : _loadingStep == 4 ? "active" : "")"> *@
+            @*     <span class="step-dot"></span> *@
+            @*     <span class="step-label">Loads</span> *@
+            @* </div> *@
+            @* <div class="step @(_loadingStep >= 6 ? "completed" : _loadingStep == 5 ? "active" : "")"> *@
+            @*     <span class="step-dot"></span> *@
+            @*     <span class="step-label">Switches</span> *@
+            @* </div> *@
         </div>
     </div>
 }
@@ -307,6 +316,40 @@ else
                     }
                 </div>
             }
+            @if (tab[6])
+            {
+                <div class="container-fluid tab-content" style="display: @(tab[6] ? "block" : "none")">
+                    <h4>@tabName[6]</h4>
+                    @if (_switches == null)
+                    {
+                        <div class="d-flex flex-column align-items-center py-5">
+                            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
+                            <h6 class="mt-3 text-muted">Loading Data...</h6>
+                        </div>
+                    }
+                    else
+                    {
+                        <Table @key="@("table-switch")"
+                               List="_boards"
+                               ListOriginal="GlobalData.Boards"
+                               T="Board"
+                               Fields="@switchFieldList"
+                               AutoCheckParentCallback="@AutoCheckOnTableChange"
+                               AutoCheckParentFunc="AutoCheckOnTableChange"
+                               UpdateParentCallback="@UpdateOnTableChange"
+                               DiscardParentCallback="@DiscardTableChange"
+                               ActionMessage="@_tableActionMessage"
+                               SuccessMessage="@_tableSuccessMessage"
+                               InfoMessage="@_tableInfoMessage"
+                               WarningMessage="@_tableWarningMessage"
+                               ErrorMessage="@_tableErrorMessage">
+                            <ResultMessage>
+                                <h6>Result messages here</h6>
+                            </ResultMessage>
+                        </Table>
+                    }
+                </div>
+            }
         </div>
         <br/>
     </div>
@@ -500,11 +543,11 @@ else
     
     // Progress tracking
     private int _loadingStep = 0;
-    private int _totalLoadingSteps = 9;  // Total number of data loads
+    private static string[] _loadingTables = ["Cable Catalogue", "Motor Catalogue", "Load", "Bus", "Transformer", "CableBranch", "BusDuct", "Switch", "Board","Study results","SLD Coordinates","SLD Components"];
     private string _loadingMessage = "Initializing...";
     
     // Calculate percentage
-    private int LoadingPercentage => (int)((double)_loadingStep / _totalLoadingSteps * 100);
+    private int LoadingPercentage => (int)((double)_loadingStep / _loadingTables.Length * 100);
 
     private readonly CoordinateSystemManager _coordinateSystemManager;
     private bool loadChild = false;
@@ -513,7 +556,7 @@ else
     
     private readonly bool[] tab = new bool[10];
     private int clickTab = 1;
-    private readonly string[] tabName = ["Load", "Bus", "Transformer", "CableBranch", "BusDuct", "Switch"];
+    private readonly string[] tabName = ["Load", "Bus", "Transformer", "CableBranch", "BusDuct", "Switch", "Board"];
     
     // Field lists
     private readonly string[] loadFieldList = ["RecordId", "Tag", "TagDesc", "WBS", "Category", "Ph", "R", "Unit", "PA", "Duty", "VR", "IR", "Pf", "Eff", "Supply", "BfT", "FeederType", "L", "CblDesc", "CblAuto", "CblDescA", "VdRA", "VdSA", "CblDescM", "VdRM", "VdSM", "UpdatedBy", "UpdatedOn"];
@@ -550,6 +593,7 @@ else
     private List<Load>? _loads = [];
     private List<Bus>? _buses = [];
     private List<Bus>? _busesToUpdate = [];
+    private List<Board>? _boards = [];
     private readonly List<Branch>? _branches = [];
     private List<CableBranch>? _cableBranches = [];
     private List<BusDuct>? _busDucts = [];
@@ -691,8 +735,11 @@ else
         tab[GlobalData.SLDPageTab] = true;
         
         GlobalData.selectedPage = "SLD: Loads, Buses, Transformers, CableBranches, Switches";
+        // Notify the MainLayout that the page title has changed
+        GlobalData.NotifyHeaderChanged();
+        
         GlobalData.sceneCurrent = "SLD";
-
+        StateHasChanged();
         base.OnInitialized();
     }
 
@@ -709,42 +756,73 @@ else
 
         if (firstRender)
         {
-            
-            
             var (userId, userName) = await MiscService.GetCurrentUserInfoAsync();
             loginUser = userName ?? "Guest";
             
-           
+            //_loadingTables = ["Cable Catalogue", "Motor Catalogue", "Load", "Bus", "Transformer", "CableBranch", "BusDuct", "Switch", "Board","Study results","SLD Coordinates","SLD Components"];
+            string logInfo = "", logWarning = "", logError = "";
+            
             // Load common data
             // read cable data and motor data at outset, if not read yet
+            
+            // Step 1: CableData
+            _loadingStep = 0;
+            _loadingMessage = "Loading CableData...";
+            StateHasChanged();
+            await Task.Delay(10); // Allow UI to update
             if (GlobalData.CableData is { Count: 0 })
             {
-                (GlobalData.CableData, _, _, _) = await DataService.ReadFromCacheOrDb<Models.CableData>();
-            }
-            if (GlobalData.MotorData is { Count: 0 })
-            {
-                (GlobalData.MotorData, _, _, _) = await DataService.ReadFromCacheOrDb<Models.MotorData>();
+                (GlobalData.CableData, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Models.CableData>() ;
+                Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
             }
             
-            // Step 1: Buses
+            // Step 2: MotorData
+            _loadingStep++;
+            _loadingMessage = "Loading MotorData...";
+            StateHasChanged();
+            await Task.Delay(10); // Allow UI to update
+            if (GlobalData.MotorData is { Count: 0 })
+            {
+                (GlobalData.MotorData, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<MotorData>() ;
+                Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
+            }
+            
+            
+            // Step 3: Loads
+            _loadingStep++;
+            _loadingMessage = "Loading Loads...";
+            StateHasChanged();
+            await Task.Delay(10); // Allow UI to update
+            (_loads, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Load>() ;
+            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
+            
+            // Update Load so that Power values and cable sizes are calculated
+            _loads.ForEach(item =>
+            {
+                LayoutFunction.LoadUpdate(item);
+                item.Save2DB = true;
+            });
+ 
+            
+            // Step 4: Buses
+            _loadingStep++;
             _loadingMessage = "Loading Buses...";
-            _loadingStep = 0;
             StateHasChanged();
             await Task.Delay(10); // Allow UI to update
             
             // read Buses at the outset
             //Buses = await ReadFromCacheOrDB(new Bus());
-            (_buses, var logInfo, var logWarning, var logError) = await DataService.ReadFromCacheOrDb<Bus>() ;
+            (_buses, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Bus>() ;
             Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
             _buses.ForEach(item => { item.Update(); item.Save2DB = true; });
             // programatically generated new buses through 'BranchBusUpdate' are not to saved to DB
-
-            _loadingStep = 1;
+            
+            
+            // Step 5: Transformers
+            _loadingMessage = "Loading Transformers...";
+            _loadingStep++;
             StateHasChanged();
             await Task.Delay(10);
-            
-            // Step 2: Transformers
-            _loadingMessage = "Loading Transformers...";
             (_transformers, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Transformer>() ;
             Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
 
@@ -752,13 +830,12 @@ else
                 // Branch PU Impedance Update is possible after assigning the Base Voltages as per the source to bus connection map
                 _buses = LayoutFunction.BranchBusUpdate(item.Tag, item.Category, item.BfT, item.BtT, _buses);
             });
-                    
-            _loadingStep = 2;
+
+            // Step 6: Cable Branches
+            _loadingMessage = "Loading Cable Branches...";
+            _loadingStep++;
             StateHasChanged();
             await Task.Delay(10);
-
-            // Step 3: Cable Branches
-            _loadingMessage = "Loading Cable Branches...";
             (_cableBranches, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<CableBranch>() ;
             Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
             
@@ -769,13 +846,12 @@ else
                 LayoutFunction.CableRXUpdate(item);
                 _buses = LayoutFunction.BranchBusUpdate(item.Tag, item.Category, item.BfT, item.BtT, _buses);
             });
-                    
-            _loadingStep = 3;
+
+            // Step 7: Bus Ducts
+            _loadingMessage = "Loading Bus Ducts...";
+            _loadingStep++;
             StateHasChanged();
             await Task.Delay(10);
-
-            // Step 4: Bus Ducts
-            _loadingMessage = "Loading Bus Ducts...";
             (_busDucts, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<BusDuct>() ;
             Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
             
@@ -786,29 +862,13 @@ else
                 LayoutFunction.BusDuctRXUpdate(item);
                 _buses = LayoutFunction.BranchBusUpdate(item.Tag, item.Category, item.BfT, item.BtT, _buses);
             });
-        
-            _loadingStep = 4;
-            StateHasChanged();
-            await Task.Delay(10);
-
-            // Step 5: Loads
-            _loadingMessage = "Loading Loads...";
-            (_loads, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Load>() ;
-            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
             
-            // Update Load so that Power values and cable sizes are calculated
-            _loads.ForEach(item =>
-            {
-                LayoutFunction.LoadUpdate(item);
-                item.Save2DB = true;
-            });
-        
-            _loadingStep = 5;
+            
+            // Step 8: Switches
+            _loadingMessage = "Loading Switches...";
+            _loadingStep++;
             StateHasChanged();
             await Task.Delay(10);
-
-            // Step 6: Switches
-            _loadingMessage = "Loading Switches...";
             (_switches, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Switch>() ;
             Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
             
@@ -817,42 +877,56 @@ else
                 item.Update();
                 item.Save2DB = true;
             });
+            
         
-            _loadingStep = 6;
+            // Step 9: Boards
+            _loadingMessage = "Loading Boards ...";
+            _loadingStep++;
             StateHasChanged();
             await Task.Delay(10);
+            (_boards, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Board>() ;
+            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
 
-            // Step 7: Study Results
+            
+            // Step 10: Study Results
             _loadingMessage = "Loading Study Results...";
-            (BusStudyResults, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<BusStudyResult>() ;
-            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
-        
-            _loadingStep = 7;
-            StateHasChanged();
-            await Task.Delay(10);
-
-            // Step 8: SLD Coordinates
-            _loadingMessage = "Loading SLD Layout...";
-
-            (SLDXYs, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<SLDXY>() ;
-            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
-            
-            //SLDComponents = await ReadFromCacheOrDB(new SLDComponent());
-            // read SLD components afresh from the database to avoid missing change due to old cache data
-            SLDComponents = await Table.GetListAsync<SLDComponent>(GlobalData.SelectedProject.Tag);
-            
             _loadingStep = 8;
             StateHasChanged();
             await Task.Delay(10);
+            (BusStudyResults, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<BusStudyResult>() ;
+            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
+            
+            
+            // Step 11: SLD Coordinates
+            _loadingMessage = "Loading SLD Layout Info...";
+            _loadingStep++;
+            StateHasChanged();
+            await Task.Delay(10);
+            (SLDXYs, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<SLDXY>() ;
+            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
+            
+            
+            // Step 12: SLD Components 
+            _loadingMessage = "Loading SLD Components...";
+            _loadingStep++;
+            StateHasChanged();
+            await Task.Delay(10);
+            // read SLD components afresh from the database to avoid missing change due to old cache data
+            (SLDComponents, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<SLDComponent>() ;
+            Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
+            
 
-            // Step 9: Finalizing
+            // Step 13: Finalizing
             _loadingMessage = "Finalizing...";
-
+            _loadingStep++;
+            StateHasChanged();
+            await Task.Delay(10);
             // as all the Tables are now updated, assign the same to Global Tables
             
             var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
             
             GlobalData.Buses = JsonSerializer.Deserialize<List<Bus>>(JsonSerializer.Serialize(_buses, jsonSerializerOptions), jsonSerializerOptions);
+            GlobalData.Boards = JsonSerializer.Deserialize<List<Board>>(JsonSerializer.Serialize(_boards, jsonSerializerOptions), jsonSerializerOptions);
             GlobalData.Transformers = JsonSerializer.Deserialize<List<Transformer>>(JsonSerializer.Serialize(_transformers, jsonSerializerOptions), jsonSerializerOptions);
             GlobalData.CableBranches = JsonSerializer.Deserialize<List<CableBranch>>(JsonSerializer.Serialize(_cableBranches, jsonSerializerOptions), jsonSerializerOptions);
             GlobalData.BusDucts = JsonSerializer.Deserialize<List<BusDuct>>(JsonSerializer.Serialize(_busDucts, jsonSerializerOptions), jsonSerializerOptions);
@@ -864,7 +938,7 @@ else
             GlobalData.SLDComponents = JsonSerializer.Deserialize<List<SLDComponent>>(JsonSerializer.Serialize(SLDComponents, jsonSerializerOptions), jsonSerializerOptions);
             
                     
-            _loadingStep = 9;
+            _loadingStep = _loadingTables.Length;
             _loadingMessage = "Complete!";
             StateHasChanged();
             await Task.Delay(200); // Brief pause to show 100%

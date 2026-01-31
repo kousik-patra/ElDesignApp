@@ -288,12 +288,14 @@ else
     
     protected override void OnInitialized()
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Segment - {MethodBase.GetCurrentMethod()?.Name}");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Segment - {MethodBase.GetCurrentMethod()?.Name}");
 
         // default tab on loading  0: PlotPlan, 1: Ladder/Tray, 2: Trench, 3: Sleeve, 4: Other
         _tab[GlobalData.SegmentPageTab] = true;
 
         GlobalData.selectedPage = "Segments: Cable Ladders, Trays, Trenches and Sleeves";
+        // Notify the MainLayout that the page title has changed
+        GlobalData.NotifyHeaderChanged();
         GlobalData.sceneCurrent = "Segment";
         GlobalData.sceneDataCable.SceneName = GlobalData.sceneCurrent;
         
@@ -303,13 +305,13 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Segment - {MethodBase.GetCurrentMethod()?.Name}");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  Segment - {MethodBase.GetCurrentMethod()?.Name}");
     }
 
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
         // do something for the first time renders
         if (firstRender)
         {
@@ -981,7 +983,7 @@ else
         segmentResult.List3JSON = JsonSerializer.Serialize(Sleeve4DB, jsonSerializerOptions);
         //
         segmentResult.UpdatedBy = "KP";
-        segmentResult.UpdatedDateTime = DateTime.UtcNow;
+        segmentResult.UpdatedOn = DateTime.UtcNow;
         _isDisabledBttnSaveSegmentResultToDb = false;
         _displayNsaveAccessories = true;
         watch.Stop();

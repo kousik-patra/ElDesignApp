@@ -238,11 +238,11 @@
             _isCurrentUserAdmin = await ProjectContext.IsUserAdminInCurrentProjectAsync(_userId);
             _userCustomRoles = await ProjectContext.GetUserCustomRolesInCurrentProjectAsync(_userId);
             
-            Debug.WriteLine($"User is admin: {_isCurrentUserAdmin}, Roles: {string.Join(", ", _userCustomRoles)}");
+            Console.WriteLine($"User is admin: {_isCurrentUserAdmin}, Roles: {string.Join(", ", _userCustomRoles)}");
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error loading user roles: {ex.Message}");
+            Console.WriteLine($"Error loading user roles: {ex.Message}");
             _isCurrentUserAdmin = false;
             _userCustomRoles = new List<string>();
         }
@@ -250,8 +250,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} - " +
-                        $"{MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender}");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} - " +
+                          $"{MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender}");
 
         if (firstRender)
         {
@@ -279,7 +279,7 @@
                 // Reload user roles for new project
                 await LoadUserRolesAsync();
                 
-                Debug.WriteLine($"Selected Project: {selectedProject.Tag}");
+                Console.WriteLine($"Selected Project: {selectedProject.Tag}");
                 
                 // Refresh cache
                 await Refresh();
@@ -297,7 +297,7 @@
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error changing project: {ex.Message}");
+            Console.WriteLine($"Error changing project: {ex.Message}");
         }
     }
 
@@ -323,19 +323,19 @@
             {
                 var project = _projects?.FirstOrDefault(proj => proj?.Tag == _selectedProjectTag);
                 GlobalData.SetSelectedProject(project); 
-                Debug.WriteLine($"Selected Project: {GlobalData.SelectedProject?.Tag}");
+                Console.WriteLine($"Selected Project: {GlobalData.SelectedProject?.Tag}");
             }
 
             (string logInfo, string logWarning, string logError) = await DataService.RefreshCache();
 
             var displayText = MyFunction.LogMessage(logInfo, logWarning, logError);
-            Debug.WriteLine(displayText);
+            Console.WriteLine(displayText);
             
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Error in Refresh: {ex.Message}");
+            Console.WriteLine($"Error in Refresh: {ex.Message}");
         }
     }
 

@@ -770,7 +770,7 @@ public class SegmentResult
     public string List5JSON { get; set; } // spare
     public string List6JSON { get; set; } // spare
     public string UpdatedBy { get; set; }
-    public DateTime UpdatedDateTime { get; set; }
+    public DateTime UpdatedOn { get; set; }
 }
 
 [Serializable]
@@ -852,7 +852,6 @@ public class Segment : BaseInfo, IBaseMethod
     public List<List<string>>? AllowableTypesArray { get; set; } // multiple array of segments as one entry
     public string? AllowableTypesArrayS { get; set; }
     public string? ParentTagForArrayS { get; set; }
-    public string? UpdatedDateTimeString { get; set; }
     public bool Selected { get; set; }
     public string? CableWay { get; set; }
     public string? CableWayBranch { get; set; }
@@ -1896,15 +1895,11 @@ public class Cable : BaseInfo
     }
 }
 
-public class Board : ICloneable
+public class Board : BaseInfo, ICloneable
 {
-    public Guid UID { get; set; }
-    public string ProjectId { get; set; }
-    public string OptionId { get; set; }
-    public string Tag { get; set; }
-    public double Width { get; set; } // width in m
-    public double Depth { get; set; } // depth in m
 
+    public double Width { get; set; } // width / length in m
+    public double Depth { get; set; } // depth in m
     public double Height { get; set; } // width in m
 
     // coordinate system "GLOBAL"/ "LOCAL" / "UTM"/"XYZ"  based on which CentrePointS is stored and accordingly CentrePointV is calculated
@@ -1915,16 +1910,17 @@ public class Board : ICloneable
     public Vector3 Face { get; set; }
     public string FaceS { get; set; } // E or W or S or N
     public Vector3 Point { get; set; } // left side at base towards face anchor point
-    public List<string> PanelTag { get; set; } // Tag of panels/cubicles
-    public string PanelTagS { get; set; }
+    public List<string> PanelTag { get; set; } // Tag of panels/cubicles for drawings
+    public string PanelTagS { get; set; } // JSON string of Tag list of panels/cubicles for drawings
     public List<double> PanelWidth { get; set; } // width of each of the verticle panels in m or mm
-    public string PanelWidthS { get; set; }
+    public string PanelWidthS { get; set; } // JSON string of width list of panels/cubicles for drawings
     public List<Vector3> PanelPosition { get; set; } // absolute vector position of corresponding panels/cubicles
     public string PanelPositionS { get; set; } // for debug only
     public string ColourString { get; set; }
+    public List<string> Bus { get; set; } // Tag of bus sections for SLD
+    public string BusS { get; set; } // JSON string of Tag buses
     public string UpdatedBy { get; set; }
-    public DateTime UpdatedDateTime { get; set; }
-    public string UpdatedDateTimeString { get; set; }
+    public DateTime UpdatedOn { get; set; }
 
 
     //shallow copy https://www.youtube.com/watch?v=hxr3kviGJS4
@@ -1944,7 +1940,7 @@ public class Board : ICloneable
     public void UpdateDateTime()
     {
         UpdatedBy = "KP";
-        UpdatedDateTime = DateTime.UtcNow;
+        UpdatedOn = DateTime.UtcNow;
     }
     
 }
@@ -1963,7 +1959,7 @@ public class Equipment : BaseInfo, IBaseMethod
     public float Depth { get; set; } // depth in m
     public float Height { get; set; } // width in m
     public string UpdatedBy { get; set; }
-    public DateTime UpdatedDateTime { get; set; }
+    public DateTime UpdatedOn { get; set; }
     public Vector3 CentrePoint { get; set; }
     public Vector3 Face { get; set; }
     public List<string> AliasTags { get; set; }
@@ -1971,7 +1967,7 @@ public class Equipment : BaseInfo, IBaseMethod
     public void UpdateDateTime()
     {
         UpdatedBy = "KP";
-        UpdatedDateTime = DateTime.UtcNow;
+        UpdatedOn = DateTime.UtcNow;
     }
     public void Update()
     {
@@ -2012,7 +2008,7 @@ public class TagAlias
     public string Tag { get; set; }
     public string AliasTagsS { get; set; }
     public string UpdatedBy { get; set; }
-    public DateTime UpdatedDateTime { get; set; }
+    public DateTime UpdatedOn { get; set; }
     public List<string> AliasTags { get; set; }
 
     public void Update()

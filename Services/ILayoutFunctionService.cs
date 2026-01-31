@@ -2208,7 +2208,7 @@ public class LayoutFunctionService : ILayoutFunctionService
         if (segmentResult.Count > 0)
         {
             // order as per latest data
-            segmentResult = segmentResult.OrderByDescending(o => o.UpdatedDateTime).ToList();
+            segmentResult = segmentResult.OrderByDescending(o => o.UpdatedOn).ToList();
             //
             segment = Json2List(new Segment(), segmentResult[0].StraightSegmentListJSON, 4);
             bend = Json2List(new Bend(), segmentResult[0].BendListJSON, 4);
