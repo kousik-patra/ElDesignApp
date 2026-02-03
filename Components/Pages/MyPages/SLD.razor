@@ -48,7 +48,6 @@
         </div>
 
         <div class="loading-steps">
-            
             @for (int i = 0; i < _loadingTables.Length ; i++)
             {
                 <div class="step @(_loadingStep >= i+1 ? "completed" : _loadingStep == i ? "active" : "")">
@@ -56,38 +55,12 @@
                     <span class="step-label">@_loadingTables[i] </span>
                 </div>
             }
-            @* *@
-            @* <div class="step @(_loadingStep >= 1 ? "completed" : _loadingStep == 0 ? "active" : "")"> *@
-            @*     <span class="step-dot"></span> *@
-            @*     <span class="step-label">Buses</span> *@
-            @* </div> *@
-            @* <div class="step @(_loadingStep >= 2 ? "completed" : _loadingStep == 1 ? "active" : "")"> *@
-            @*     <span class="step-dot"></span> *@
-            @*     <span class="step-label">Transformers</span> *@
-            @* </div> *@
-            @* <div class="step @(_loadingStep >= 3 ? "completed" : _loadingStep == 2 ? "active" : "")"> *@
-            @*     <span class="step-dot"></span> *@
-            @*     <span class="step-label">Cables</span> *@
-            @* </div> *@
-            @* <div class="step @(_loadingStep >= 4 ? "completed" : _loadingStep == 3 ? "active" : "")"> *@
-            @*     <span class="step-dot"></span> *@
-            @*     <span class="step-label">Bus Ducts</span> *@
-            @* </div> *@
-            @* <div class="step @(_loadingStep >= 5 ? "completed" : _loadingStep == 4 ? "active" : "")"> *@
-            @*     <span class="step-dot"></span> *@
-            @*     <span class="step-label">Loads</span> *@
-            @* </div> *@
-            @* <div class="step @(_loadingStep >= 6 ? "completed" : _loadingStep == 5 ? "active" : "")"> *@
-            @*     <span class="step-dot"></span> *@
-            @*     <span class="step-label">Switches</span> *@
-            @* </div> *@
         </div>
     </div>
 }
 else
 {
     <div class="align-content-center" style="background-color:beige">
-        <h4>SLD: Loads, Buses, Transformers, CableBranches, Switches...</h4>
         <button type="submit" @onclick="@(() => { tablesHide = !tablesHide; })" class="btn btn-info"
                 style="float:right;">↴
         </button>
@@ -115,19 +88,11 @@ else
                     </button>
                 }
             </div>
-            <br/>
             @if (tab[0])
             {
                 <div class="container-fluid tab-content" style="display: @(tab[0] ? "block" : "none")">
                     <h4>@tabName[0]</h4>
-                    @if (_loads == null)
-                    {
-                        <div class="d-flex flex-column align-items-center py-5">
-                            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
-                            <h6 class="mt-3 text-muted">Loading Data...</h6>
-                        </div>
-                    }
-                    else
+                    @if (_loads != null)
                     {
                         <Table @key="@("table-load")"
                                List="_loads"
@@ -136,6 +101,7 @@ else
                                Fields="@loadFieldList"
                                TableWidthPx="1200px"
                                AutoCheckParentCallback="@AutoCheckOnTableChange"
+                               AutoCheckParentFunc="AutoCheckOnTableChangeFunc"
                                UpdateParentCallback="@UpdateOnTableChange"
                                DiscardParentCallback="@DiscardTableChange"
                                ActionMessage="@_tableActionMessage"
@@ -144,7 +110,6 @@ else
                                WarningMessage="@_tableWarningMessage"
                                ErrorMessage="@_tableErrorMessage">
                             <ResultMessage>
-                                <h6>Result messages here</h6>
                             </ResultMessage>
                         </Table>
                     }
@@ -154,14 +119,7 @@ else
             {
                 <div class="container-fluid tab-content" style="display: @(tab[1] ? "block" : "none")">
                     <h4>@tabName[1]</h4>
-                    @if (_buses == null)
-                    {
-                        <div class="d-flex flex-column align-items-center py-5">
-                            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
-                            <h6 class="mt-3 text-muted">Loading Data...</h6>
-                        </div>
-                    }
-                    else
+                    @if (_buses != null)
                     {
                         <Table @key="@("table-bus")"
                                List="_buses"
@@ -169,6 +127,7 @@ else
                                T="Bus"
                                Fields="@busFieldList"
                                AutoCheckParentCallback="@AutoCheckOnTableChange"
+                               AutoCheckParentFunc="AutoCheckOnTableChangeFunc"
                                UpdateParentCallback="@UpdateOnTableChange"
                                DiscardParentCallback="@DiscardTableChange"
                                ActionMessage="@_tableActionMessage"
@@ -177,7 +136,6 @@ else
                                WarningMessage="@_tableWarningMessage"
                                ErrorMessage="@_tableErrorMessage">
                             <ResultMessage>
-                                <h6>Result messages here</h6>
                             </ResultMessage>
                         </Table>
                     }
@@ -187,14 +145,7 @@ else
             {
                 <div class="container-fluid tab-content" style="display: @(tab[2] ? "block" : "none")">
                     <h4>@tabName[2]</h4>
-                    @if (_transformers == null)
-                    {
-                        <div class="d-flex flex-column align-items-center py-5">
-                            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
-                            <h6 class="mt-3 text-muted">Loading Data...</h6>
-                        </div>
-                    }
-                    else
+                    @if (_transformers != null)
                     {
                         <Table @key="@("table-transformer")"
                                List="_transformers"
@@ -202,6 +153,7 @@ else
                                T="Transformer"
                                Fields="@transformerFieldList"
                                AutoCheckParentCallback="AutoCheckOnTableChange"
+                               AutoCheckParentFunc="AutoCheckOnTableChangeFunc"
                                UpdateParentCallback="@UpdateOnTableChange"
                                DiscardParentCallback="@DiscardTableChange"
                                ActionMessage="@_tableActionMessage"
@@ -210,7 +162,6 @@ else
                                WarningMessage="@_tableWarningMessage"
                                ErrorMessage="@_tableErrorMessage">
                             <ResultMessage>
-                                <h6>Result messages here</h6>
                             </ResultMessage>
                         </Table>
                     }
@@ -220,14 +171,7 @@ else
             {
                 <div class="container-fluid tab-content" style="display: @(tab[3] ? "block" : "none")">
                     <h4>@tabName[3]</h4>
-                    @if (_cableBranches == null)
-                    {
-                        <div class="d-flex flex-column align-items-center py-5">
-                            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
-                            <h6 class="mt-3 text-muted">Loading Data...</h6>
-                        </div>
-                    }
-                    else
+                    @if (_cableBranches != null)
                     {
                         <Table @key="@("table-cablebranch")"
                                List="_cableBranches"
@@ -235,6 +179,7 @@ else
                                T="CableBranch"
                                Fields="@cableBranchFieldList"
                                AutoCheckParentCallback="@AutoCheckOnTableChange"
+                               AutoCheckParentFunc="AutoCheckOnTableChangeFunc"
                                UpdateParentCallback="@UpdateOnTableChange"
                                DiscardParentCallback="@DiscardTableChange"
                                ActionMessage="@_tableActionMessage"
@@ -243,7 +188,6 @@ else
                                WarningMessage="@_tableWarningMessage"
                                ErrorMessage="@_tableErrorMessage">
                             <ResultMessage>
-                                <h6>Result messages here</h6>
                             </ResultMessage>
                         </Table>
                     }
@@ -253,14 +197,7 @@ else
             {
                 <div class="container-fluid tab-content" style="display: @(tab[4] ? "block" : "none")">
                     <h4>@tabName[4]</h4>
-                    @if (_busDucts == null)
-                    {
-                        <div class="d-flex flex-column align-items-center py-5">
-                            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
-                            <h6 class="mt-3 text-muted">Loading Data...</h6>
-                        </div>
-                    }
-                    else
+                    @if (_busDucts != null)
                     {
                         <Table @key="@("table-busduct")"
                                List="_busDucts"
@@ -268,6 +205,7 @@ else
                                T="BusDuct"
                                Fields="@busDuctFieldList"
                                AutoCheckParentCallback="@AutoCheckOnTableChange"
+                               AutoCheckParentFunc="AutoCheckOnTableChangeFunc"
                                UpdateParentCallback="@UpdateOnTableChange"
                                DiscardParentCallback="@DiscardTableChange"
                                ActionMessage="@_tableActionMessage"
@@ -276,7 +214,6 @@ else
                                WarningMessage="@_tableWarningMessage"
                                ErrorMessage="@_tableErrorMessage">
                             <ResultMessage>
-                                <h6>Result messages here</h6>
                             </ResultMessage>
                         </Table>
                     }
@@ -286,14 +223,7 @@ else
             {
                 <div class="container-fluid tab-content" style="display: @(tab[5] ? "block" : "none")">
                     <h4>@tabName[5]</h4>
-                    @if (_switches == null)
-                    {
-                        <div class="d-flex flex-column align-items-center py-5">
-                            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
-                            <h6 class="mt-3 text-muted">Loading Data...</h6>
-                        </div>
-                    }
-                    else
+                    @if (_switches != null)
                     {
                         <Table @key="@("table-switch")"
                                List="_switches"
@@ -301,7 +231,7 @@ else
                                T="Switch"
                                Fields="@switchFieldList"
                                AutoCheckParentCallback="@AutoCheckOnTableChange"
-                               AutoCheckParentFunc="AutoCheckOnTableChange"
+                               AutoCheckParentFunc="AutoCheckOnTableChangeFunc"
                                UpdateParentCallback="@UpdateOnTableChange"
                                DiscardParentCallback="@DiscardTableChange"
                                ActionMessage="@_tableActionMessage"
@@ -310,7 +240,6 @@ else
                                WarningMessage="@_tableWarningMessage"
                                ErrorMessage="@_tableErrorMessage">
                             <ResultMessage>
-                                <h6>Result messages here</h6>
                             </ResultMessage>
                         </Table>
                     }
@@ -320,14 +249,7 @@ else
             {
                 <div class="container-fluid tab-content" style="display: @(tab[6] ? "block" : "none")">
                     <h4>@tabName[6]</h4>
-                    @if (_switches == null)
-                    {
-                        <div class="d-flex flex-column align-items-center py-5">
-                            <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;"></div>
-                            <h6 class="mt-3 text-muted">Loading Data...</h6>
-                        </div>
-                    }
-                    else
+                    @if (_switches != null)
                     {
                         <Table @key="@("table-switch")"
                                List="_boards"
@@ -335,7 +257,7 @@ else
                                T="Board"
                                Fields="@switchFieldList"
                                AutoCheckParentCallback="@AutoCheckOnTableChange"
-                               AutoCheckParentFunc="AutoCheckOnTableChange"
+                               AutoCheckParentFunc="AutoCheckOnTableChangeFunc"
                                UpdateParentCallback="@UpdateOnTableChange"
                                DiscardParentCallback="@DiscardTableChange"
                                ActionMessage="@_tableActionMessage"
@@ -344,7 +266,6 @@ else
                                WarningMessage="@_tableWarningMessage"
                                ErrorMessage="@_tableErrorMessage">
                             <ResultMessage>
-                                <h6>Result messages here</h6>
                             </ResultMessage>
                         </Table>
                     }
@@ -362,7 +283,7 @@ else
             <button type="submit"
                     @onclick="@DoMainLoadFlow"
                     class="btn btn-success" style="float:right;">
-                Run Load Flow and Short Cuircuit from SQL Data
+                Run Load Flow and Short Circuit from SQL Data
             </button>
         </div>
     </div>
@@ -603,6 +524,8 @@ else
     private List<BusStudyResult> BusStudyResults = [];
     private List<SLDXY> SLDXYs = [];
     private List<SLDComponent>? SLDComponents = [];
+    
+   
 
 
     private bool tablesHide { get; set; }
@@ -774,6 +697,7 @@ else
             {
                 (GlobalData.CableData, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Models.CableData>() ;
                 Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
+                
             }
             
             // Step 2: MotorData
@@ -871,13 +795,7 @@ else
             await Task.Delay(10);
             (_switches, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Switch>() ;
             Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
-            
-            _switches.ForEach(item =>
-            {
-                item.Update();
-                item.Save2DB = true;
-            });
-            
+
         
             // Step 9: Boards
             _loadingMessage = "Loading Boards ...";
@@ -915,7 +833,7 @@ else
             (SLDComponents, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<SLDComponent>() ;
             Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
             
-
+            
             // Step 13: Finalizing
             _loadingMessage = "Finalizing...";
             _loadingStep++;
@@ -936,8 +854,7 @@ else
             GlobalData.BusStudyResults = JsonSerializer.Deserialize<List<BusStudyResult>>(JsonSerializer.Serialize(BusStudyResults, jsonSerializerOptions), jsonSerializerOptions);
             GlobalData.SLDXYs = JsonSerializer.Deserialize<List<SLDXY>>(JsonSerializer.Serialize(SLDXYs, jsonSerializerOptions), jsonSerializerOptions);
             GlobalData.SLDComponents = JsonSerializer.Deserialize<List<SLDComponent>>(JsonSerializer.Serialize(SLDComponents, jsonSerializerOptions), jsonSerializerOptions);
-            
-                    
+                      
             _loadingStep = _loadingTables.Length;
             _loadingMessage = "Complete!";
             StateHasChanged();
@@ -1075,7 +992,14 @@ else
         }
     }
 
-    protected async Task<(T iteratedItem, string _tableSuccessMessage, string _tableInfoMessage, string _tableWarningMessage, string _tableErrorMessage)> AutoCheckOnTableChange<T>((T iteratedItem, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
+    protected async void AutoCheckOnTableChange<T>(
+        (T iteratedItem, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args) where T : class
+    {
+        await AutoCheckOnTableChangeFunc<T>(args);
+    }
+
+
+    protected async Task<(T iteratedItem, string _tableSuccessMessage, string _tableInfoMessage, string _tableWarningMessage, string _tableErrorMessage)> AutoCheckOnTableChangeFunc<T>((T iteratedItem, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
     {
         // Access the parameters from args
         var iteratedItem = args.iteratedItem;
@@ -1116,6 +1040,13 @@ else
                     methodInfo.Invoke(iteratedItem, null);
                 }
             }
+            
+            
+            if (iteratedItem is Load loadItem)
+            {
+                // Now loadItem is strictly typed as 'Load'
+                LayoutFunction.LoadUpdate(loadItem);
+            }
 
             //
             // Action for CableBranch
@@ -1137,7 +1068,6 @@ else
 
         //var itemsNOriginalItems = GetItemsNOriginalItems(item);
         //SetItems(itemsCurrent);
-        StateHasChanged();
     }
 
 
@@ -1595,7 +1525,7 @@ else
                 {
                     if (item.T1 == args.originalTag) item.T1 = args.changedTag;
                     if (item.T2 == args.originalTag) item.T2 = args.changedTag;
-                    if (item.T3 == args.originalTag) item.T3 = args.changedTag;
+                    // if (item.T3 == args.originalTag) item.T3 = args.changedTag;
                 });
             }
         }

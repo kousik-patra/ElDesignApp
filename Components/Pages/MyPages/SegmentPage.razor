@@ -21,12 +21,6 @@
 @inject IMiscService MiscService
 
 
-<div class="d-flex justify-content-between align-items-center" style="background-color:beige">
-    <h4>Segments: Cable Ladders, Trays, Trenches and Sleeves</h4>
-    <h4>Project: @GlobalData.SelectedProject?.Tag (@GlobalData.SelectedProject?.TagDescription)</h4>
-</div>
-<br>
-
 @if (!_loadChild)
 {
     <div class="loading-card">
@@ -47,30 +41,13 @@
         </div>
         
         <div class="loading-steps">
-            <div class="step @(_loadingStep >= 1 ? "completed" : _loadingStep == 0 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Buses</span>
-            </div>
-            <div class="step @(_loadingStep >= 2 ? "completed" : _loadingStep == 1 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Transformers</span>
-            </div>
-            <div class="step @(_loadingStep >= 3 ? "completed" : _loadingStep == 2 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Cables</span>
-            </div>
-            <div class="step @(_loadingStep >= 4 ? "completed" : _loadingStep == 3 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Bus Ducts</span>
-            </div>
-            <div class="step @(_loadingStep >= 5 ? "completed" : _loadingStep == 4 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Loads</span>
-            </div>
-            <div class="step @(_loadingStep >= 6 ? "completed" : _loadingStep == 5 ? "active" : "")">
-                <span class="step-dot"></span>
-                <span class="step-label">Switches</span>
-            </div>
+            @for (int i = 0; i < LoadingTables.Length ; i++)
+            {
+                <div class="step @(_loadingStep >= i+1 ? "completed" : _loadingStep == i ? "active" : "")">
+                    <span class="step-dot"></span>
+                    <span class="step-label">@LoadingTables[i] </span>
+                </div>
+            }
         </div>
     </div>
 }
@@ -238,11 +215,11 @@ else
     
     // Progress tracking
     private int _loadingStep = 0;
-    private int _totalLoadingSteps = 9;  // Total number of data loads
+    private static readonly string[] LoadingTables = ["Reading ladder/trays", "Processing ladder/trays", "Trenches", "Sleeves", "Structures", "Equipment", "Processing"];
     private string _loadingMessage = "Initializing...";
     
     // Calculate percentage
-    private int LoadingPercentage => (int)((double)_loadingStep / _totalLoadingSteps * 100);
+    private int LoadingPercentage => (int)((double)_loadingStep / LoadingTables.Length * 100);
     
     private Plot PlotRef { get; set; } // Reference to the Plot component
     private bool _loadChild;
@@ -318,19 +295,25 @@ else
             var (userId, userName) = await MiscService.GetCurrentUserInfoAsync();
             loginUser = userName ?? "Guest";
 
-            var logInfo = "";
-            var logWarning = "";
-            var logError = "";
+            string logInfo = "", logWarning = "", logError = "";
             
-            // Step 1: Raw segments
-            _loadingMessage = "Loading raw segments...";
+            //_loadingTables = ["Reading ladder/trays", "Processing ladder/trays", "Trenches", "Sleeves", "Structures", "Equipment", "Processing"];
+
+            
+            // Step 1: Reading ladder/trays
             _loadingStep = 0;
+            _loadingMessage = "Loading ladder/trays...";
             StateHasChanged();
-            await Task.Delay(10); // Allow UI to update
+            await Task.Delay(10);
 
             (Segments, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Segment>();
             Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
 
+            // Step 2: Processing ladder/trays
+            _loadingStep++;
+            _loadingMessage = "Processing ladder/trays...";
+            StateHasChanged();
+            await Task.Delay(10);
             // update Raw segments
             Segments.ForEach(segment => LayoutFunction.SegmentUpdate(segment));
             // remove any segments having zero lengths (same End1 and End2)
@@ -344,21 +327,17 @@ else
             Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Sequence assigned for total {Segments.Count} raw Segments");
 
                     
-            _loadingStep = 1;
+            // Step 3: Trenches
+            _loadingStep++;
+            _loadingMessage = "Loading Cable Trenches...";
             StateHasChanged();
             await Task.Delay(10);
-
-            // Step 2: Trenches
-            _loadingMessage = "Loading Cable Trenches...";
-            // read trenches
             (Trenches, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Trench>();
             Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
             
-            _loadingStep = 2;
-            StateHasChanged();
-            await Task.Delay(10);
             
-            // Step 3: Sleeves
+            // Step 4: Sleeves
+            _loadingStep++;
             _loadingMessage = "Loading Sleeves...";
             (Sleeves, _, _, _) = await DataService.ReadFromCacheOrDb<Sleeve>();
 
@@ -367,29 +346,31 @@ else
             Sleeves = Table.AssignSequence(Sleeves);
             Console.WriteLine($"Total sleeves in the DB : {Sleeves.Count}");
 
-            _loadingStep = 3;
+            
+            // Step 5: Structural steel members
+            _loadingStep++;
+            _loadingMessage = "Loading structural steel members...";
             StateHasChanged();
             await Task.Delay(10);
-            
-            // Step 4: Structural steel members
             (Structures, logInfo, logWarning, logError) = await DataService.ReadFromCacheOrDb<Structure>();
             Console.WriteLine(MyFunction.LogMessage(logInfo, logWarning, logError));
 
-            _loadingStep = 4;
+            
+            // Step 6: Equipment
+            _loadingStep++;
+            _loadingMessage = "Loading Cable Trenches...";
             StateHasChanged();
             await Task.Delay(10);
-            
-            // Step 5: Equipment
             (Equipments, _, _, _) = await DataService.ReadFromCacheOrDb<Equipment>( );
             Equipments = Table.AssignSequence(Equipments);
             Console.WriteLine($"Total equipment in the DB : {Equipments.Count}");
+
             
-            _loadingStep = 5;
+            // Step 7: Finalizing
+            _loadingStep++;
+            _loadingMessage = "Finalizing...";
             StateHasChanged();
             await Task.Delay(10);
-            
-            // Step 9: Finalizing
-            _loadingMessage = "Finalizing...";
             // as all the Tables are now updated, assign the same to Global Tables
             
             var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
@@ -403,7 +384,7 @@ else
 
             Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  {MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
             
-            _loadingStep = 9;
+            _loadingStep++;
             _loadingMessage = "Complete!";
             StateHasChanged();
             await Task.Delay(200); // Brief pause to show 100%

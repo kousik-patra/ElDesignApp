@@ -194,7 +194,7 @@ public interface IGlobalDataService
     List<MotorData> MotorData { get; set; }
 
     /// <summary>Gets or sets the a global data.</summary>
-    List<CableData>? CableData { get; set; } 
+    List<CableData> CableData { get; set; } 
     // cable schedule page
     /// <summary>Gets or sets the global data.</summary>
     string DefaultPhaseIdentifier { get; set; }
@@ -577,7 +577,7 @@ public class GlobalDataService : IGlobalDataService
     public List<MotorData> MotorData { get; set; } = [];
 
     /// <summary>Gets or sets the a global data.</summary>
-    public List<CableData>? CableData { get; set; } = [];
+    public List<CableData> CableData { get; set; } = [];
 
     // cable schedule page
     /// <summary>Gets or sets the global data.</summary>

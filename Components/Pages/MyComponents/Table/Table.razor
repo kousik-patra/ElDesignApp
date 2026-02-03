@@ -20,12 +20,13 @@
 
 
 <div id="@_containerId" class="container-fluid float-left">
+
     <div class="row float-left">
         <h3>@Header</h3>
         @ChildContent
     </div>
-    
-    
+
+
     @if (_isProcessingExcel)
     {
         <div class="overlay-backdrop">
@@ -66,19 +67,19 @@
                             <!-- Button Groups -->
                             <div class="btn-toolbar" role="toolbar" aria-label="Toolbar with button groups">
                                 <!-- First Button Group -->
-                                
+
                                 <!-- First Button Group - Import Section -->
                                 <div class="btn-group me-2" role="group" aria-label="First group">
                                     <!-- File selection button -->
-                                    <button hidden="@(!_showInputFile)" 
+                                    <button hidden="@(!_showInputFile)"
                                             @onclick="@(() => { _showInputFile = false; })"
-                                            title="Import to add the existing table" 
+                                            title="Import to add the existing table"
                                             class="btn btn-outline-info">
                                         Cancel Import
                                     </button>
-    
-                                    <InputFile hidden="@_showInputFile" 
-                                               OnChange="@OnFileSelected" 
+
+                                    <InputFile hidden="@_showInputFile"
+                                               OnChange="@OnFileSelected"
                                                accept=".xlsx,.xls"
                                                class="btn btn-outline-secondary btn-sm"/>
 
@@ -101,10 +102,10 @@
                                                 <small class="text-muted ms-2">Sheet: @selectedSheet</small>
                                             }
                                         </div>
-        
+
                                         <!-- Import button -->
-                                        <button class="btn btn-primary btn-sm ms-2" 
-                                                @onclick="ImportData" 
+                                        <button class="btn btn-primary btn-sm ms-2"
+                                                @onclick="ImportData"
                                                 disabled="@(!sheetsLoaded || string.IsNullOrEmpty(selectedSheet))">
                                             Import Data
                                         </button>
@@ -118,7 +119,7 @@
                                         </div>
                                     }
                                 </div>
-                                
+
                                 <!-- Second Button Group -->
                                 <div class="btn-group me-2" role="group" aria-label="Second group">
                                     <button @onclick="DeleteRecord" data-toggle="button" class="btn btn-outline-danger"
@@ -180,11 +181,9 @@
                                          }
 
                                          _showBasicModal = false;
-                                     })"
-                        ></BasicModal>
+                                     })"></BasicModal>
                     }
                 </div>
-                <br>
                 @if (List.Count == 0)
                 {
                     <p>Loading.....</p>
@@ -239,24 +238,13 @@
                                         //style="max-width: @ColWidth[j]%; min-width: @ColWidth[j]%;"
                                         <th style="width: @(_colWidth[j])%;" data-toggle="tooltip" data-placement="right" title="@fieldDisplay"
                                             @onclick="() => { // 0-not index, 1-ascending, 2 descending
-    if (_propertyIndexed[j] == 1) 
-    { 
-        // current list is in ascending order
-        // sort in descending order by this property
-        List = List.OrderByDescending(x => Convert.ToString(property.GetValue(x))).ToList(); 
-        ListOriginal = ListOriginal!.OrderByDescending(x => Convert.ToString(property.GetValue(x))).ToList(); 
-        _propertyIndexed[j] = 2; 
-    }else if (_propertyIndexed[j] == 2) 
-    { 
-        // current list is in descending order
-        // revert to original order of Sequence
-        if (SeqProperty != null) { List = List.OrderBy(x => Convert.ToString(SeqProperty.GetValue(x))).ToList(); 
-            ListOriginal = ListOriginal!.OrderBy(x => Convert.ToString(SeqProperty.GetValue(x))).ToList(); 
-            _propertyIndexed[j] = 0; } }else { // current list is in order of sequence
-        // sort in ascending order by this property
-        List = List.OrderBy(x => Convert.ToString(property.GetValue(x))).ToList(); 
-        ListOriginal = ListOriginal!.OrderBy(x => Convert.ToString(property.GetValue(x))).ToList(); 
-        _propertyIndexed[j] = 1; } DoPagination(); StateHasChanged(); }">
+                                                if (_propertyIndexed[j] == 1) { // current list is in ascending order
+                                                    // sort in descending order by this property
+                                                    List = List.OrderByDescending(x => Convert.ToString(property.GetValue(x))).ToList(); ListOriginal = ListOriginal!.OrderByDescending(x => Convert.ToString(property.GetValue(x))).ToList(); _propertyIndexed[j] = 2; }else if (_propertyIndexed[j] == 2) { // current list is in descending order
+                                                    // revert to original order of Sequence
+                                                    if (SeqProperty != null) { List = List.OrderBy(x => Convert.ToString(SeqProperty.GetValue(x))).ToList(); ListOriginal = ListOriginal!.OrderBy(x => Convert.ToString(SeqProperty.GetValue(x))).ToList(); _propertyIndexed[j] = 0; } }else { // current list is in order of sequence
+                                                    // sort in ascending order by this property
+                                                    List = List.OrderBy(x => Convert.ToString(property.GetValue(x))).ToList(); ListOriginal = ListOriginal!.OrderBy(x => Convert.ToString(property.GetValue(x))).ToList(); _propertyIndexed[j] = 1; } DoPagination(); StateHasChanged(); }">
                                             @(_propertyIndexed[j] == 1 ? char.ConvertFromUtf32(0x2191) : _propertyIndexed[j] == 2 ? char.ConvertFromUtf32(0x2193) : char.ConvertFromUtf32(0x0020))
                                             @shortFieldName
                                         </th>
@@ -271,7 +259,7 @@
                                         var currentIndex = i;
                                         var currentItem = _displayList[currentIndex];
                                         var thisUid = (Guid)_uidProperty.GetValue(_displayList[i]);
-                                        <tr 
+                                        <tr
                                             @onclick="@(async (MouseEventArgs e) =>
                                                       {
                                                           // Existing single-select logic
@@ -283,7 +271,7 @@
                                                           else
                                                           {
                                                               SelectedItemUid = thisUid;
-                                                              _selectedIndex = List.FindIndex(item => 
+                                                              _selectedIndex = List.FindIndex(item =>
                                                                   SelectedItemUid == (Guid)_uidProperty.GetValue(item));
                                                               _selectedItem = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(List[_selectedIndex]));
                                                               var args = (_selectedItem, SelectedItemUid);
@@ -312,6 +300,7 @@
                                                                {
                                                                    await OnRowHoverEnd.InvokeAsync(_lastHoveredItem);
                                                                }
+
                                                                _lastHoveredItem = default;
                                                            })"
                                             class="@CssClassTableRow(thisUid) @GetMultiSelectRowClass(currentItem)">
@@ -465,7 +454,7 @@
                                                         {
                                                             @property.GetValue(_displayList[i])
                                                         }
-                                                        
+
                                                     }
                                                     @if (Button != null)
                                                     {
@@ -504,7 +493,7 @@
             </div>
         </div>
     }
-    
+
     @* Import Excel validation results *@
     @if (_importValidationErrors.Any())
     {
@@ -516,16 +505,16 @@
                             <i class="bi bi-exclamation-triangle-fill"></i>
                             Import Validation Failed
                         </h6>
-                        <button class="btn btn-sm btn-outline-danger" type="button" 
+                        <button class="btn btn-sm btn-outline-danger" type="button"
                                 @onclick="() => _showValidationDetails = !_showValidationDetails">
-                            @(_showValidationDetails ? "Hide" : "Show") Details 
+                            @(_showValidationDetails ? "Hide" : "Show") Details
                             (@_importValidationErrors.Count error(s))
                         </button>
                     </div>
-                
+
                     @if (_showValidationDetails)
                     {
-                        <hr />
+                        <hr/>
                         <div style="max-height: 300px; overflow-y: auto;">
                             <ul class="mb-0 small">
                                 @foreach (var error in _importValidationErrors)
@@ -539,7 +528,7 @@
             </div>
         </div>
     }
-    
+
     <div class="row justify-content-md-left">
         <span style="width:900px; text-overflow:ellipsis; font-weight:lighter">@ResultMessage : @ActionMessage</span>
         @if (SuccessMessage != "")
@@ -574,7 +563,7 @@
         records.&emsp; Records per page: &#160;
         <input type="number" class="form-control align-content-center" placeholder="10"
                style="width:30px; padding:0;text-align: center; margin-right: 10px"
-               @oninput="e=>{_recordsPerPage = int.TryParse(e?.Value?.ToString(), out var f) ? f : 10; DoPagination();}">
+               @oninput="e => { _recordsPerPage = int.TryParse(e?.Value?.ToString(), out var f) ? f : 10; DoPagination(); }">
         <button disabled="@(_displayPageNo > 2 ? false : false)" @onclick="@(e =>
                                                                            {
                                                                                _displayPageNo = 1;
@@ -591,7 +580,7 @@
         </button>
         <input type="number" class="form-control align-content-center" placeholder="@_displayPageNo"
                style="width:30px; padding:0;text-align: center;"
-               @oninput="e=>{_displayPageNo = Math.Max(1,Math.Min(_maxDisplayPage,int.TryParse(e?.Value?.ToString(), out var f) ? f : 1)); DoPagination();}">
+               @oninput="e => { _displayPageNo = Math.Max(1, Math.Min(_maxDisplayPage, int.TryParse(e?.Value?.ToString(), out var f) ? f : 1)); DoPagination(); }">
         <button disabled="@(_displayPageNo < _maxDisplayPage ? false : false)" @onclick="@(e =>
                                                                                          {
                                                                                              _displayPageNo = Math.Min(_maxDisplayPage, _displayPageNo + 1);
@@ -611,7 +600,6 @@
 
     <div class="row float-left">
         <div class="container float-left">
-            <br/>
             @_displayMsgAction
         </div>
     </div>
@@ -1185,15 +1173,7 @@
         // Validate the input data
         _iteratedList[currentSeq] = ValidatedGeneralInput(_iteratedList[currentSeq], currentProperty, _iteratedList, List);
     
-        // If Validated then only update List as per changed value (IterateList)
-        if (ErrorMessage == "")
-        {
-            List[currentSeq] = _iteratedList[currentSeq];
-        }
-    
-        _selectedRecord = currentSeq + 1;
-        _selectedColumn = currentProperty.Name;
-        StateHasChanged();
+
         
         // Further validation at Parent Component - now using the correct original item
         var args = (
@@ -1212,10 +1192,24 @@
          await AutoCheckParentCallback.InvokeAsync(args!);
          var abc = await AutoCheckParentFunc.Invoke(args!);
          
+         
+         
+         // If Validated then only update List as per changed value (IterateList)
+         if (ErrorMessage == "")
+         {
+             //List[currentSeq] = _iteratedList[currentSeq];
+             List[currentSeq] = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(_iteratedList[currentSeq]));
+         }
+    
+         _selectedRecord = currentSeq + 1;
+         _selectedColumn = currentProperty.Name;
+
+         
     
         _currentDblClickedCell.DblClickedStatus = false;
         _currentDblClickedCell.Edited = true;
         DoFilter();
+        StateHasChanged();
     }
 
     private async Task DoCellButton(CellStatus cell)
@@ -1246,25 +1240,29 @@
 
             SuccessMessage = "Data (except tag) of the selected item is considered for adding as new record. New Item added next to the selected item.";
 
-        var copyItem = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(_selectedItem));
+        var copyItemForList = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(_selectedItem));
+        var copyItemForIterated = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(_selectedItem));
+
         var newItemUID = Guid.NewGuid();
         
-        _uidProperty.SetValue(copyItem, newItemUID);
+        _uidProperty.SetValue(copyItemForList, newItemUID);
+        _uidProperty.SetValue(copyItemForIterated, newItemUID);
         var tagProperty = typeof(T).GetProperty("Tag");
         if (tagProperty != null)
         {
-            tagProperty.SetValue(copyItem, $"Copy of {tagProperty.GetValue(copyItem)}");
+            tagProperty.SetValue(copyItemForList, $"Copy of {tagProperty.GetValue(copyItemForList)}");
+            tagProperty.SetValue(copyItemForIterated, $"Copy of {tagProperty.GetValue(copyItemForIterated)}");
         }
         _addedItemUiDs.Add(newItemUID);
         if (_selectedItem != null)
         {
-            List.Insert(_selectedIndex + 1, copyItem);
-            _iteratedList.Insert(_selectedIndex + 1, copyItem);
+            List.Insert(_selectedIndex + 1, copyItemForList);
+            _iteratedList.Insert(_selectedIndex + 1, copyItemForIterated);
         }
         else
         {
-            List.Add(copyItem);
-            _iteratedList.Add(copyItem);
+            List.Add(copyItemForList);
+            _iteratedList.Add(copyItemForIterated);
         }
 
         Debug.WriteLine($"Table - new record added at {_selectedIndex + 2}");

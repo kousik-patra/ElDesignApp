@@ -106,7 +106,7 @@ public Tuple<T, List<string>> ValidateGeneralInput<T>(T itemChanged, PropertyInf
         {
             foreach (var validationResult in validationResults)
             {
-                Debug.WriteLine($"{propertyName}: {validationResult.ErrorMessage}");
+                Console.WriteLine($"{propertyName}: {validationResult.ErrorMessage}");
                 errorMessage += validationResult.ErrorMessage + " ";
             }
             
@@ -124,7 +124,7 @@ public Tuple<T, List<string>> ValidateGeneralInput<T>(T itemChanged, PropertyInf
     }
     catch (Exception ex)
     {
-        Debug.WriteLine($"Error: {propertyInfo.Name}. Custom validation {ex}.");
+        Console.WriteLine($"Error: {propertyInfo.Name}. Custom validation {ex}.");
         errorMessage += $"Custom validation error. ";
     }
 
@@ -167,7 +167,7 @@ public Tuple<T, List<string>> ValidateGeneralInput<T>(T itemChanged, PropertyInf
             else
             {
                 // No regex validation defined - this is OK
-                Debug.WriteLine($"No RegularExpression validation defined for {propertyName}");
+                Console.WriteLine($"No RegularExpression validation defined for {propertyName}");
             }
         }
         catch (Exception ex)
@@ -218,7 +218,7 @@ public Tuple<T, List<string>> ValidateGeneralInput<T>(T itemChanged, PropertyInf
         }
     }
 
-    Debug.WriteLine($"Validation for '{propertyInfo.Name}' complete.");
+    Console.WriteLine($"Validation for '{propertyInfo.Name}' complete.");
     var messages = new List<string> { infoMessage, successMessage, warningMessage, errorMessage };
     return new Tuple<T, List<string>>(itemChanged, messages);
 }

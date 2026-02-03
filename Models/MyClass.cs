@@ -704,7 +704,7 @@ public class CableBranch : Branch
     [Display(Name = "Cable Description", Order = 18)]
     [RegularExpression(
         @"^([1-9][R][x])?[0-9][C][x]((0[\.]5)|1|(1[\.]5)|(2[\.]5)|4|6|10|16|25|35|50|70|95|120|150|185|240|300|400|500|630|800|1000)[ ]{0,2}[A-Z]{0,4}[a-z]{0,4}$",
-        ErrorMessage = "[0-9]Rx[0-9]Cx??? format only acceptable (e.g., 2Rx3Cx185 Al or 7Cx1.5)")]
+        ErrorMessage = "[0-9]Rx[0-9]Cx??? format with valid core size acceptable (e.g., 2Rx3Cx185 Al or 7Cx1.5)")]
     public string CblDesc { get; set; } // Cable Size Description (Similar to Excel Input)
     
     // below are the generated field and therefore not to be included in downloaded .xls file
@@ -797,7 +797,13 @@ public class Switch : BaseInfo
     public string T2 { get; set; } // Bus Tag at Connection 2
     [Display(Name = "T1-T2 Closed")]
     public bool Conn12 { get; set; } = true; // true -> Switch is Closed
+    
+}
 
+
+
+public class ThreeWaySwitch : Switch
+{
     public string T3 { get; set; } = ""; // Bus Tag at Connection 3 (for 3-Way Switch)
     [Display(Name = "T1-T3 Closed")]
     public bool Conn13 { get; set; } // Connection between T1 & T3: true -> Switch is Closed
@@ -830,6 +836,7 @@ public class Switch : BaseInfo
         // nothing further to update
     }
 }
+
 
 public class Load : BaseInfo
 {
@@ -911,7 +918,7 @@ public class Load : BaseInfo
     [Display(Name = "Cable Size (Manual)", Order = 37)]
     [RegularExpression(
         @"^([1-9][R][x])?[0-9][C][x]((0[\.]5)|1|(1[\.]5)|(2[\.]5)|4|6|10|16|25|35|50|70|95|120|150|185|240|300|400|500|630|800|1000)[ ]{0,2}[A-Z]{0,4}[a-z]{0,4}$",
-        ErrorMessage = "[0-9]Rx[0-9]Cx??? format only acceptable (e.g., 2Rx3Cx185 or 7Cx1.5")]
+        ErrorMessage = "[0-9]Rx[0-9]Cx??? format with valid core size acceptable (e.g., 2Rx3Cx185 or 7Cx1.5")]
     public string CblDescM { get; set; } // Cable Size Description (Similar to Excel Input) - Manual
     // For Cable Schedule purpose True if Cable sizing is Auto, False if Cable size as as per manually entered
     [Display(Name = "Auto Sizing)", Order = 38)]
@@ -1008,12 +1015,8 @@ public class Load : BaseInfo
     
 }
 
-public class CableData
+public class CableData:BaseInfo
 {
-    [Display(Name = "ID", Order = 1)]
-    public Guid UID { get; set; }
-    [Display(Name = "Tag", Order = 2)]
-    public string Tag { get; set; }
     [Display(Name = "Make", Order = 3)]
     public string Make { get; set; }
     [Display(Name = "Type", Order = 4)]
@@ -1025,8 +1028,8 @@ public class CableData
     public int PhaseNo { get; set; }
     [Display(Name = "PhaseSize", Order = 6)]
     [RegularExpression(
-        @"^([1-9][R][x])?[0-9][C][x]((0[\.]5)|1|(1[\.]5)|(2[\.]5)|4|6|10]|16|25|35|50|70|95|120|150|185|240|300|400|500|630|800|1000)$",
-        ErrorMessage = "[0-9]Rx[0-9]Cx??? format only acceptable (e.g., 2Rx3Cx185 or 7Cx1.5")]
+        @"^((0[\.]5)|1|(1[\.]5)|(2[\.]5)|4|6|10]|16|25|35|50|70|95|120|150|185|240|300|400|500|630|800|1000)$",
+        ErrorMessage = "Valid core size acceptable (e.g., 185 or 1.5")]
     public float PhaseSize { get; set; }
     [Display(Name = "NeutralNo", Order = 7)]
     public int NeutralNo { get; set; }
@@ -1043,7 +1046,7 @@ public class CableData
     [Display(Name = "Uvm", Order = 13)]
     public float Uvm { get; set; }
     [Display(Name = "SpecVoltage", Order = 14)]
-    [Required] [RegularExpression(
+    [RegularExpression(
         @"^[0-9]{1,4}?([\.]{0,1}[0-9]{0,4})\/[0-9]{1,4}?([\.]{0,1}[0-9]{0,4})[(][0-9]{1,4}?([\.]{0,1}[0-9]{0,4})[)]$",
         ErrorMessage = "Enter in only acceptable format(e.g., (3.6/6(7.2)")]
     public string SpecVoltage { get; set; }
@@ -1066,7 +1069,7 @@ public class CableData
     [Display(Name = "LeadSheathed", Order = 23)]
     public bool LeadSheathed { get; set; }
     [Display(Name = "Spec Description", Order = 24)]
-    [Required]
+    
     [RegularExpression(
         @"^([0-9]{1,2}Cx(0\.5|1|1\.5|2\.5|4|6|10|16|25|35|50|70|95|120|150|185|240|300|400|500|630|800|1000))(\+[0-9]Nx(0\.5|1|1\.5|2\.5|4|6|10|16|25|35|50|70|95|120|150|185|240|300|400|500|630|800|1000))?(\+[0-9](PE|E)x(0\.5|1|1\.5|2\.5|4|6|10|16|25|35|50|70|95|120|150|185|240|300|400|500|630|800|1000))?$",
         ErrorMessage = "Enter in only acceptable format (e.g., 3Cx185+1Nx185+1Ex95, 3Cx185+1Nx95, 3Cx185+3PEx185, or 7Cx1.5)")]
@@ -1113,6 +1116,7 @@ public class CableData
     public float AmpicityDuct { get; set; }
     [Display(Name = "AmpicityAir", Order = 45)]
     public float AmpicityAir { get; set; }
+    
 }
 
 public class MotorData

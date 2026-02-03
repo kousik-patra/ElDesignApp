@@ -2,6 +2,8 @@
 
 @rendermode InteractiveServer
 
+@attribute [Authorize(Policy = "RequireUser")]
+
 @using Microsoft.AspNetCore.Authorization
 
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -13,50 +15,65 @@
 @inject IDistributedCache Cache;
 @inject IGlobalDataService Global;
 @inject NavigationManager MyNavigationManager
+@using ElDesignApp.Components.Pages.MyComponents.Table 
 
 
 <h3>Cable Data</h3>
-
 <div class="container mt-4">
-    @if (_loadChild)
+    @if (!_loadChild)
     {
-        <div class="mt-4 p-3 bg-light text-center rounded">
-            <h4 class="mb-0">Database Master</h4>
+        <div class="alert alert-info">
+            <span class="spinner-border spinner-border-sm me-2"></span>
+            Loading data...
         </div>
+    }
+    else if (_listDb == null || _listDb.Count == 0)
+    {
+        <div class="alert alert-warning">
+            No data found.
+        </div>
+    }
+    else
+    {
         <div class="container-fluid mt-3">
-            <Table List="_list"
+            <Table @key="@("table-cableData")"
+                   List="_list"
                    ListOriginal="_listDb"
                    T="Models.CableData"
                    AutoCheckParentCallback="AutoCheckOnTableChange"
+                   AutoCheckParentFunc="AutoCheckOnTableChangeFunc"
                    UpdateParentCallback="UpdateTableChange"
                    DiscardParentCallback="DiscardTableChange"
                    RefreshParentCallback="TableRefresh"
+                   ActionMessage="@_tableActionMessage"
                    SuccessMessage="@_tableSuccessMessage"
                    InfoMessage="@_tableInfoMessage"
                    WarningMessage="@_tableWarningMessage"
                    ErrorMessage="@_tableErrorMessage">
+                <ResultMessage>
+                </ResultMessage>
             </Table>
         </div>
     }
 
     <div class="mt-4">
-        @if(!string.IsNullOrEmpty(_resultMessage))
+        @if (!string.IsNullOrEmpty(_resultMessage))
         {
             <div class="alert alert-info" role="alert">@_resultMessage</div>
         }
-        @if(!string.IsNullOrEmpty(_tableErrorMessage))
+        @if (!string.IsNullOrEmpty(_tableErrorMessage))
         {
             <div class="alert alert-danger" role="alert">@_tableErrorMessage</div>
         }
-        @if(!string.IsNullOrEmpty(_tableWarningMessage))
+        @if (!string.IsNullOrEmpty(_tableWarningMessage))
         {
             <div class="alert alert-warning" role="alert">@_tableWarningMessage</div>
         }
-        @if(!string.IsNullOrEmpty(_tableInfoMessage))
+        @if (!string.IsNullOrEmpty(_tableInfoMessage))
         {
             <div class="alert alert-info" role="alert">@_tableInfoMessage</div>
         }
-        @if(!string.IsNullOrEmpty(_tableSuccessMessage))
+        @if (!string.IsNullOrEmpty(_tableSuccessMessage))
         {
             <div class="alert alert-success" role="alert">@_tableSuccessMessage</div>
         }
@@ -69,6 +86,7 @@
     private readonly JsonSerializerOptions? jsonSerializerOption = new() { IncludeFields = true };
 
     private bool _loadChild;
+    private string _tableActionMessage = "";
     private string _tableMessage = "";
     private string _tableSuccessMessage = "";
     private string _tableInfoMessage = "";
@@ -101,8 +119,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
-                        $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} -  " +
+                          $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} - First Render:{firstRender} Load Child? {_loadChild}");
 
         if (firstRender)
         {
@@ -114,55 +132,155 @@
 
     private async Task Load(bool firstRender, bool isRefresh = false)
     {
-        (Global.CableData, string logInfo, string logWarning, string logError) = isRefresh?
-            await DataService.RefreshCacheAndReadFromDb<Models.CableData>():
+        Console.WriteLine($"Load() called - firstRender: {firstRender}, isRefresh: {isRefresh}");
+    
+        (Global.CableData, string logInfo, string logWarning, string logError) = isRefresh ?
+            await DataService.RefreshCacheAndReadFromDb<Models.CableData>() :
             await DataService.ReadFromCacheOrDb<Models.CableData>();
 
+        // DEBUG: Check if data was retrieved
+        Console.WriteLine($"Global.CableData count: {Global.CableData?.Count ?? -1}");
+        Console.WriteLine($"logError: {logError}, logWarning: {logWarning}");
+
         UpdateDbLocalVariable(Global.CableData);
+    
+        // DEBUG: Check if _listDb was populated
+        Console.WriteLine($"_listDb count after update: {_listDb?.Count ?? -1}");
         
+        // ADD THIS DEBUG LINE:
+        Console.WriteLine($"After UpdateDbLocalVariable: _list count = {_list?.Count ?? -1}, _listDb count = {_listDb?.Count ?? -1}");
+
+
         await Task.Delay(1000);
         _loadChild = true;
+    
+        Console.WriteLine($"_loadChild set to: {_loadChild}");
+        StateHasChanged();
     }
 
-    private void UpdateDbLocalVariable<T>(List<T>? list)
+    private void UpdateDbLocalVariable(List<Models.CableData>? list)
     {
-        _listDb = JsonSerializer.Deserialize<List<Models.CableData>>
-            (System.Text.Json.JsonSerializer.Serialize(list, jsonSerializerOption), jsonSerializerOption);
-        _list = JsonSerializer.Deserialize<List<Models.CableData>>
-            (System.Text.Json.JsonSerializer.Serialize(list, jsonSerializerOption), jsonSerializerOption);
+        if (list == null || list.Count == 0)
+        {
+            Console.WriteLine("WARNING: UpdateDbLocalVariable received null or empty list!");
+            return;
+        }
+    
+        var json = JsonSerializer.Serialize(list, jsonSerializerOption);
+        _listDb = JsonSerializer.Deserialize<List<Models.CableData>>(json, jsonSerializerOption);
+        _list = JsonSerializer.Deserialize<List<Models.CableData>>(json, jsonSerializerOption);
+    
+        Console.WriteLine($"UpdateDbLocalVariable: Populated {_list?.Count} items");
     }
 
 
     private async Task TableRefresh()
     {
-        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
-                                           $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Refreshing Table...");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                                                  $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Refreshing Table...");
         await Load(false, true);
         ResetMassages();
         _tableSuccessMessage = "Table loaded afresh from the database.";
         StateHasChanged();
     }
-
-
-    private void AutoCheckOnTableChange<T>((T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
-    {
-        var (item, uid, propertyInfo, originalItem, itemsCurrent, itemsOriginal, 
-             tableSuccessMessage, tableInfoMessage, tableWarningMessage, tableErrorMessage) = args;
     
-        // Validate inputs to prevent null reference exceptions
-        if (item == null || propertyInfo == null || itemsCurrent == null || itemsOriginal == null)
-        {
-            System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  - " +
-                                              $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} : Error - " +
-                                              $"Invalid input (null item, propertyInfo, or lists)");
-        }
-        // any specific Auto check at parent side
+    protected async void AutoCheckOnTableChange<T>(
+        (T iteratedItem, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args) where T : class
+    {
+        await AutoCheckOnTableChangeFunc<T>(args);
     }
+    
+    protected async Task<(T iteratedItem, string _tableSuccessMessage, string _tableInfoMessage, string _tableWarningMessage, string _tableErrorMessage)> AutoCheckOnTableChangeFunc<T>((T iteratedItem, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
+    {
+        // Access the parameters from args
+        var iteratedItem = args.iteratedItem;
+        var uid = args.Item2;
+        var propertyInfo = args.Item3;
+        var originalItem = args.Item4;
+        List<T> itemsCurrent = args.Item5;
+        List<T> itemsOriginal = args.Item6;
+        _tableSuccessMessage = args.Item7;
+        _tableInfoMessage = args.Item8;
+        _tableWarningMessage = args.Item9;
+        _tableErrorMessage = args.Item10;
+        //
+        // any further validation
+        var anyFurtherValidation = true;
+        if (anyFurtherValidation)
+        {
+            // additional validation
+            Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name} : {propertyInfo.Name} further validation checks at parent side...");
+            _tableErrorMessage += "";
+            // additional validation
+            _tableSuccessMessage += "";
+            // var getItemsNOriginalItems = GetItemsNOriginalItems(item);
+            // List<T> items = getItemsNOriginalItems[0];
+            // List<T> itemsOriginal = getItemsNOriginalItems[1];
+            // clear cache as the data is updated
+            //await cache.RemoveAsync("NavMenu_" + typeof(T).Name + "_" + DateTime.Now.ToString("yyyyMMdd_hh"));
+            //
+            // Action for "Load"
+            if (typeof(T).Name == "Load")
+            {
+                // Get the MethodInfo for the method "MyMethod"
+                var methodInfo = typeof(T).GetMethod("Update");
+                if (methodInfo != null)
+                {
+                    // Invoke the method on the instance obj
+                    // null because MyMethod does not take any parameters
+                    methodInfo.Invoke(iteratedItem, null);
+                }
+            }
+            
+            
+            if (iteratedItem is Load loadItem)
+            {
+                // Now loadItem is strictly typed as 'Load'
+                LayoutFunction.LoadUpdate(loadItem);
+            }
+
+            //
+            // Action for CableBranch
+            if (typeof(T).Name == "CableBranch")
+            {
+                var methodCableRXUpdate = typeof(T).GetMethod("CableRXUpdate");
+                if (methodCableRXUpdate != null)
+                {
+                    // Invoke the method on the instance obj
+                    // null because MyMethod does not take any parameters
+                    methodCableRXUpdate.Invoke(iteratedItem, null);
+                }
+            }
+
+            _tableActionMessage = _tableInfoMessage;
+        }
+
+        return (iteratedItem, _tableSuccessMessage, _tableInfoMessage, _tableWarningMessage, _tableErrorMessage);
+
+        //var itemsNOriginalItems = GetItemsNOriginalItems(item);
+        //SetItems(itemsCurrent);
+    }
+
+
+    // private void AutoCheckOnTableChange<T>((T, Guid, PropertyInfo, T, List<T>, List<T>, string, string, string, string) args)
+    // {
+    //     var (item, uid, propertyInfo, originalItem, itemsCurrent, itemsOriginal, 
+    //          tableSuccessMessage, tableInfoMessage, tableWarningMessage, tableErrorMessage) = args;
+    //
+    //     // Validate inputs to prevent null reference exceptions
+    //     if (item == null || propertyInfo == null || itemsCurrent == null || itemsOriginal == null)
+    //     {
+    //         Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  - " +
+    //                                           $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} : Error - " +
+    //                                           $"Invalid input (null item, propertyInfo, or lists)");
+    //     }
+    //     // any specific Auto check at parent side
+    // }
 
     private async Task UpdateTableChange<T>((T item, List<T>? list, List<T> originalList, string success, string info, string warning, string error) parameters)where T : class
     {
-        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
-                        $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name} Updating data to the database...");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                                                  $"{MethodBase.GetCurrentMethod()?.Name} Updating data to the database...");
         var updatedList = parameters.list;
         var originalList= parameters.originalList;
         _tableSuccessMessage = parameters.success;
@@ -170,10 +288,11 @@
         _tableWarningMessage = parameters.warning;
         _tableErrorMessage = parameters.error;
                 
-        UpdateDbLocalVariable(updatedList);
 
-        Global.CableData = System.Text.Json.JsonSerializer.Deserialize<List<Models.CableData>>
-            (System.Text.Json.JsonSerializer.Serialize(updatedList, jsonSerializerOption), jsonSerializerOption);
+
+        Global.CableData = JsonSerializer.Deserialize<List<Models.CableData>>
+            (JsonSerializer.Serialize(updatedList, jsonSerializerOption), jsonSerializerOption);
+        UpdateDbLocalVariable(Global.CableData);
 
         await Table.SyncListAsync(updatedList,originalList);
 
@@ -185,8 +304,8 @@
 
     private void DiscardTableChange()
     {
-        System.Diagnostics.Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
-                        $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name}Discarding changes...");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - " +
+                          $"{System.Reflection.MethodBase.GetCurrentMethod()?.Name}Discarding changes...");
         
         UpdateDbLocalVariable(_listDb);
         Global.CableData = System.Text.Json.JsonSerializer.Deserialize<List<Models.CableData>>

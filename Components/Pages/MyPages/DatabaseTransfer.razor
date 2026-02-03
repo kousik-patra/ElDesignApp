@@ -15,6 +15,7 @@
 @inject ITableService Table
 @inject IGlobalDataService GlobalData
 @inject IJSRuntime JSRuntime
+@using ElDesignApp.Components.Pages.MyComponents.Table 
 
 <PageTitle>Database Transfer</PageTitle>
 
@@ -271,7 +272,7 @@
                        T="DBMaster"
                        AutoCheckParentCallback="AutoCheckOnTableChange"
                        UpdateParentCallback="UpdateTableChange"
-                       DiscardParentCallback="DiscardPTableChange"
+                       DiscardParentCallback="DiscardTableChange"
                        RefreshParentCallback="TableRefresh"
                        SuccessMessage="@_tableSuccessMessage"
                        InfoMessage="@_tableInfoMessage"

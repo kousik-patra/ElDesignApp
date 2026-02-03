@@ -867,94 +867,94 @@ public class LayoutFunctionService : ILayoutFunctionService
                 // determine operating power factor and operating efficiency as per actual (absorbed) Power, i.e., Load Factor
                 // motor data is already ordered in the NavMeno page in descending order
                 var motorsData = _globalData.MotorData.Where(motor => motor.RatedkW > load.PR).ToList();
-                var pfJSON = "";
-                var effJSON = "";
-                var ist = 0f;
-                var pfst = 0f;
-                if (motorsData.Count > 0)
-                {
-                    pfJSON = motorsData.Last().PowerFactorJSON;
-                    effJSON = motorsData.Last().EfficiencyJSON;
-                    ist = (float)motorsData.Last().LRC;
-                    pfst = (float)motorsData.Last().LRPF;
-                }
-                else
-                {
-                    pfJSON = "[[100,75,50,25],[0.92,0.89,0.85,0.8]]";
-                    effJSON = "[[100,75,50,25],[94,90,86,82]]";
-                    ist = 7.2f;
-                    pfst = .4f;
-                }
-                //JsonSerializerOptions? jsonSerializerOption = new() { IncludeFields = true };
-                //var pf = JsonSerializer.Deserialize<double[][]>(string.IsNullOrEmpty(load.PfJSON)? pfJSON: load.PfJSON , jsonSerializerOption);
-                
-                JsonSerializerOptions jsonSerializerOption = new() { IncludeFields = true };
-                
-                pfJSON = "[[100,75,50,25],[0.92,0.89,0.85,0.8]]";
+                // Default values
+    var defaultPfJSON = "[[100,75,50,25],[0.92,0.89,0.85,0.8]]";
+    var defaultEffJSON = "[[100,75,50,25],[94,90,86,82]]";
+    var ist = 7.2f;
+    var pfst = 0.4f;
 
-                double[][] pf;
-                try
-                {
-                    // Use load.PfJSON if it's not empty and is valid JSON; otherwise, use pfJSON
-                    string jsonToDeserialize = string.IsNullOrEmpty(load.PfJSON) || !IsValidJson(load.PfJSON)
-                        ? pfJSON
-                        : load.PfJSON;
+    if (motorsData.Count > 0)
+    {
+        var motorData = motorsData.Last();
+        defaultPfJSON = motorData.PowerFactorJSON ?? defaultPfJSON;
+        defaultEffJSON = motorData.EfficiencyJSON ?? defaultEffJSON;
+        ist = (float)motorData.LRC;
+        pfst = (float)motorData.LRPF;
+    }
 
-                    pf = JsonSerializer.Deserialize<double[][]>(jsonToDeserialize, jsonSerializerOption)
-                         ?? throw new JsonException("Deserialization returned null.");
-                }
-                catch (JsonException ex)
-                {
-                    // Log the error (optional) and use default pfJSON
-                    Console.WriteLine($"JSON deserialization failed: {ex.Message}");
-                    pf = JsonSerializer.Deserialize<double[][]>(pfJSON, jsonSerializerOption)
-                         ?? throw new JsonException("Default pfJSON deserialization failed.");
-                }
-                var polyPf = _myFunction.Polynomial(pf[0], pf[1], 2);
-                load.PfO = (float)(polyPf[2] * load.LF * load.LF + polyPf[1] * load.LF + polyPf[0]);
-                
-                
-                effJSON = "[[100,75,50,25],[94,90,86,82]]";
-                
-                double[][] eff;
-                try
-                {
-                    // Use load.PfJSON if it's not empty and is valid JSON; otherwise, use pfJSON
-                    string jsonToDeserialize = string.IsNullOrEmpty(load.EffJSON) || !IsValidJson(load.EffJSON)
-                        ? effJSON
-                        : load.EffJSON;
+    // Handle Power Factor
+    if (!TryDeserializeDoubleArray(load.PfJSON, out double[][] pf))
+    {
+        if (!TryDeserializeDoubleArray(defaultPfJSON, out pf))
+        {
+            Console.WriteLine($"{load.Tag}: Both load.PfJSON and defaultPfJSON are invalid. Using hardcoded default.");
+            pf = new double[][] { new[] { 100.0, 75, 50, 25 }, new[] { 0.92, 0.89, 0.85, 0.8 } };
+        }
+    }
 
-                    eff = JsonSerializer.Deserialize<double[][]>(jsonToDeserialize, jsonSerializerOption)
-                          ?? throw new JsonException("Deserialization returned null.");
-                }
-                catch (JsonException ex)
-                {
-                    // Log the error (optional) and use default pfJSON
-                    Console.WriteLine($"JSON deserialization failed: {ex.Message}");
-                    eff = JsonSerializer.Deserialize<double[][]>(effJSON, jsonSerializerOption)
-                          ?? throw new JsonException("Default effJSON deserialization failed.");
-                }
-                var polyEff = _myFunction.Polynomial(eff[0], eff[1], 2);
-                load.EffO = (float)(polyEff[2] * load.LF * load.LF + polyEff[1] * load.LF + polyEff[0]);
-                //
-                load.Ist = load.Ist != 0f ? load.Ist : ist;
-                load.Pfst = load.Pfst != 0f ? load.Pfst : pfst;
-                break;
-            default:
-                load.PfO = load.Pf;
-                load.EffO = load.Eff;
-                break;
+    try
+    {
+        var polyPf = _myFunction.Polynomial(pf[0], pf[1], 2);
+        load.PfO = (float)(polyPf[2] * load.LF * load.LF + polyPf[1] * load.LF + polyPf[0]);
+    }
+    catch (Exception e)
+    {
+        Console.WriteLine($"{load.Tag}: Polynomial calculation for PF failed: {e.Message}");
+        load.PfO = load.Pf; // Fallback to rated value
+    }
+
+    // Handle Efficiency
+    if (!TryDeserializeDoubleArray(load.EffJSON, out double[][] eff))
+    {
+        if (!TryDeserializeDoubleArray(defaultEffJSON, out eff))
+        {
+            Console.WriteLine($"{load.Tag}: Both load.EffJSON and defaultEffJSON are invalid. Using hardcoded default.");
+            eff = new double[][] { new[] { 100.0, 75, 50, 25 }, new[] { 94.0, 90, 86, 82 } };
+        }
+    }
+
+    try
+    {
+        var polyEff = _myFunction.Polynomial(eff[0], eff[1], 2);
+        load.EffO = (float)(polyEff[2] * load.LF * load.LF + polyEff[1] * load.LF + polyEff[0]);
+    }
+    catch (Exception e)
+    {
+        Console.WriteLine($"{load.Tag}: Polynomial calculation for EFF failed: {e.Message}");
+        load.EffO = load.Eff; // Fallback to rated value
+    }
+
+    load.Ist = load.Ist != 0f ? load.Ist : ist;
+    load.Pfst = load.Pfst != 0f ? load.Pfst : pfst;
+    break;
         }
         
         // Helper method to validate JSON
-        bool IsValidJson(string json)
+        /// <summary>
+        /// Attempts to deserialize JSON into a double[][] with exactly 2 arrays of matching length.
+        /// </summary>
+        bool TryDeserializeDoubleArray(string json, out double[][] result)
         {
-            if (string.IsNullOrWhiteSpace(json))
+            result = null;
+
+            if (string.IsNullOrWhiteSpace(json) || json == "[]" || json == "[[]]" || json == "null")
                 return false;
 
             try
             {
-                JsonDocument.Parse(json); // Attempt to parse JSON
+                var options = new JsonSerializerOptions { IncludeFields = true };
+                var deserialized = JsonSerializer.Deserialize<double[][]>(json, options);
+
+                // Validate structure: must have exactly 2 arrays with matching lengths > 0
+                if (deserialized is not { Length: 2 } ||
+                    deserialized[0] is not { Length: > 0 } ||
+                    deserialized[1] is not { Length: > 0 } ||
+                    deserialized[0].Length != deserialized[1].Length)
+                {
+                    return false;
+                }
+
+                result = deserialized;
                 return true;
             }
             catch
@@ -1241,13 +1241,14 @@ public class LayoutFunctionService : ILayoutFunctionService
         //
         var avl1C = _avl1C;
         var avlMC = _avlMC;
-
+        Console.WriteLine($"Multi-core Sizing for {load.Tag}, {load.R}kW, {load.V}V, {load.I}A");
         var multipleCoreResult = FindCableSize1CorMC((int)C, alVdR, alVdS, DF, mat, avlMC, I, L, V, phase, 4, _cableData);
         // check for single core only when there is no multicore results or the sizes >=95
         if (multipleCoreResult.Count > 0 && multipleCoreResult[1] < 95)
         {
             return [multipleCoreResult[0], C, multipleCoreResult[1]];
         }
+        Console.WriteLine($"Single-core Sizing for {load.Tag}, {load.R}kW, {load.V}V, {load.I}A");
         var singleCoreResult = FindCableSize1CorMC(1, alVdR, alVdS, DF, mat, avl1C, I, L, V, phase,10, _cableData);
         //
         // comparing 1C result and multicore result based on the material consumption
@@ -1281,8 +1282,12 @@ public class LayoutFunctionService : ILayoutFunctionService
                 cables = cableData.Where(cable =>
                     cable.ConductorMaterial == mat && cable.PhaseNo == core && avl.Contains(cable.PhaseSize) &&
                     cable.AmpicityAir * (cableDeratingFactor/100) > I / cableRunThis).ToList();
-            } while (cables.Count() == 0 && cableRunThis<maxCableRun);
-
+            } while (cables.Count == 0 && cableRunThis<maxCableRun);
+            if (cables.Count == 0)
+            {
+                // No suitable cable found - return empty or error indicator
+                return [-1, -1]; // [-1, -1] to indicate failure
+            }
             float cableSizeThis = 0;
             try
             {
@@ -1295,7 +1300,6 @@ public class LayoutFunctionService : ILayoutFunctionService
             {
                 // ignored
                 cableSizeThis = 0;
-
             }
 
             do
@@ -1305,12 +1309,19 @@ public class LayoutFunctionService : ILayoutFunctionService
                     .Where(cable =>
                         cable.ConductorMaterial == mat && Math.Abs(cable.PhaseSize - cableSizeThis) < tolerance)
                     .ToList();
-                
-                var R = cableData
-                    .Where(cable => cable.ConductorMaterial == mat && Math.Abs(cable.PhaseSize - cableSizeThis) < tolerance).ToList()[0].RDC;
-                var X = cableData
-                    .Where(cable => cable.ConductorMaterial == mat && Math.Abs(cable.PhaseSize - cableSizeThis) < tolerance).ToList()[0].XAC;
-                if (R * X < 0.00001)
+                var R = 0f;
+                var X = 0f;
+
+                    var matchedCable = cableData.FirstOrDefault(cable =>
+                        cable.ConductorMaterial == mat && Math.Abs(cable.PhaseSize - cableSizeThis) < tolerance);
+
+                    if (matchedCable != null)
+                    {
+                        R = matchedCable.RAC;
+                        X = matchedCable.XAC;
+                    }
+
+                if (R * X < 0.00001) 
                 {
                     (R, X) = AproximateRX(cableData, mat, cableSizeThis);
                 }
@@ -1339,6 +1350,7 @@ public class LayoutFunctionService : ILayoutFunctionService
                     // increase one size
                     cableSizeThis = avl[Math.Min(avl.IndexOf(cableSizeThis) + 1, avl.Count - 1)];
                 }
+                Console.WriteLine($"I: {I}, Run: {cableRunThis}, Size: {cableSizeThis}, R:{R:F3}, X:{X:F3}, RDrop: {RunningVoltageDropAuto}, SDrop: {StartingVoltageDropAuto}");
             } while (RunningVoltageDropAuto > allowableVdR || StartingVoltageDropAuto > allowableVdS);
 
             return [cableRunThis, cableSizeThis];
@@ -1361,7 +1373,7 @@ public class LayoutFunctionService : ILayoutFunctionService
         else
         {
             r = (mat == "Cu" ? 18.5f : 26.5f) / (float)phaseSize;
-            x= -0.03f * (float)Math.Log(phaseSize) + 0.902f;
+            x= -0.03f * (float)Math.Log(phaseSize) + 0.0902f;
         }
 
         return (r, x);
@@ -1376,8 +1388,8 @@ public class LayoutFunctionService : ILayoutFunctionService
         var V = load.V;
         var phase = load.Ph;
         var Pf = load.Pf;
-        var Ist = load.Ist;
-        var Pfst = load.Pfst;
+        var Ist = load.Ist == 0 ? 6 : load.Ist;
+        var Pfst = load.Pfst == 0 ? 0.4 : load.Pfst;
         //
         var C = a == "M" ? load.CM : load.CA;
         var Rn = a == "M" ? load.RnM : load.RnA;
@@ -1397,7 +1409,7 @@ public class LayoutFunctionService : ILayoutFunctionService
         else
         {
             R = (mat == "Cu" ? 18.5f : 26.5f) / (float)Sp;
-            X = -0.03f * (float)Math.Log(Sp) + 0.902f;
+            X = -0.03f * (float)Math.Log(Sp) + 0.0902f;
         }
 
         //
@@ -1437,7 +1449,7 @@ public class LayoutFunctionService : ILayoutFunctionService
         else
         {
             cableBranch.Rl = 018.5f / cableBranch.Sp;
-            cableBranch.Xl = -0.03f * (float)Math.Log(cableBranch.Sp) + 0.902f;
+            cableBranch.Xl = -0.03f * (float)Math.Log(cableBranch.Sp) + 0.0902f;
         }
 
         //
