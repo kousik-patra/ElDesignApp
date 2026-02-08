@@ -1,3 +1,5 @@
+using ElDesignApp.Services.SLD;
+
 namespace ElDesignApp.Services;
 
 using System.Diagnostics;
@@ -20,12 +22,15 @@ public interface ISystemStudyFunctionService
     List<LFNode> ReconstructPath(Dictionary<LFNode, LFNode> cameFrom, LFNode current);
 
 
-    List<Bus> AssignVbSwingSourcesAndAutoXY(List<CableBranch> cableBranches, List<BusDuct> busDucts,
-        List<Transformer> transformers, List<Switch> switches, List<Bus> buses);
+    List<Branch> GetBranches(List<CableBranch> cableBranches, List<Transformer> transformers, List<BusDuct> busDucts);
+    
+    List<Bus> AssignVbSwingSourcesAndAutoXY(List<Bus> buses, List<Load> loads, List<CableBranch> cableBranches, 
+        List<BusDuct> busDucts, List<Transformer> transformers, List<Switch> switches, List<Fuse> fuses, 
+        List<BusBarLink> busBarLinks, Dictionary<string, int> loadConnectionCounts);
 
     public Tuple<List<Bus>, List<Branch>> MainLoadFlow(List<CableBranch> cableBranches,
         List<Transformer> transformers, List<BusDuct> busDucts, List<Bus> buses, List<Switch> switches,
-        List<Load> loads);
+        List<Load> loads, List<Fuse> fuses, List<BusBarLink>  busBarLinks);
 
     public Tuple<List<Bus>, List<BusParent>> FunctionBusParentList(List<Bus> buses,
         List<BusParent> busParentList, List<Branch> branches, List<Transformer> transformers);
@@ -141,12 +146,52 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
     }
 
 
-    public List<Bus> AssignVbSwingSourcesAndAutoXY(List<CableBranch> cableBranches, List<BusDuct> busDucts,
-        List<Transformer> transformers, List<Switch> switches, List<Bus> buses)
+    public List<Branch> GetBranches(List<CableBranch> cableBranches, List<Transformer> transformers,List<BusDuct> busDucts)
+    {
+        List<Branch> branches = [];
+        
+        var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        
+        cableBranches.ForEach(item =>
+        {
+            var branch = JsonSerializer.Deserialize<Branch>(JsonSerializer.Serialize(item,jsonOptions),jsonOptions);
+            branch?.VRatio = 1;
+            branch?.Category = "Cable";
+            if (branch != null) branches.Add(branch);
+        });
+                
+        transformers.ForEach(item =>
+        {
+            var branch = JsonSerializer.Deserialize<Branch>(JsonSerializer.Serialize(item,jsonOptions),jsonOptions);
+            branch?.VRatio = item.V1 / item.V2;
+            branch?.Category = "Transformer";
+            if (branch != null) branches.Add(branch);
+        });
+        
+        busDucts.ForEach(item =>
+        {
+            var branch = JsonSerializer.Deserialize<Branch>(JsonSerializer.Serialize(item,jsonOptions),jsonOptions);
+            branch?.VRatio = 1;
+            branch?.Category = "BusDuct";
+            if (branch != null) branches.Add(branch);
+        });
+
+        return branches;
+    }
+    
+    // <summary>
+    /// Assigns base voltage, swing sources, and SLD X,Y coordinates for buses.
+    /// Now accepts loadConnectionCounts from ConnectionProcessingService.
+    /// </summary>
+    /// <param name="buses">List of buses (may include new buses created for loads)</param>
+    /// <param name="loadConnectionCounts">Load counts per bus from ConnectionProcessingService</param>
+    public List<Bus> AssignVbSwingSourcesAndAutoXY(List<Bus> buses, List<Load> loads, List<CableBranch> cableBranches, 
+        List<BusDuct> busDucts, List<Transformer> transformers, List<Switch> switches, List<Fuse> fuses, 
+        List<BusBarLink> busBarLinks,Dictionary<string, int> loadConnectionCounts)
     {
 
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : - {MethodBase.GetCurrentMethod()?.Name}");
-        //
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : - {MethodBase.GetCurrentMethod()?.Name}");
+        
         // this function prepares the nodes list and edges for LF A-Star to establish source - Bus relationship
         // the relationship is required to assign the base voltage and also assign auto X-Y coordinates for the Key SLD
         // input for this function are all branches like CableBranches, BusDucts, Transformers and Buses
@@ -155,8 +200,8 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         // Also creates all the additional buses for the branches, if not available
         // also assigns the independent Network Seq. no.
 
-        List<LFNode> LFNodes = new();
-        List<Branch> Branches = new();
+        List<LFNode> lfNodes = [];
+        List<Branch> branches = [];
         
         var jsonOptions = new JsonSerializerOptions
         {
@@ -165,63 +210,45 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
        
         var returnBuses = JsonSerializer.Deserialize<List<Bus>>(JsonSerializer.Serialize(buses,jsonOptions),jsonOptions);
 
-        buses.ForEach(bus => { LFNodes.Add(new LFNode(bus.Tag, bus.SwbdTag)); });
-
-        transformers.ForEach(item =>
+        // Ensure loadConnectionCounts is not null
+        loadConnectionCounts ??= new Dictionary<string, int>();
+        
+        buses.ForEach(bus =>
         {
-            var branch = JsonSerializer.Deserialize<Branch>(JsonSerializer.Serialize(item,jsonOptions),jsonOptions);
-            branch.VRatio = item.V1 / item.V2;
-            Branches.Add(branch);
+            if (bus.Tag != null) lfNodes.Add(new LFNode(bus.Tag, bus.BoardTag));
         });
-        cableBranches.ForEach(item =>
+        
+        branches = GetBranches(cableBranches, transformers, busDucts);
+        
+        branches.ForEach(branch =>
         {
-            var branch = JsonSerializer.Deserialize<Branch>(JsonSerializer.Serialize(item,jsonOptions),jsonOptions);
-            branch.VRatio = 1;
-            Branches.Add(branch);
-        });
-        busDucts.ForEach(item =>
-        {
-            var branch = JsonSerializer.Deserialize<Branch>(JsonSerializer.Serialize(item,jsonOptions),jsonOptions);
-            branch.VRatio = 1;
-            Branches.Add(branch);
-        });
-        //
-        // check if all the buses are there for all the branches, if not add the required buses
-        Branches.ForEach(branch =>
-        {
-            buses = _layoutFunction.BranchBusUpdate(branch.Tag, branch.Category, branch.BfT, branch.BtT, buses);
-        });
-        //
-
-        Branches.ForEach(branch =>
-        {
-            var fromNodes = LFNodes.Where(node => node.Name == branch.BfT).ToList();
-            List<LFNode> todNodes = LFNodes.Where(node => node.Name == branch.BtT).ToList();
+            var fromNodes = lfNodes.Where(node => node.Name == branch.FromBus).ToList();
+            List<LFNode> todNodes = lfNodes.Where(node => node.Name == branch.ToBus).ToList();
 
             if (fromNodes.Count == 1 && todNodes.Count == 1)
             {
                 fromNodes[0].AddEdge(branch.Tag, todNodes[0], 1, branch.VRatio); // weight  is 1
             }
         });
-        //
+
         // Use a simple heuristic for now for AStar
         var heuristic = SimpleDistance;
-        var swingNodes = LFNodes.Where(node => buses.Where(bus => bus.Tag == node.Name).ToList()[0].Category == "Swing")
+        var swingNodes = lfNodes.Where(node => buses.Where(bus => bus.Tag == node.Name).ToList()[0].IsSwing)
             .ToList();
         swingNodes.ForEach(swingNode =>
         {
             if (!swingNode.SwingSources.Contains(swingNode.Name)) swingNode.SwingSources.Add(swingNode.Name);
         });
 
-        var nonSwingNodes = LFNodes
-            .Where(node => buses.Where(bus => bus.Tag == node.Name).ToList()[0].Category != "Swing").ToList();
+        var nonSwingNodes = lfNodes
+            .Where(node => !buses.Where(bus => bus.Tag == node.Name).ToList()[0].IsSwing).ToList();
         //
-        // proceed only when there is atleast one swing node and another non-swing node
+        // proceed only when there is at least one swing node and another non-swing node
         if (swingNodes.Count > 1 && nonSwingNodes.Count > 1)
         {
-            // the objective is to find the shortest souce path for each and every non-swing nodes
+            // the objective is to find the shortest source path for each and every non-swing nodes
             // start with any random node and find the shortest path to source and the corresponding source
-            //
+
             // assign base voltage for all swing nodes
             swingNodes.ForEach(node =>
             {
@@ -229,8 +256,8 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
                 node.Vb = bus.VR;
                 node.VbAssigned = true;
             });
-            //
-            // continue untill base voltage are assigned for all non-swing buses
+
+            // continue until base voltage are assigned for all non-swing buses
             LFNode goalNonSwingNode = null;
             while (nonSwingNodes.Where(n => n.VbAssigned == false).ToList().Count > 0)
             {
@@ -294,16 +321,57 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             }
 
             // remove nodes which are not connected (Vb = 0)
-            LFNodes.RemoveAll(node => node.Vb == 0f);
+            lfNodes.RemoveAll(node => node.Vb == 0f);
+            
+            // ========================================================================
+            // SWITCHBOARD Y SYNCHRONIZATION
+            // All buses in the same switchboard should have the same Y value (max of group)
+            // ========================================================================
+            var switchboardGroups = lfNodes
+                .Where(n => !string.IsNullOrEmpty(n.SwbdTag) && n.Y != null)
+                .GroupBy(n => n.SwbdTag)
+                .ToList();
+
+            foreach (var swbdGroup in switchboardGroups)
+            {
+                var nodesInGroup = swbdGroup.ToList();
+                if (nodesInGroup.Count > 1)
+                {
+                    int maxY = (int)nodesInGroup.Max(n => n.Y.Value);
+                    foreach (var node in nodesInGroup)
+                    {
+                        node.Y = maxY;
+                    }
+                    Console.WriteLine($"INFO: Synchronized switchboard '{swbdGroup.Key}' Y={maxY}: [{string.Join(", ", nodesInGroup.Select(n => n.Name))}]");
+                }
+            }
+
+            // Normalize Y values so minimum is 0
+            var allYValues = lfNodes.Where(n => n.Y != null).Select(n => n.Y.Value).ToList();
+            if (allYValues.Any())
+            {
+                var minY = allYValues.Min();
+                if (minY != 0)
+                {
+                    int offset = (int)-minY;
+                    foreach (var node in lfNodes.Where(n => n.Y != null))
+                    {
+                        node.Y += offset;
+                    }
+                }
+            }
+            // ========================================================================
+            
+            
             //
             // define Network for all the Bus
             List<List<string>> Networks = new List<List<string>>();
             //
             // arrange all the nodes in the highest order of no. of SourceSwing Buses
             // this is to make sure that the node with the multiple sourcees has the common Network
-            LFNodes = LFNodes.OrderByDescending(node => node.SwingSources.Count).ToList();
+            lfNodes = lfNodes.OrderByDescending(node => node.SwingSources.Count).ToList();
             //
-            LFNodes.ForEach(node =>
+            lfNodes.ForEach(node =>
             {
                 var networkNo = 0;
                 // check if any of the source nodes are already part of any Network
@@ -322,7 +390,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
 
                 node.SwingSources.ForEach(swingSource =>
                 {
-                    var swingSourceNode = LFNodes.Where(n => n.Name == swingSource).ToList()[0];
+                    var swingSourceNode = lfNodes.Where(n => n.Name == swingSource).ToList()[0];
                     swingSourceNode.Network = networkNo;
                     if (!Networks[networkNo - 1].Contains(swingSource)) Networks[networkNo - 1].Add(swingSource);
                 });
@@ -333,23 +401,55 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             // now update Network for all bus
             //
             // now to sort the nodes/bus as per their KeySLD Y cord, then by switchboard tag
-            LFNodes = LFNodes.OrderBy(node => node.Network).ThenBy(node => node.Y).ThenBy(node => node.SwbdTag)
-                .ThenBy(node => node.Name).ToList();
-            // find the required width of each bus
-            // assume that for the KeySLD bus shall have only the lump lodas for all directly connected loads
-            // assign X-Cord and Length of each of the Bus
-            LFNodes.ForEach(node =>
+            // ========================================================================
+            // IMPROVED X AND L ASSIGNMENT WITH PROPER SWITCHBOARD GROUPING
+            // ========================================================================
+            // Sort by Network, Y, SwbdTag (with null handling), then Name
+            lfNodes = lfNodes
+                .OrderBy(node => node.Network)
+                .ThenBy(node => node.Y)
+                .ThenBy(node => node.SwbdTag ?? "zzz")  // Null SwbdTag goes to end
+                .ThenBy(node => node.Name)
+                .ToList();
+            
+            // Group nodes by Y level and process each level
+            var nodesByY = lfNodes
+                .Where(n => n.Y != null)
+                .GroupBy(n => n.Y.Value)
+                .OrderBy(g => g.Key)
+                .ToList();
+
+            foreach (var yGroup in nodesByY)
             {
-                var y = node.Y;
-                var nodesOfY = LFNodes.Where(n => n.Y == node.Y).ToList();
-                node.X = nodesOfY.IndexOf(node) + 1;
-                node.L = node.Edges.Count + 1; // 1 for lump loads
-            });
+                // Nodes at this Y level are already sorted by SwbdTag due to the sort above
+                var nodesAtY = yGroup.ToList();
+                
+                // Assign X values sequentially - switchboard buses will be adjacent
+                // because they're already sorted by SwbdTag
+                for (int i = 0; i < nodesAtY.Count; i++)
+                {
+                    var node = nodesAtY[i];
+                    node.X = i + 1;
+                    
+                    // Calculate bus length: edges (branches) + loads + 1
+                    int branchCount = node.Edges?.Count ?? 0;
+                    int loadCount = loadConnectionCounts.ContainsKey(node.Name) 
+                        ? loadConnectionCounts[node.Name] 
+                        : 0;
+                    node.L = branchCount + loadCount + 1;
+                }
+                
+                // Debug output to verify grouping
+                Console.WriteLine($"Y={yGroup.Key}: [{string.Join(", ", nodesAtY.Select(n => $"{n.Name}({n.SwbdTag})"))}]");
+            }
+            // ========================================================================
+            
+            
         }
 
         returnBuses.ForEach(bus =>
         {
-            List<LFNode> nodes = LFNodes.Where(n => n.Name == bus.Tag && n.Vb != 0).ToList();
+            List<LFNode> nodes = lfNodes.Where(n => n.Name == bus.Tag && n.Vb != 0).ToList();
             if (nodes.Count > 0)
             {
                 bus.SwingSources = nodes[0].SwingSources;
@@ -375,9 +475,9 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
 
     public Tuple<List<Bus>, List<Branch>> MainLoadFlow(List<CableBranch> cableBranches,
         List<Transformer> transformers, List<BusDuct> busDucts, List<Bus> buses, List<Switch> switches,
-        List<Load> loads)
+        List<Load> loads, List<Fuse> fuses, List<BusBarLink>  busBarLinks)
     {
-        Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff}  - {MethodBase.GetCurrentMethod()?.Name}");
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff}  - {MethodBase.GetCurrentMethod()?.Name}");
 
         var jsonOptions = new JsonSerializerOptions
         {
@@ -400,16 +500,17 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         List<Bus> StudyResultLFBus = new();
         List<Branch> StudyResultLFBranch = new();
 
-        Debug.WriteLine("Initialising data......");
+        Console.WriteLine("Initialising data......");
         //
         // create the bus with base voltage as per the shortest path from the corresponding source bus to each bus 
-        Buses = AssignVbSwingSourcesAndAutoXY(cableBranches, busDucts, transformers, switches, buses);
+        //List<Bus> buses, List<CableBranch> cableBranches, List<BusDuct> busDucts, List<Transformer> transformers, List<Switch> switches, List<Fuse> fuses, List<BusBarLink> busBarLinks
+        Buses = AssignVbSwingSourcesAndAutoXY(buses, loads, cableBranches, busDucts, transformers, switches, fuses,busBarLinks, new Dictionary<string, int>());
         NonConnectedBuses.Clear();
         foreach (var bus in Buses)
             if (bus.Vb == 0)
                 NonConnectedBuses.Add(bus.Tag);
 
-        Debug.WriteLine(
+        Console.WriteLine(
             $"Total bus count : {Buses.Count}, out of which {NonConnectedBuses.Count} non-connected buses \n {string.Join(",", NonConnectedBuses)}");
         // removing not connected buses for LF study
         Buses.RemoveAll(bus => bus.Vb == 0);
@@ -419,12 +520,12 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         // Calculating Zb and Zpu for all cable branches and add them to Branches
         foreach (var cable in cableBranches)
         {
-            List<Bus> busesFrom = Buses.Where(b => b.Tag == cable.BfT).ToList();
-            List<Bus> busesTo = Buses.Where(b => b.Tag == cable.BtT).ToList();
+            List<Bus> busesFrom = Buses.Where(b => b.Tag == cable.FromBus).ToList();
+            List<Bus> busesTo = Buses.Where(b => b.Tag == cable.ToBus).ToList();
             // check if this branch is connected
             if (busesFrom.Count == 1 && busesTo.Count == 1 && busesFrom[0].Vb != 0 && busesTo[0].Vb != 0)
             {
-                cable.Vb = Buses.Where(b => b.Tag == cable.BfT).ToList()[0].Vb;
+                cable.Vb = Buses.Where(b => b.Tag == cable.FromBus).ToList()[0].Vb;
                 cable.Zb = cable.Vb * cable.Vb / (1000000 * _globalData.Sb);
                 _layoutFunction.CableRXUpdate(cable);
                 //cable.R = cable.Rl * (cable.L / 1000) / cable.Run; // Ohm
@@ -439,13 +540,13 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         // Calculating Zb and Zpu for all bus ducts
         foreach (var busDuct in busDucts)
         {
-            List<Bus> busesFrom = Buses.Where(b => b.Tag == busDuct.BfT).ToList();
-            List<Bus> busesTo = Buses.Where(b => b.Tag == busDuct.BtT).ToList();
+            List<Bus> busesFrom = Buses.Where(b => b.Tag == busDuct.FromBus).ToList();
+            List<Bus> busesTo = Buses.Where(b => b.Tag == busDuct.ToBus).ToList();
             if (busesFrom.Count == 1 && busesTo.Count == 1 && busesFrom[0].Vb != null && busesTo[0].Vb != null &&
                 busesFrom[0].Vb != 0 && busesTo[0].Vb != 0)
 
             {
-                busDuct.Vb = Buses.Where(b => b.Tag == busDuct.BfT).ToList()[0].Vb;
+                busDuct.Vb = Buses.Where(b => b.Tag == busDuct.FromBus).ToList()[0].Vb;
                 busDuct.Zb = (float)(busDuct.Vb * busDuct.Vb) / (1000000 * _globalData.Sb);
                 _layoutFunction.BusDuctRXUpdate(busDuct);
                 //busDuct.R = busDuct.Rl * (busDuct.L / 1000) / busDuct.Run; // Ohm
@@ -459,15 +560,15 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         // Calculating Zb and Zpu for all transformer branches
         foreach (var trafo in transformers)
         {
-            List<Bus> busesFrom = Buses.Where(b => b.Tag == trafo.BfT).ToList();
-            List<Bus> busesTo = Buses.Where(b => b.Tag == trafo.BtT).ToList();
+            List<Bus> busesFrom = Buses.Where(b => b.Tag == trafo.FromBus).ToList();
+            List<Bus> busesTo = Buses.Where(b => b.Tag == trafo.ToBus).ToList();
             if (busesFrom.Count == 1 && busesTo.Count == 1 && busesFrom[0].Vb != null && busesTo[0].Vb != null &&
                 busesFrom[0].Vb != 0 && busesTo[0].Vb != 0)
             {
                 var Sbold = trafo.KVA / 1000; // Sb in MVA
                 var Sbnew = _globalData.Sb; // in MVA
                 var Vbold = trafo.V1; // in V
-                var Vbnew = Buses.Where(b => b.Tag == trafo.BfT).ToList()[0].Vb;
+                var Vbnew = Buses.Where(b => b.Tag == trafo.FromBus).ToList()[0].Vb;
                 var Zpuold = trafo.Z / 100; // Z in pc
                 var Zpunew = (float)(Zpuold * (Sbnew / Sbold) * Math.Pow(Vbold / Vbnew, 2));
                 trafo.Ypu = 1 / (Zpunew * new Complex(1, trafo.XR) / Math.Pow(1 + trafo.XR * trafo.XR, 0.5));
@@ -482,9 +583,9 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         foreach (var br in Branches)
         {
             br.Seq = Branches.IndexOf(br);
-            var BF = Buses.Where(b => b.Tag == br.BfT).ToList()[0];
-            var BT = Buses.Where(b => b.Tag == br.BtT).ToList()[0];
-            //System.Diagnostics.Debug.WriteLine($"{br.Seq + 1}. Branch {br.Tag} : From {br.BfT} ({BF.VR}V : Vb= {BF.Vb}) To {br.BtT} ({BT.VR}V : Vb= {BT.Vb})  Y: ({br.Ypu.Real}, {br.Ypu.Imaginary})");
+            var BF = Buses.Where(b => b.Tag == br.FromBus).ToList()[0];
+            var BT = Buses.Where(b => b.Tag == br.ToBus).ToList()[0];
+            //System.Diagnostics.Debug.WriteLine($"{br.Seq + 1}. Branch {br.Tag} : From {br.FromBus} ({BF.VR}V : Vb= {BF.Vb}) To {br.ToBus} ({BT.VR}V : Vb= {BT.Vb})  Y: ({br.Ypu.Real}, {br.Ypu.Imaginary})");
         }
 
         //
@@ -506,8 +607,8 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             ;
             //
             // sorting by Category (Swing Bus first)
-            buses.Sort((x, y) => x.Category.CompareTo(y.Category));
-            buses.OrderBy(x => x.Category);
+            buses.Sort((x, y) => x.IsSwing.CompareTo(y.IsSwing));
+            buses.OrderBy(x => x.IsSwing);
             //
             //
             //List<bool> visited = new() { };
@@ -563,13 +664,13 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
 
         //
         // public Load(string c, string t, string bt, Complex s, float v) v in kV, s in PU with Sb w/o voltage correction
-        // foreach (Load load in loads) { Loads.Add(new Load(load.Category, load.Tag, load.BfT, load.Scpu, load.VR, load.DR)); }
+        // foreach (Load load in loads) { Loads.Add(new Load(load.Category, load.Tag, load.FromBus, load.Scpu, load.VR, load.DR)); }
         Loads = JsonSerializer.Deserialize<List<Load>>(JsonSerializer.Serialize(loads, jsonOptions), jsonOptions);
         // Update PU value of S in complex w.r.t Sb
         Loads.ForEach(load => _layoutFunction.LoadUpdatePU(load));
         //
         // Prepare for Load Flow
-        Debug.WriteLine("\nStarting Load Flow.......\n");
+        Console.WriteLine("\nStarting Load Flow.......\n");
         //
         // carry out load flow for each of the independent networks / sources
 
@@ -582,7 +683,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             // assigning the network sequence to the source (swing) buses
             // 0: none network
             foreach (var bus in Buses)
-                if (bus.Category == "Swing")
+                if (bus.IsSwing)
                 {
                     bus.Network = Networks.Count + 1;
                     Networks.Add(Networks.Count + 1);
@@ -591,7 +692,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             ;
             // assigning the network sequence no to all the other buses based on the sequence no. of their correspondig source bus
             foreach (var bus in Buses)
-                if (bus.Category != "Swing")
+                if (!bus.IsSwing)
                 {
                     var sourceBusList = BusParentList.Where(b => b.B == bus.Tag).ToList();
                     // if busParentListCount is zero, i.e., bus is not listed in BusParentList, that means this bus is not connected to any network
@@ -610,7 +711,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             ;
             //
             List<List<string>> BusNetworks = new();
-            var swingSourceBuses = Buses.Where(bus => bus.Category == "Swing").ToList();
+            var swingSourceBuses = Buses.Where(bus => bus.IsSwing).ToList();
             foreach (var swingSourceBus in swingSourceBuses)
             {
                 if (!BusNetworks.Any(network => network.Contains(swingSourceBus.Tag)))
@@ -646,7 +747,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             }
         }
 
-        Buses = Buses.OrderBy(node => node.Network).ThenBy(node => node.SLDY).ThenBy(node => node.SwbdTag)
+        Buses = Buses.OrderBy(node => node.Network).ThenBy(node => node.SLDY).ThenBy(node => node.BoardTag)
             .ThenBy(node => node.Tag).ToList();
 
         // create the set of buses for each of the networks
@@ -670,10 +771,10 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
 
             foreach (var bus in LFBusesSet[i]) LFBuses.Add(bus);
             foreach (var branch in Branches)
-                if (LFBuses.Any(b => b.Tag == branch.BfT || b.Tag == branch.BtT))
+                if (LFBuses.Any(b => b.Tag == branch.FromBus || b.Tag == branch.ToBus))
                     LFBranches.Add(branch);
             foreach (var load in Loads)
-                if (LFBuses.Any(b => b.Tag == load.BfT))
+                if (LFBuses.Any(b => b.Tag == load.ConnectedBus))
                     LFLoads.Add(load);
             //
             var lfResult = DoLoadFlow(_globalData.IterationLF, _globalData.PrecisionLF, LFBuses, LFBranches, LFLoads,
@@ -736,22 +837,22 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             //
             // Branch Data for Short Circuit
             foreach (var branch in Branches)
-                if (SCBuses.Any(b => b.Tag == branch.BfT || b.Tag == branch.BtT))
+                if (SCBuses.Any(b => b.Tag == branch.FromBus || b.Tag == branch.ToBus))
                     SCBranches.Add(branch);
             foreach (var load in Loads)
-                if (SCBuses.Any(b => b.Tag == load.BfT))
+                if (SCBuses.Any(b => b.Tag == load.ConnectedBus))
                     SCLoads.Add(load);
 
             // Create Dummy Bus and corresponding dummy branch for all Swing Buses
             // the new bus becomes the "Swing" bus whereas the original bus becomes the "" unknown bus
             List<string> swingBusList = new List<string>();
             foreach (var bus in SCBuses)
-                if (bus.Category == "Swing")
+                if (bus.IsSwing)
                     swingBusList.Add(bus.Tag);
             foreach (var busT in swingBusList)
             {
                 var bus = SCBuses.Where(b => b.Tag == busT).ToList()[0];
-                bus.Category = "";
+                bus.IsSwing = false;
 
                 // Bus Short Circuit in kA , Zsc in Ohm
                 var Zsc = bus.VR / (Math.Pow(3, 0.5) * bus.ISC * 1000) *
@@ -761,7 +862,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
 
                 var newBus = new Bus
                 {
-                    Category = "Swing",
+                    IsSwing = true,
                     Tag = bus.Tag + "-Dummy",
                     Vb = bus.VR,
                     SC = bus.SC,
@@ -775,61 +876,61 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
                 newBus.Vb = bus.Vb;
                 SCBuses.Add(newBus);
                 bus.Cn.Add(newBus.Tag);
-                var display = $"New bus '{newBus.Tag}' ({newBus.VR}V) is created with category '{newBus.Category}'. " +
-                              $"Existing '{bus.Tag}' source bus becomes category '{bus.Category}' and will have connections '{string.Join(",", bus.Cn)}'";
+                var display = $"New bus '{newBus.Tag}' ({newBus.VR}V) is created with category '{(newBus.IsSwing?"Swing":"")}'. " +
+                              $"Existing '{bus.Tag}' source bus becomes category '{(newBus.IsSwing?"Swing":"")}' and will have connections '{string.Join(",", bus.Cn)}'";
                 //System.Diagnostics.Debug.WriteLine(display);
 
                 SCBranches.Add(new Branch("Source", bus.Tag + "-Imp", newBus.Tag, bus.Tag, Zb / Zsc));
                 var newBranch = SCBranches.Where(br => br.Tag == bus.Tag + "-Imp").ToList()[0];
                 display =
-                    $"{swingBusList.IndexOf(busT) + 1}: New created Branch: {newBranch.Tag} is created whihch connects between '{newBranch.BfT}' and "
-                    + $"'{newBranch.BtT}' with Y ({Math.Round(newBranch.Ypu.Real, 5)}, {Math.Round(newBranch.Ypu.Imaginary, 5)}) pu";
+                    $"{swingBusList.IndexOf(busT) + 1}: New created Branch: {newBranch.Tag} is created whihch connects between '{newBranch.FromBus}' and "
+                    + $"'{newBranch.ToBus}' with Y ({Math.Round(newBranch.Ypu.Real, 5)}, {Math.Round(newBranch.Ypu.Imaginary, 5)}) pu";
                 //System.Diagnostics.Debug.WriteLine(display);
             }
 
             //
             // Load Data for Short Circuit
             SCLoads.Clear();
-            foreach (var motor in loads.Where(load => load.Category == "Motor").ToList())
-                if (SCBuses.Any(b => b.Tag == motor.BfT))
+            foreach (var motor in loads.Where(load => load.LoadType == "Motor").ToList())
+                if (SCBuses.Any(b => b.Tag == motor.ConnectedBus))
                 {
                     var busNbranch = DummyBusnBranch(motor, SCBuses, SCBranches);
                     var newBus = busNbranch.Item1;
                     var newBranch = busNbranch.Item2;
                     SCBuses.Add(newBus);
                     SCBranches.Add(newBranch);
-                    SCBuses.Where(bus => bus.Tag == motor.BfT).ToList()[0].Cn.Add(newBus.Tag);
+                    SCBuses.Where(bus => bus.Tag == motor.ConnectedBus).ToList()[0].Cn.Add(newBus.Tag);
                 }
 
             // No SC contribution for Static Loads (Heaters, Capacitors, etc.)
             // however, would continue to draw power
             if (_globalData.LoadContribution)
-                foreach (var heater in loads.Where(load => load.Category == "Heater").ToList())
-                    if (SCBuses.Any(b => b.Tag == heater.BfT))
-                        SCLoads.Add(new Load(heater.Category, heater.Tag, heater.BfT, heater.Scpu, heater.VR, 1));
+                foreach (var heater in loads.Where(load => load.LoadType == "Heater").ToList())
+                    if (SCBuses.Any(b => b.Tag == heater.ConnectedBus))
+                        SCLoads.Add(new Load(heater.LoadType, heater.Tag, heater.ConnectedBus, heater.Scpu, heater.VR, 1));
 
             if (_globalData.LoadContribution)
-                foreach (var capacitor in loads.Where(load => load.Category == "Capacitor").ToList())
-                    if (SCBuses.Any(b => b.Tag == capacitor.BfT))
-                        SCLoads.Add(new Load(capacitor.Category, capacitor.Tag, capacitor.BfT, capacitor.Scpu,
+                foreach (var capacitor in loads.Where(load => load.LoadType == "Capacitor").ToList())
+                    if (SCBuses.Any(b => b.Tag == capacitor.ConnectedBus))
+                        SCLoads.Add(new Load(capacitor.LoadType, capacitor.Tag, capacitor.ConnectedBus, capacitor.Scpu,
                             capacitor.VR, 1));
 
-            foreach (var lumpLoad in loads.Where(load => load.Category == "LumpLoad").ToList())
-                if (SCBuses.Any(b => b.Tag == lumpLoad.BfT))
+            foreach (var lumpLoad in loads.Where(load => load.LoadType == "LumpLoad").ToList())
+                if (SCBuses.Any(b => b.Tag == lumpLoad.ConnectedBus))
                 {
                     //constant Z part
                     if (_globalData.LoadContribution)
-                        SCLoads.Add(new Load(lumpLoad.Category, lumpLoad.Tag, lumpLoad.BfT, lumpLoad.Scpu, lumpLoad.VR,
+                        SCLoads.Add(new Load(lumpLoad.LoadType, lumpLoad.Tag, lumpLoad.ConnectedBus, lumpLoad.Scpu, lumpLoad.VR,
                             1));
                     //constant kVA (motor) part
                     // creating new swing bus for SC contribution
-                    //DummyBusnBranch(lumpLoad.Tag + "-FXkVA", lumpLoad.BfT, (1 - lumpLoad.DR) * lumpLoad.S, lumpLoad.Ist, lumpLoad.Pfst, SCBuses, SCBranches);
+                    //DummyBusnBranch(lumpLoad.Tag + "-FXkVA", lumpLoad.FromBus, (1 - lumpLoad.DR) * lumpLoad.S, lumpLoad.Ist, lumpLoad.Pfst, SCBuses, SCBranches);
                     var busNbranch = DummyBusnBranch(lumpLoad, SCBuses, SCBranches);
                     var newBus = busNbranch.Item1;
                     var newBranch = busNbranch.Item2;
                     SCBuses.Add(newBus);
                     SCBranches.Add(newBranch);
-                    SCBuses.Where(bus => bus.Tag == lumpLoad.BfT).ToList()[0].Cn.Add(newBus.Tag);
+                    SCBuses.Where(bus => bus.Tag == lumpLoad.ConnectedBus).ToList()[0].Cn.Add(newBus.Tag);
                 }
             //
 
@@ -860,7 +961,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         for (var i = 0; i < buses.Count; i++)
         {
             //assign BusParent relationship for only Slack Bus, exit for "Swing" bus
-            if (buses[i].Category != "Swing") continue;
+            if (!buses[i].IsSwing) continue;
             //
             if (busParentList.Where(b => b.B == buses[i].Tag).ToList().Count == 0)
                 busParentList.Add(new BusParent(buses[i].Tag, buses[i].Tag,
@@ -909,7 +1010,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
                         busParentList.Add(new BusParent(cn, p.Tag, temp.Count == 1 ? temp[0].S : null));
                     // assign base voltage for this branch
                     var BRtemplist = branches
-                        .Where(br => (br.BfT == p.Tag && br.BtT == cn) || (br.BtT == p.Tag && br.BfT == cn)).ToList();
+                        .Where(br => (br.FromBus == p.Tag && br.ToBus == cn) || (br.ToBus == p.Tag && br.FromBus == cn)).ToList();
                     if (BRtemplist.Count != 1)
                     {
                         
@@ -927,8 +1028,8 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
                         {
                             var TR = transformers.Where(tr => tr.Tag == BR.Tag).ToList()[0];
                             float V1, V2;
-                            V1 = TR.BfT == p.Tag ? TR.V1 : TR.V2;
-                            V2 = TR.BtT == p.Tag ? TR.V1 : TR.V2;
+                            V1 = TR.FromBus == p.Tag ? TR.V1 : TR.V2;
+                            V2 = TR.ToBus == p.Tag ? TR.V1 : TR.V2;
                             buscn.Vb = p.Vb * V2 / V1;
                         }
                     }
@@ -947,7 +1048,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         // the new "dummy" bus becomes "Swing" bus
         // input is the load and Bus & Branch list
 
-        var connectedBus = buses.Where(b => b.Tag == load.BfT).ToList()[0];
+        var connectedBus = buses.Where(b => b.Tag == load.ConnectedBus).ToList()[0];
 
         var loadTag = load.Tag;
 
@@ -964,7 +1065,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         //            
         var newBus = new Bus
         {
-            Category = "Swing",
+            IsSwing = true,
             Tag = loadTag + "-Dummy",
             Vb = connectedBus.VR,
             SC = connectedBus.SC,
@@ -976,18 +1077,18 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         newBus.Cn.Add(connectedBus.Tag);
         newBus.Vb = connectedBus.Vb;
 
-        var newBranch = new Branch(load.Category, loadTag + "-Imp", connectedBus.Tag, newBus.Tag, Ypu);
+        var newBranch = new Branch(load.LoadType, loadTag + "-Imp", connectedBus.Tag, newBus.Tag, Ypu);
         newBranch.VR = connectedBus.VR;
         newBranch.Vb = connectedBus.Vb;
         //
         var display =
-            $"New bus '{newBus.Tag}' ({newBus.VR}V) catogory '{newBus.Category}' for  {load.Category} tag '{load.Tag}' "
-            + $"with new branch '{newBranch.Tag}' between '{newBranch.BfT}' and '{newBranch.BtT}' of Y ({newBranch.Ypu})";
+            $"New bus '{newBus.Tag}' ({newBus.VR}V) category '{(newBus.IsSwing?"Swing":"")}' for  {load.LoadType} tag '{load.Tag}' "
+            + $"with new branch '{newBranch.Tag}' between '{newBranch.FromBus}' and '{newBranch.ToBus}' of Y ({newBranch.Ypu})";
 
 
         //System.Diagnostics.Debug.WriteLine(display);
 
-        //System.Diagnostics.Debug.WriteLine($"New created Branch: {newBranch.Tag} is connected between {newBranch.BfT} and {newBranch.BtT} "
+        //System.Diagnostics.Debug.WriteLine($"New created Branch: {newBranch.Tag} is connected between {newBranch.FromBus} and {newBranch.ToBus} "
         //    + $" with Y ({Math.Round(newBranch.Y.Real, 5)}, {Math.Round(newBranch.Y.Imaginary, 5)})");
 
         return new Tuple<Bus, Branch>(newBus, newBranch);
@@ -1092,7 +1193,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
                 try
                 {
                     b1.Ybb = b1.Ybb + branchesLf.Where(branch =>
-                            (branch.BfT == b1.Tag && branch.BtT == b2T) || (branch.BfT == b2T && branch.BtT == b1.Tag))
+                            (branch.FromBus == b1.Tag && branch.ToBus == b2T) || (branch.FromBus == b2T && branch.ToBus == b1.Tag))
                         .ToList()[0].Ypu;
                 }
                 catch (Exception e)
@@ -1113,11 +1214,11 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             // iterate for the remaining bus
             foreach (var bus in busesLf)
             {
-                if (bus.Category == "Swing" || (studyType == "SC" && bus.Tag == scBusTag)) continue;
+                if (bus.IsSwing || (studyType == "SC" && bus.Tag == scBusTag)) continue;
                 //adjusting the VA as per bus voltages
                 List<Load> BLoads = new List<Load>();
                 // listing all the loads which are connected to this bus
-                BLoads = loadsLf.Where(load => load.BfT == bus.Tag).ToList();
+                BLoads = loadsLf.Where(load => load.ConnectedBus == bus.Tag).ToList();
                 bus.Sit = new Complex(0, 0); // initialised
                 foreach (var load in BLoads)
                 {
@@ -1136,8 +1237,8 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
                 foreach (var b1T in bus.Cn)
                 {
                     var BBList = branchesLf.Where(branch =>
-                            (branch.BfT == bus.Tag && branch.BtT == b1T) ||
-                            (branch.BtT == bus.Tag && branch.BfT == b1T))
+                            (branch.FromBus == bus.Tag && branch.ToBus == b1T) ||
+                            (branch.ToBus == bus.Tag && branch.FromBus == b1T))
                         .ToList();
                     if (BBList.Count > 0)
                     {
@@ -1201,7 +1302,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
                         foreach (var busT in busesLf.Where(b => b.Tag == scBusTag).ToList()[0].Cn)
                         {
                             var bus = busesLf.Where(b => b.Tag == busT).ToList()[0];
-                            if (bus.Category == "Swing") continue;
+                            if (bus.IsSwing) continue;
                             if ((bus.Vit - bus.Vo).Magnitude / bus.Vit.Magnitude > precision &&
                                 bus.Vit.Magnitude > 0.0000001) stopIteration = false;
                             bus.Vo = bus.Vit; // updatig the operating voltage to only the connected bus to the SC Bus
@@ -1280,11 +1381,11 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             var br = branchesLf[i];
             var branchToUpdate = branches.Find(b => b.Tag == br.Tag);
 
-            var BF = busesLf.Find(b => b.Tag == br.BfT);
-            var BT = busesLf.Find(b => b.Tag == br.BtT);
+            var BF = busesLf.Find(b => b.Tag == br.FromBus);
+            var BT = busesLf.Find(b => b.Tag == br.ToBus);
             var In = (BF.Vo - BT.Vo) * br.Ypu; // pu current direction BF to BT
-            var Ibf = 1000000 * _globalData.Sb / (Math.Pow(3, 0.5) * BF.Vb); // A at BfT node
-            var Ibt = 1000000 * _globalData.Sb / (Math.Pow(3, 0.5) * BT.Vb); // A at BtT node
+            var Ibf = 1000000 * _globalData.Sb / (Math.Pow(3, 0.5) * BF.Vb); // A at FromBus node
+            var Ibt = 1000000 * _globalData.Sb / (Math.Pow(3, 0.5) * BT.Vb); // A at ToBus node
             var Sn1 = BF.Vo * Complex.Conjugate(In); // pu
             var Sn2 = BT.Vo * Complex.Conjugate(In); // pu
             var Loss = (BF.Vo - BT.Vo) * Complex.Conjugate(In); // pu
@@ -1323,12 +1424,12 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         Debug.WriteLine(" ");
         //
         // arrange Branches network wise
-        branches = branches.OrderBy(branch => buses.Where(bus => bus.Tag == branch.BfT).ToList()[0].Network).ToList();
+        branches = branches.OrderBy(branch => buses.Where(bus => bus.Tag == branch.FromBus).ToList()[0].Network).ToList();
         for (var i = 0; i < branches.Count; i++)
         {
             var br = branches[i];
-            var BF = buses.Where(b => b.Tag == br.BfT).ToList()[0];
-            var BT = buses.Where(b => b.Tag == br.BtT).ToList()[0];
+            var BF = buses.Where(b => b.Tag == br.FromBus).ToList()[0];
+            var BT = buses.Where(b => b.Tag == br.ToBus).ToList()[0];
             var In = (BF.Vo - BT.Vo) * br.Ypu;
             var Ibf = 1000 * _globalData.Sb / (Math.Pow(3, 0.5) * BF.Vb); // A
             var Ibt = 1000 * _globalData.Sb / (Math.Pow(3, 0.5) * BT.Vb); // A
@@ -1363,8 +1464,8 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         //for (int i = 0; i < BranchesLF.Count; i++)
         //{
         //    Branch br = BranchesLF[i];
-        //    Bus BF = BusesLF.Where(b => b.Tag == br.BfT).ToList()[0];
-        //    Bus BT = BusesLF.Where(b => b.Tag == br.BtT).ToList()[0];
+        //    Bus BF = BusesLF.Where(b => b.Tag == br.FromBus).ToList()[0];
+        //    Bus BT = BusesLF.Where(b => b.Tag == br.ToBus).ToList()[0];
         //    Complex In = (BF.Vo - BT.Vo) * br.Ypu;
         //    var Ibf = 1000 * GlobalData.Sb / (Math.Pow(3, 0.5) * BF.Vb);   // A
         //    var Ibt = 1000 * GlobalData.Sb / (Math.Pow(3, 0.5) * BT.Vb);   // A
@@ -1401,10 +1502,10 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         var Ib = 1000000 * _globalData.Sb / (Math.Pow(3, 0.5) * faultyBus.Vb); // A
         var dispString = "";
         foreach (var br in branchesSc)
-            if (br.BfT == faultyBusTag || br.BtT == faultyBusTag)
+            if (br.FromBus == faultyBusTag || br.ToBus == faultyBusTag)
             {
                 var I = new Complex(0, 0);
-                var otherBus = busesSc.Where(b => b.Tag == (br.BfT == faultyBusTag ? br.BtT : br.BfT)).ToList()[0];
+                var otherBus = busesSc.Where(b => b.Tag == (br.FromBus == faultyBusTag ? br.ToBus : br.FromBus)).ToList()[0];
                 if ((otherBus.Vo - faultyBus.Vo).Magnitude > 0.00001)
                     I = faultyBus.VR / faultyBus.Vb * (otherBus.Vo - faultyBus.Vo) *
                         br.Ypu; // later : no basis to multiply (faultyBus.V/ faultyBus.Vb)
@@ -1431,16 +1532,16 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
         // store result to save to the database
         StudyResultSCBus.Add(JsonSerializer.Deserialize<Bus>(JsonSerializer.Serialize(faultyBus, jsonOptions), jsonOptions));
         // add only results of those connected branches which are contrubiting to this 
-        // faulty bus to be made as BusTo (BtT) and the other end buses as BusFrom (BfT)
+        // faulty bus to be made as BusTo (ToBus) and the other end buses as BusFrom (FromBus)
         branchesSc.ForEach(scResultBranch =>
         {
-            if (scResultBranch.BfT == faultyBus.Tag || scResultBranch.BtT == faultyBus.Tag)
+            if (scResultBranch.FromBus == faultyBus.Tag || scResultBranch.ToBus == faultyBus.Tag)
             {
-                if (scResultBranch.BfT == faultyBus.Tag)
+                if (scResultBranch.FromBus == faultyBus.Tag)
                 {
-                    var tempswap = scResultBranch.BfT;
-                    scResultBranch.BfT = scResultBranch.BtT;
-                    scResultBranch.BtT = tempswap;
+                    var tempswap = scResultBranch.FromBus;
+                    scResultBranch.FromBus = scResultBranch.ToBus;
+                    scResultBranch.ToBus = tempswap;
                 }
 
                 StudyResultSCBranch.Add(
@@ -1478,7 +1579,7 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             //Bus faultyBus = SCBuses1[ib];
             //skip SC study for the dummy created bus
             // doing SC for only one tag due to long time iteration.
-            if (scBuses1[ib].Category != "Swing")
+            if (!scBuses1[ib].IsSwing)
             {
                 var SCBuses11 = JsonSerializer.Deserialize<List<Bus>>(JsonSerializer.Serialize(scBuses1, jsonOptions), jsonOptions);
                 var faultyBus = SCBuses11[ib];

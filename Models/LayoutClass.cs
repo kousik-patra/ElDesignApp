@@ -1918,7 +1918,7 @@ public class Board : BaseInfo, ICloneable
     public string PanelPositionS { get; set; } // for debug only
     public string ColourString { get; set; }
     public List<string> Bus { get; set; } // Tag of bus sections for SLD
-    public string BusS { get; set; } // JSON string of Tag buses
+    // public string BusS { get; set; } // JSON string of Tag buses Board Tags are stored in Bus table
     public string UpdatedBy { get; set; }
     public DateTime UpdatedOn { get; set; }
 
@@ -1936,13 +1936,6 @@ public class Board : BaseInfo, ICloneable
                 jsonSerializerOption);
         return board;
     }
-
-    public void UpdateDateTime()
-    {
-        UpdatedBy = "KP";
-        UpdatedOn = DateTime.UtcNow;
-    }
-    
 }
 
 public class Equipment : BaseInfo, IBaseMethod
@@ -1963,12 +1956,7 @@ public class Equipment : BaseInfo, IBaseMethod
     public Vector3 CentrePoint { get; set; }
     public Vector3 Face { get; set; }
     public List<string> AliasTags { get; set; }
-
-    public void UpdateDateTime()
-    {
-        UpdatedBy = "KP";
-        UpdatedOn = DateTime.UtcNow;
-    }
+    
     public void Update()
     {
         // TODO: Add the actual implementation logic for updating an Equipment object here or in a separate method.

@@ -2,6 +2,41 @@
 
 export {drawSLD, updateSLD, updateSLDItem, updateSLDWithStudyResults}
 
+
+const CONFIG = {
+    DEFAULT_FONT_SIZE: 10,
+    PORT_RADIUS: 3,
+    GRID_SIZE: 5,
+    STROKE_WIDTH: 2,
+    BATCH_SIZE: 10,
+    MAX_OVERLAP_ITERATIONS: 100,
+    OVERLAP_SPACING: 20
+};
+
+
+async function safeInvokeAsync(dotNetObj, methodName, ...args) {
+    if (!dotNetObj) {
+        throw new Error('DotNet object reference is null');
+    }
+
+    try {
+        return await dotNetObj.invokeMethodAsync(methodName, ...args);
+    } catch (error) {
+        console.error(`Error invoking ${methodName}:`, error);
+        throw error;
+    }
+}
+
+function sanitizeText(text) {
+    if (typeof text !== 'string') return String(text);
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 var dotNetObjDraw;
 var dotNetObjSLD;
 var graph, paper;
@@ -15,8 +50,9 @@ var propertyButton = new elementTools.Button({
     x: '0%',
     y: '50%',
     offset: {x: 10, y: 0},
-    action: function (evt) {
-        if (dotNetObjSLD) dotNetObjSLD.invokeMethodAsync('PropertyUpdate', this.model.tag, this.model.type);
+    action: function (evt) { 
+        safeInvokeAsync(dotNetObjSLD, 'PropertyUpdate', this.model.tag, this.model.type)
+            .then(r => console.log(r)) ;
     },
     markup: [{
         tagName: 'circle',
@@ -122,16 +158,25 @@ var validateButton = new linkTools.Button({
 });
 
 
-function updateSLD() {
+async function updateSLD() {
     console.log("Client side Update SLD");
     var allChildren = graph.getElements();
-    console.log(`Graph has ${allChildren.length} children. sldComponents has ${sldComponentsJS.length} items.`);
-    for (let i = 0; i < sldComponentsJS.length; i += 10) {
-        var sldComponentsString = JSON.stringify(sldComponentsJS.slice(i, Math.min(sldComponentsJS.length, i + 9)));
-        //sldComponentsString = "";
-        if (dotNetObjSLD) dotNetObjSLD.invokeMethodAsync('SLDComponentUpdate', sldComponentsString);
-    }
+    //console.log(`Graph has ${allChildren.length} children. sldComponents has ${sldComponentsJS.length} items.`);
+    
+    const componentsCopy = [...sldComponentsJS];
     sldComponentsJS = [];
+
+    for (let i = 0; i < componentsCopy.length; i += 10) {
+        const batch = componentsCopy.slice(i, Math.min(componentsCopy.length, i + 10));
+        const componentsString = JSON.stringify(batch);
+
+        try {
+            await safeInvokeAsync(
+                dotNetObjSLD, 'SLDComponentUpdate', componentsString);
+        } catch (e) {
+            console.error('Error updating SLD components:', e);
+        }
+    }
 }
 
 
@@ -251,7 +296,28 @@ function updateSLDWithStudyResults(busesString, switchboardString, switchString,
 
 }
 
-
+/**
+ * Draws the Single Line Diagram
+ * @param {string} divString - ID of the container div
+ * @param {number} xGridSize - Width of the grid
+ * @param {number} yGridSize - Height of the grid
+ * @param {number} leftSpacing - Left spacing
+ * @param {number} topSpacing - Top spacing
+ * @param {number} xGridSpacing - X grid spacing
+ * @param {number} yGridSpacing - Y grid spacing
+ * @param {string} busesString - JSON string of buses
+ * @param {string} switchboardString - JSON string of switchboards
+ * @param {string} branchesString - JSON string of branches
+ * @param {string} loadsString - JSON string of loads
+ * @param {string} transformersString - JSON string of transformers
+ * @param {string} cablesString - JSON string of cables
+ * @param {string} busDuctsString - JSON string of bus ducts
+ * @param {string} xyString - JSON string of XY coordinates
+ * @param {string} sldComponentsString - JSON string of SLD components
+ * @param {*} dotNetObjRef - .NET object reference for drawing
+ * @param {*} dotNetObjSLDRef - .NET object reference for SLD
+ * @returns {void}
+ */
 function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGridSpacing, yGridSpacing,
                  busesString, switchboardString, branchesString, loadsString, transformersString, cablesString,
                  busDuctsString, xyString, sldComponentsString, dotNetObjRef, dotNetObjSLDRef) {
@@ -288,7 +354,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                         markup: [{tagName: 'text', selector: 'label'}]
                     },
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'orange', stroke: '#023047'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
                         label: {text: '1', fontSize: 8}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -344,7 +410,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                 'in': {
                     position: {name: 'absolute', args: {x: '50%', y: 0}},
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'orange', stroke: '#023047'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
                         label: {text: '1', fontSize: 8}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -382,7 +448,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                         markup: [{tagName: 'text', selector: 'label'}]
                     },
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'orange', stroke: '#023047'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
                         label: {text: '1', fontSize: 8}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -390,7 +456,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                 //'out': {
                 //    position: { name: 'absolute', args: { x: '50%', y: 2 } },
                 //    label: { position: { name: 'right', args: { x: 10, y: 5 } }, markup: [{ tagName: 'text', selector: 'label' }] },
-                //    attrs: { portBody: { magnet: true, r: 3, fill: '#E6A502', stroke: '#023047' }, label: { text: 'to', fontSize: 8, } },
+                //    attrs: { portBody: { magnet: true, r: CONFIG.PORT_RADIUS, fill: '#E6A502', stroke: '#023047' }, label: { text: 'to', fontSize: 8, } },
                 //    markup: [{ tagName: 'circle', selector: 'portBody' }],
                 //}
             },
@@ -485,7 +551,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                 'in': {
                     position: {ref: 'body', name: 'absolute', args: {x: '0%', y: -10}},
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'orange', stroke: '#023047'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
                         label: {text: '1', fontSize: 8}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -525,7 +591,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                         markup: [{tagName: 'text', selector: 'label'}]
                     },
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'orange', stroke: '#023047'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
                         label: {text: '1', fontSize: 8}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -584,7 +650,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                     position: {name: 'left', args: {y: -22}},
                     label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'orange', stroke: 'black'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: 'black'},
                         label: {text: 'from', fontSize: 8}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -593,7 +659,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                     position: {name: 'left', args: {y: 37}},
                     label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'orange', stroke: 'black'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: 'black'},
                         label: {text: 'to', fontSize: 8,}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -630,7 +696,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                     position: {name: 'left', args: {y: '-50%'}},
                     label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'white', stroke: 'black'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'white', stroke: 'black'},
                         label: {text: 'from', fontSize: 8}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -639,7 +705,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                     position: {name: 'left', args: {y: '50%'}},
                     label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'white', stroke: 'black'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'white', stroke: 'black'},
                         label: {text: 'to', fontSize: 8,}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -682,7 +748,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                     position: {name: 'left', args: {x: 5, y: -25}},
                     label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'orange', stroke: '#023047'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
                         label: {text: 'from', fontSize: 8}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -691,7 +757,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                     position: {name: 'left', args: {x: 5, y: 32}}, // size 10x60
                     label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: '#E6A502', stroke: '#023047'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: '#E6A502', stroke: '#023047'},
                         label: {text: 'to', fontSize: 8,}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -733,7 +799,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                 'in': {
                     position: {ref: 'body', name: 'absolute', args: {x: '0%', y: -10}},
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'orange', stroke: '#023047'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
                         label: {text: '1', fontSize: 8}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -777,7 +843,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                 'in': {
                     position: {ref: 'body', name: 'absolute', args: {x: '0%', y: -10}},
                     attrs: {
-                        portBody: {magnet: true, r: 3, fill: 'orange', stroke: '#023047'},
+                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
                         label: {text: '1', fontSize: 8}
                     },
                     markup: [{tagName: 'circle', selector: 'portBody'}],
@@ -823,15 +889,41 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
     dotNetObjDraw = dotNetObjRef;
     dotNetObjSLD = dotNetObjSLDRef;
 
-    let buses = JSON.parse(busesString);
-    let branches = JSON.parse(branchesString);
-    let loads = JSON.parse(loadsString);
-    let transformers = JSON.parse(transformersString);
-    let cables = JSON.parse(cablesString);
-    let busDucts = JSON.parse(busDuctsString);
-    let sldComponents = JSON.parse(sldComponentsString);
-    sldComponentsString1 = sldComponentsString;
-    let switchboards = JSON.parse(switchboardString);
+// Declare variables BEFORE try-catch
+    let buses, branches, loads, transformers, cables, busDucts, sldComponents, switchboards;
+
+    try {
+        buses = JSON.parse(busesString);
+        branches = JSON.parse(branchesString);
+        loads = JSON.parse(loadsString);
+        transformers = JSON.parse(transformersString);
+        cables = JSON.parse(cablesString);
+        busDucts = JSON.parse(busDuctsString);
+        sldComponents = JSON.parse(sldComponentsString);
+        sldComponentsString1 = sldComponentsString;
+        switchboards = JSON.parse(switchboardString);
+
+        buses = Array.isArray(buses) ? buses : [];
+        branches = Array.isArray(branches) ? branches : [];
+        loads = Array.isArray(loads) ? loads : [];
+        transformers = Array.isArray(transformers) ? transformers : [];
+        cables = Array.isArray(cables) ? cables : [];
+        busDucts = Array.isArray(busDucts) ? busDucts : [];
+        sldComponents = Array.isArray(sldComponents) ? sldComponents : [];
+        switchboards = Array.isArray(switchboards) ? switchboards : [];
+    } catch(e) {
+        console.error('Error parsing JSON parameters:', e);
+        // Initialize with empty arrays to prevent undefined errors
+        buses = [];
+        branches = [];
+        loads = [];
+        transformers = [];
+        cables = [];
+        busDucts = [];
+        sldComponents = [];
+        switchboards = [];
+        return; // Exit early if parsing fails
+    }
 
     //var xy = JSON.parse(xyString);
     //console.log("hello" + JSON.stringify(buses));
@@ -873,8 +965,8 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
                 line: {
                     stroke: '#000000', // Ensure the line is visible with a color
                     strokeWidth: 2, // Adjust stroke width as needed
-                    sourceMarker: {type: 'circle', r: 3, fill: 'yellow'},
-                    targetMarker: {type: 'circle', r: 3, fill: 'green'}
+                    sourceMarker: {type: 'circle', r: CONFIG.PORT_RADIUS, fill: 'yellow'},
+                    targetMarker: {type: 'circle', r: CONFIG.PORT_RADIUS, fill: 'green'}
                 },
                 label: {
                     textAnchor: 'middle', // Center the text horizontally
@@ -1263,64 +1355,206 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
 
 
     // delete items
+    // buses.forEach((bus, index) => {
+    //
+    //     if (bus.Category === "Swing") {
+    //         // grid            
+    //         busesElement[index] = new GridElement;
+    //         busesElement[index].type = "swing";
+    //         busesElement[index].tag = bus.Tag;
+    //         busesElement[index].clicked = false;
+    //         busesElement[index].position(bus.CordX, bus.CordY);
+    //         busesElement[index].resize(40, 40);
+    //
+    //         //busesElement[index] = updateBus(busesElement[index], bus);
+    //
+    //
+    //         busesElement[index].attr({
+    //             label: {text: "Grid" + bus.Tag},
+    //             ratedSC: {text: Math.round(10 * bus.ISC) / 10 + "kA"},
+    //             ratedVoltage: {text: bus.VR / 1000 + "kV"},
+    //             busFaultkA: {text: Math.round(10 * bus.SCkAaMax) / 10 + "kA"},
+    //             operatingVoltage: {text: Math.round(10000 * bus.Vo.Magnitude) / 100 + "% ∠" + Math.round(bus.Vo.Phase * 1800 / Math.PI) / 10 + "°"}
+    //         });
+    //         busesElement[index].addTo(graph);
+    //
+    //     } else {
+    //         // for node, the bus line and parameter display is off
+    //         // other bus
+    //         // one way to draw the bus by "Expanding parent area to cover its children"
+    //         // where children are at both ends
+    //         // another was is to draw two edge and draw a link as the bus
+    //         // in this way all the links can be perpendicular to the bus bar (link)
+    //
+    //         busesElement.push(new BusElement({
+    //             position: {x: bus.CordX - bus.Length / 2, y: bus.CordY},
+    //             // Width represents the length of the line
+    //             size: {width: bus.Length, height: 0},
+    //             attrs: {
+    //                 body: {x1: 0, y1: 0, x2: bus.Length, y2: 0},
+    //                 label: {text: bus.Tag},
+    //                 ratedSC: {text: Math.round(10 * bus.ISC) / 10 + "kA"},
+    //                 ratedVoltage: {text: bus.VR / 1000 + "kV"},
+    //                 busFault: {text: Math.round(10 * bus.SCkAaMax) / 10 + "kA"},
+    //                 operatingVoltage: {text: Math.round(10000 * bus.Vo.Magnitude) / 100 + "% ∠" + Math.round(bus.Vo.Phase * 1800 / Math.PI) / 10 + "°"}
+    //             }
+    //         }));
+    //
+    //         //busesElement.at(-1) = updateBus(busesElement.at(-1), bus);
+    //
+    //         busesElement.at(-1).type = "bus";
+    //         busesElement.at(-1).tag = bus.Tag;
+    //         busesElement.at(-1).clicked = false;
+    //         busesElement.at(-1).addTo(graph);
+    //     }
+    //
+    //     // check if exising server data has customised bus position and length for this bus
+    //     busesElement[index] = updatePositionLength(busesElement[index], sldComponents);
+    // });
+
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('🔍 DIAGNOSTIC: Analyzing buses data');
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('Total buses:', buses.length);
+    console.log('buses is array?', Array.isArray(buses));
+
+// Check each bus for missing/invalid data
+    buses.forEach((bus, index) => {
+        const issues = [];
+
+        if (!bus) {
+            console.error(`❌ Bus ${index}: NULL or UNDEFINED`);
+            return;
+        }
+
+        if (!bus.Tag) issues.push('Missing Tag');
+        if (!bus.Category) issues.push('Missing Category');
+        if (typeof bus.CordX !== 'number') issues.push(`Invalid CordX: ${bus.CordX}`);
+        if (typeof bus.CordY !== 'number') issues.push(`Invalid CordY: ${bus.CordY}`);
+        if (bus.Category !== 'Swing' && typeof bus.Length !== 'number') issues.push(`Invalid Length: ${bus.Length}`);
+        if (typeof bus.ISC !== 'number') issues.push(`Invalid ISC: ${bus.ISC}`);
+        if (typeof bus.VR !== 'number') issues.push(`Invalid VR: ${bus.VR}`);
+        if (typeof bus.SCkAaMax !== 'number') issues.push(`Invalid SCkAaMax: ${bus.SCkAaMax}`);
+        if (!bus.Vo) {
+            issues.push('Missing Vo object');
+        } else {
+            if (typeof bus.Vo.Magnitude !== 'number') issues.push(`Invalid Vo.Magnitude: ${bus.Vo.Magnitude}`);
+            if (typeof bus.Vo.Phase !== 'number') issues.push(`Invalid Vo.Phase: ${bus.Vo.Phase}`);
+        }
+
+        if (issues.length > 0) {
+            console.warn(`⚠️ Bus ${index} (${bus.Tag || 'NO TAG'}) has issues:`);
+            issues.forEach(issue => console.warn(`   - ${issue}`));
+        } else {
+            console.log(`✅ Bus ${index} (${bus.Tag}): All data valid`);
+        }
+    });
+
+    console.log('═══════════════════════════════════════════════════════');
+
 
 
     buses.forEach((bus, index) => {
 
-        if (bus.Category === "Swing") {
-            // grid            
+        // ✅ STEP 1: Validate bus data
+        if (!bus || !bus.Tag) {
+            console.warn(`⚠️ Skipping invalid bus at index ${index}:`, bus);
+            return; // Skip this bus
+        }
+
+        console.log(`Processing bus ${index}: ${bus.Tag} (${bus.Category || 'unknown'})`);
+
+        // ✅ STEP 2: Provide default values for missing properties
+        const cordX = typeof bus.CordX === 'number' ? bus.CordX : 0;
+        const cordY = typeof bus.CordY === 'number' ? bus.CordY : 0;
+        const length = typeof bus.Length === 'number' ? bus.Length : 100;
+        const isc = typeof bus.ISC === 'number' ? bus.ISC : 0;
+        const vr = typeof bus.VR === 'number' ? bus.VR : 0;
+        const sckAaMax = typeof bus.SCkAaMax === 'number' ? bus.SCkAaMax : 0;
+
+        // ✅ STEP 3: Create the appropriate bus element
+        if (bus.IsSwing) {
+            // Create grid element
             busesElement[index] = new GridElement;
             busesElement[index].type = "swing";
             busesElement[index].tag = bus.Tag;
             busesElement[index].clicked = false;
-            busesElement[index].position(bus.CordX, bus.CordY);
+            busesElement[index].position(cordX, cordY);
             busesElement[index].resize(40, 40);
 
-            //busesElement[index] = updateBus(busesElement[index], bus);
-
+            // Safe voltage display
+            let operatingVoltage = "N/A";
+            if (bus.Vo && typeof bus.Vo.Magnitude === 'number' && typeof bus.Vo.Phase === 'number') {
+                const magnitude = Math.round(10000 * bus.Vo.Magnitude) / 100;
+                const phase = Math.round(bus.Vo.Phase * 1800 / Math.PI) / 10;
+                operatingVoltage = `${magnitude}% ∠${phase}°`;
+            }
 
             busesElement[index].attr({
                 label: {text: "Grid" + bus.Tag},
-                ratedSC: {text: Math.round(10 * bus.ISC) / 10 + "kA"},
-                ratedVoltage: {text: bus.VR / 1000 + "kV"},
-                busFaultkA: {text: Math.round(10 * bus.SCkAaMax) / 10 + "kA"},
-                operatingVoltage: {text: Math.round(10000 * bus.Vo.Magnitude) / 100 + "% ∠" + Math.round(bus.Vo.Phase * 1800 / Math.PI) / 10 + "°"}
+                ratedSC: {text: Math.round(10 * isc) / 10 + "kA"},
+                ratedVoltage: {text: vr / 1000 + "kV"},
+                busFaultkA: {text: Math.round(10 * sckAaMax) / 10 + "kA"},
+                operatingVoltage: {text: operatingVoltage}
             });
+
             busesElement[index].addTo(graph);
 
         } else {
-            // for node, the bus line and parameter display is off
-            // other bus
-            // one way to draw the bus by "Expanding parent area to cover its children"
-            // where children are at both ends
-            // another was is to draw two edge and draw a link as the bus
-            // in this way all the links can be perpendicular to the bus bar (link)
+            // Create bus element - ✅ CHANGED: Use [index] instead of .push()
 
-            busesElement.push(new BusElement({
-                position: {x: bus.CordX - bus.Length / 2, y: bus.CordY},
-                // Width represents the length of the line
-                size: {width: bus.Length, height: 0},
+            // Safe voltage display
+            let operatingVoltage = "N/A";
+            if (bus.Vo && typeof bus.Vo.Magnitude === 'number' && typeof bus.Vo.Phase === 'number') {
+                const magnitude = Math.round(10000 * bus.Vo.Magnitude) / 100;
+                const phase = Math.round(bus.Vo.Phase * 1800 / Math.PI) / 10;
+                operatingVoltage = `${magnitude}% ∠${phase}°`;
+            }
+
+            busesElement[index] = new BusElement({
+                position: {x: cordX - length / 2, y: cordY},
+                size: {width: length, height: 0},
                 attrs: {
-                    body: {x1: 0, y1: 0, x2: bus.Length, y2: 0},
+                    body: {x1: 0, y1: 0, x2: length, y2: 0},
                     label: {text: bus.Tag},
-                    ratedSC: {text: Math.round(10 * bus.ISC) / 10 + "kA"},
-                    ratedVoltage: {text: bus.VR / 1000 + "kV"},
-                    busFault: {text: Math.round(10 * bus.SCkAaMax) / 10 + "kA"},
-                    operatingVoltage: {text: Math.round(10000 * bus.Vo.Magnitude) / 100 + "% ∠" + Math.round(bus.Vo.Phase * 1800 / Math.PI) / 10 + "°"}
+                    ratedSC: {text: Math.round(10 * isc) / 10 + "kA"},
+                    ratedVoltage: {text: vr / 1000 + "kV"},
+                    busFault: {text: Math.round(10 * sckAaMax) / 10 + "kA"},
+                    operatingVoltage: {text: operatingVoltage}
                 }
-            }));
+            });
 
-            //busesElement.at(-1) = updateBus(busesElement.at(-1), bus);
-
-            busesElement.at(-1).type = "bus";
-            busesElement.at(-1).tag = bus.Tag;
-            busesElement.at(-1).clicked = false;
-            busesElement.at(-1).addTo(graph);
+            busesElement[index].type = "bus";
+            busesElement[index].tag = bus.Tag;
+            busesElement[index].clicked = false;
+            busesElement[index].addTo(graph);
         }
 
-        // check if exising server data has customised bus position and length for this bus
-        busesElement[index] = updatePositionLength(busesElement[index], sldComponents);
+        // ✅ STEP 4: Verify element was created
+        if (!busesElement[index]) {
+            console.error(`❌ ERROR: busesElement[${index}] is undefined after creation!`);
+            return; // Skip updatePositionLength
+        }
+
+        console.log(`✅ Created busesElement[${index}] successfully`);
+
+        // ✅ STEP 5: Safe update with position/length from server data
+        try {
+            const updatedElement = updatePositionLength(busesElement[index], sldComponents);
+
+            if (updatedElement) {
+                busesElement[index] = updatedElement;
+            } else {
+                console.warn(`⚠️ updatePositionLength returned null/undefined for bus ${bus.Tag}`);
+                // Keep the original element if update fails
+            }
+        } catch (e) {
+            console.error(`❌ Error updating position/length for bus ${bus.Tag}:`, e);
+            // Keep the original element if update fails
+        }
     });
+
+    console.log(`✅ Completed buses loop. Created ${busesElement.length} bus elements`);
 
     // toggle bus and node by double clicking
     paper.on('element:pointerdblclick', (elementView) => {
@@ -1477,7 +1711,6 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
 
 
     // switchboards
-
     switchboards.forEach((swbd, index) => {
         swbdElement[index] = new SwitchboardElement();
         swbdElement[index].type = "swbd";
@@ -1514,9 +1747,10 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         return swbdModel;
     }
 
+    
     branches.forEach((branch, index) => {
-        var sourceBus = buses.find(bus => bus.Tag == branch.BfT);
-        var targetBus = buses.find(bus => bus.Tag == branch.BtT);
+        var sourceBus = buses.find(bus => bus.Tag == branch.FromBus);
+        var targetBus = buses.find(bus => bus.Tag == branch.ToBus);
         var sourceBusNode = busesNodeElement.find(item => item.tag == `${sourceBus.Tag}_${branch.Tag}`);
         var targetBusNode = busesNodeElement.find(item => item.tag == `${targetBus.Tag}_${branch.Tag}`);
 
@@ -1595,8 +1829,8 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         // later it shall be distributed as per total connection
 
 
-        var sourceBusElement = busesElement.find(item => item.tag == branch.BfT);
-        var targetBusElement = busesElement.find(item => item.tag == branch.BtT);
+        var sourceBusElement = busesElement.find(item => item.tag == branch.FromBus);
+        var targetBusElement = busesElement.find(item => item.tag == branch.ToBus);
         var thisbranchElement = branchElement.find(item => item.tag == branch.Tag);
 
         fromLink.set({
@@ -1872,7 +2106,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
     //loads.forEach(load => {
     //    var i = loads.indexOf(load);
     //    var connectedBus = buses.filter(bus => bus.T == load.BT)[0];
-    //    var connectedBranchList = branches.filter(br => br.BtT == connectedBus.T || br.BfT == connectedBus.T);
+    //    var connectedBranchList = branches.filter(br => br.ToBus == connectedBus.T || br.FromBus == connectedBus.T);
     //    var connectedBranch = connectedBranchList[0];
     //    var operatingPowerText = "";
     //    if (connectedBranchList.length > 0) { operatingPowerText = Math.round(10 * connectedBranch.KW) / 10 + "KW " + Math.round(10 * connectedBranch.KVAR) / 10 + "kVAR"; }
@@ -2009,14 +2243,14 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
 
     //var portsIn = {
     //    position: { name: 'top' },
-    //    attrs: { portBody: { magnet: true, r: 3, fill: '#023047', stroke: '#023047' } },
+    //    attrs: { portBody: { magnet: true, r: CONFIG.PORT_RADIUS, fill: '#023047', stroke: '#023047' } },
     //    label: { position: { name: 'top', args: { y: 2 } }, markup: [{ tagName: 'text', selector: 'label', className: 'label-text' }] },
     //    markup: [{ tagName: 'circle', selector: 'portBody' }]
     //};
 
     //var portsOut = {
     //    position: { name: 'bottom' },
-    //    attrs: { portBody: { magnet: true, r: 3, fill: '#E6A502', stroke: '#023047' } },
+    //    attrs: { portBody: { magnet: true, r: CONFIG.PORT_RADIUS, fill: '#E6A502', stroke: '#023047' } },
     //    label: { position: { name: 'bottom', args: { y: 2 } }, markup: [{ tagName: 'text', selector: 'label', className: 'label-text' }] },
     //    markup: [{ tagName: 'circle', selector: 'portBody' }]
     //};
@@ -2085,7 +2319,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
 
     //const portId = model.getPorts()[0].id;
 
-    //model.portProp(portId, 'attrs/portBody', { r: 3, fill: 'darkslateblue' });
+    //model.portProp(portId, 'attrs/portBody', { r: CONFIG.PORT_RADIUS, fill: 'darkslateblue' });
     //model.portProp(portId, 'custom', { testAttribute: true });
     //console.log(model.portProp(portId, 'custom'));
 
@@ -2291,7 +2525,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         position: {name: 'right', args: {y: '0%'}},
         label: {position: {name: 'top', args: {x: 6}}, markup: [{tagName: 'text', selector: 'label'}]},
         attrs: {
-            portBody: {magnet: true, r: 3, fill: 'orange', stroke: 'blue', strokeWidth: 1,},
+            portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: 'blue', strokeWidth: 1,},
             label: {text: 'port'}
         },
         markup: [{tagName: 'circle', selector: 'portBody'},]
@@ -2306,7 +2540,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
             position: {name: 'top', args: {y: -6}},
             markup: [{tagName: 'text', selector: 'label', className: 'label-text'}]
         },
-        attrs: {portBody: {magnet: true, r: 3, fill: 'orange', stroke: '#023047'}, label: {text: 'in'}},
+        attrs: {portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'}, label: {text: 'in'}},
         markup: [{tagName: 'circle', selector: 'portBody'}],
     };
 
@@ -2316,7 +2550,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
             position: {name: 'right', args: {y: 6}},
             markup: [{tagName: 'text', selector: 'label', className: 'label-text'}]
         },
-        attrs: {portBody: {magnet: true, r: 3, fill: '#E6A502', stroke: '#023047'}, label: {text: 'out'}},
+        attrs: {portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: '#E6A502', stroke: '#023047'}, label: {text: 'out'}},
         markup: [{tagName: 'circle', selector: 'portBody'}],
     };
 
@@ -2472,7 +2706,7 @@ function busPortDistribution(busId) {
             bus.addPort({
                 ...port,
                 attrs: {
-                    portBody: {magnet: true, r: 3, fill: 'orange', stroke: '#023047'},
+                    portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
                     label: {text: port.id, fontSize: 8}
                 },
                 markup: [{tagName: 'circle', selector: 'portBody'}]
@@ -2523,20 +2757,26 @@ function busPortDistribution(busId) {
 async function validateLinkFromServer(link) {
 
     let linkData = getLinkData(link);
-    let success = false;
+    
     try {
-        if (dotNetObjSLD) {
-            success = await dotNetObjSLD.invokeMethodAsync('SLDValidateLink', JSON.stringify(linkData));
-            console.log(`Validation success of the Link between '${linkData.sourceTag} and ${linkData.targetTag}' from server side: ${success}.`);
-            if (success) {
-                link.set('valid', true);
-            } else {
-                link.set('valid', false);
-            }
+        const success = await safeInvokeAsync(
+            dotNetObjSLD,
+            'SLDValidateLink',
+            JSON.stringify(linkData)
+        );
+
+        link.set('valid', success);
+
+        if (!success) {
+            // Optionally notify user
+            console.warn(`Link validation failed: ${linkData.sourceTag} → ${linkData.targetTag}`);
         }
     } catch (e) {
-        console.log(`Validation process for link between'${linkData.sourceTag} and ${linkData.targetTag}' from server side failed due to error: ${e.message}.`);
+        console.error(`Validation error:`, e);
+        link.set('valid', false);
+        // Consider showing user notification
     }
+
     return link;
 }
 
@@ -2544,14 +2784,12 @@ async function validateLinkFromServer(link) {
 async function removeLink(link) {
     var linkData = getLinkData(link);
 
-    var success;
-    if (dotNetObjSLD) {
-        success = await dotNetObjSLD.invokeMethodAsync('SLDRemoveLink', JSON.stringify(linkData));
+    var success = await safeInvokeAsync(
+            dotNetObjSLD, 'SLDRemoveLink', JSON.stringify(linkData));
         if (success) {
             link.remove(); // Remove the link from the graph
+            console.log(`Removal success of the Link between '${linkData.sourceTag} and ${linkData.targetTag}' : ${success}.`);
         }
-        console.log(`Removal success of the Link between '${linkData.sourceTag} and ${linkData.targetTag}' : ${success}.`);
-    }
 }
 
 
@@ -2594,23 +2832,32 @@ function findNearestEmptyPosition(element, graph, spacing = 20) {
 
 function updateBus(busModel, busInfo) {
 
+    if (!busInfo || !busModel) {
+        console.error('Invalid parameters for updateBus');
+        return busModel;
+    }
+
+    // Safe access with defaults
+    const isc = typeof busInfo.ISC === 'number' ? busInfo.ISC : 0;
+    const vr = typeof busInfo.VR === 'number' ? busInfo.VR : 0;
+
     if (busInfo.Category === "Swing") {
         // grid            
         busModel.attr({
-            label: {text: "Grid" + busInfo.Tag},
-            ratedSC: {text: Math.round(10 * busInfo.ISC) / 10 + "kA"},
-            ratedVoltage: {text: busInfo.VR / 1000 + "kV"},
-            busFaultkA: {text: Math.round(10 * busInfo.SCkAaMax) / 10 + "kA"},
-            operatingVoltage: {text: Math.round(10000 * busInfo.Vo.Magnitude) / 100 + "% ∠" + Math.round(busInfo.Vo.Phase * 1800 / Math.PI) / 10 + "°"}
+            label: {text: "Grid" + sanitizeText(busInfo.Tag)},
+            ratedSC: {text: sanitizeText(Math.round(10 * busInfo.ISC) / 10 + "kA")},
+            ratedVoltage: {text: sanitizeText(busInfo.VR / 1000 + "kV")},
+            busFaultkA: {text: sanitizeText(Math.round(10 * busInfo.SCkAaMax) / 10 + "kA")},
+            operatingVoltage: {text: sanitizeText(Math.round(10000 * busInfo.Vo.Magnitude) / 100 + "% ∠" + Math.round(busInfo.Vo.Phase * 1800 / Math.PI) / 10 + "°")}
         });
     } else {
         // the other bus
         busModel.attr({
-            label: {text: busInfo.Tag},
-            ratedSC: {text: Math.round(10 * busInfo.ISC) / 10 + "kA"},
-            ratedVoltage: {text: busInfo.VR / 1000 + "kV"},
-            busFault: {text: Math.round(10 * busInfo.SCkAaMax) / 10 + "kA"},
-            operatingVoltage: {text: Math.round(10000 * busInfo.Vo.Magnitude) / 100 + "% ∠" + Math.round(busInfo.Vo.Phase * 1800 / Math.PI) / 10 + "°"}
+            label: {text: sanitizeText(busInfo.Tag)},
+            ratedSC: {text: sanitizeText(Math.round(10 * busInfo.ISC) / 10 + "kA")},
+            ratedVoltage: {text: sanitizeText(busInfo.VR / 1000 + "kV")},
+            busFault: {text: sanitizeText(Math.round(10 * busInfo.SCkAaMax) / 10 + "kA")},
+            operatingVoltage: {text: sanitizeText(Math.round(10000 * busInfo.Vo.Magnitude) / 100 + "% ∠" + Math.round(busInfo.Vo.Phase * 1800 / Math.PI) / 10 + "°")}
         });
     }
     return busModel;
@@ -2622,7 +2869,7 @@ function updateTransformer(trafoModel, trafoInfo, branches) {
     let branch = branches.find(br => br.Tag === trafoInfo.Tag);
 
     trafoModel.attr({
-        tag: {text: trafoInfo.Tag},
+        tag: {text: sanitizeText(trafoInfo.Tag)},
         voltage: {text: `${trafoInfo.V1 / 1000}/${trafoInfo.V2 / 1000}kV`},
         kVArating: {text: `${trafoInfo.KVA}kVA`},
         impedance: {text: `Z:${trafoInfo.Z}%`},
@@ -2636,7 +2883,7 @@ function updateCable(cableModel, cabledata, branches) {
     var branch = branches.find(br => br.Tag === cabledata.Tag);
 
     cableModel.attr({
-        label: {text: cabledata.Tag},
+        label: {text: sanitizeText(cabledata.Tag)},
         size: {text: cabledata.CblDesc},
         length: {text: `${cabledata.L}m, ${cabledata.Rl}-j${cabledata.Xl}Ω/km`},
         impedance: {text: `R:${cabledata.R}, X:${cabledata.X}`},
@@ -2650,7 +2897,7 @@ function updateBusDuct(busDuctModel, busDuctdata, branches) {
 
     var branch = branches.find(br => br.Tag == busDuctdata.Tag);
     busDuctModel.attr({
-        label: {text: busDuctdata.Tag},
+        label: {text: sanitizeText(busDuctdata.Tag)},
         size: {text: `${busDuctdata.IR}A`},
         length: {text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km`},
         impedance: {text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}`},
@@ -2710,4 +2957,20 @@ function updateLumpLoad(lumpLoadModel, lumpLoaddata, branches) {
         //operatingCurrent: { text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°` }
     });
     return lumploadModel;
+}
+
+// Add cleanup function
+export function disposeSLD() {
+    if (graph) {
+        graph.clear();
+        graph = null;
+    }
+    if (paper) {
+        paper.remove();
+        paper = null;
+    }
+    sldComponentsJS = [];
+    dotNetObjDraw = null;
+    dotNetObjSLD = null;
+    console.log("SLD disposed");
 }

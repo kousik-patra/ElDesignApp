@@ -800,7 +800,7 @@
     protected override void OnInitialized()
     {
      // Log method entry for debugging
-    Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name}");
+    //Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {System.Reflection.MethodBase.GetCurrentMethod()?.Name}");
 
     // Initialize database metadata
     _dbMaster = GlobalData.DBMasters?.Where(m => m.DBName == typeof(T).Name).ToList() ?? [];
@@ -823,8 +823,8 @@
             : allProperties;
 
     // Log for debugging
-    Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name} : " +
-                                      $"Found {_dbMaster.Count} metadata entries, {Fields?.Length ?? 0} fields, {_tableProperties.Count} properties");
+    //Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager?.Uri}  Table - {MethodBase.GetCurrentMethod()?.Name} : " +
+    //                                  $"Found {_dbMaster.Count} metadata entries, {Fields?.Length ?? 0} fields, {_tableProperties.Count} properties");
 
     // Set Seq and CellCSS properties
     SeqProperty = typeof(T).GetProperty("Seq");
@@ -923,7 +923,7 @@
         {
             var (_, userName) = await MiscService.GetCurrentUserInfoAsync();
             _loginUser = userName ?? "Guest";
-            Console.WriteLine($"Current user: {_loginUser}");
+            //Console.WriteLine($"Current user: {_loginUser}");
         }
         catch (Exception ex)
         {
@@ -957,7 +957,7 @@
         // 2. List has data (element is fully rendered)
         if (!_jsInitialized && List != null && List.Any())
         {
-            Console.WriteLine($"[Table] Attempting JS init...");
+            //Console.WriteLine($"[Table] Attempting JS init...");
             await InitializeJavaScriptAsync();
         }
     }

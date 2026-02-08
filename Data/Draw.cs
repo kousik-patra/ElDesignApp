@@ -269,12 +269,7 @@ public class Draw
     }
 
 
-    // for SLD
-    [JSInvokable("TagMoveUpdate")]
-    public void TagMoveUpdate(string type, string tag, int x, int y)
-    {
-        Debug.WriteLine($"Server Side: {type} : Tag: {tag} moved to: ({x}, {y})");
-    }
+
     
     [JSInvokable("UpdateRefPoints")]
     public void UpdateRefPoints(string refPointsJson)

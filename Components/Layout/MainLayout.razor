@@ -52,7 +52,7 @@
 @code {
     private string _currentPage = "";
     private string? _currentProjectId => GlobalData.SelectedProject?.UID.ToString();
-    private bool _show3D = true;
+    private bool _show3D = false;
 
     protected override void OnInitialized()
     {
@@ -64,6 +64,8 @@
         
         // Subscribe to the Page Title change
         GlobalData.OnHeaderChanged += OnPageTitleChange;
+        
+        GlobalData.Show3D = false;
         
         Debug.WriteLine($"Page {MyNavigationManager.Uri} :: Selected Project : {GlobalData.SelectedProject?.Tag}");
     }
@@ -90,6 +92,10 @@
     private void OnPageTitleChange()
     {
         // This forces MainLayout to re-render
+        
+        Task.Delay(10); // Allow UI to update
+        _show3D = GlobalData.Show3D;
+        
         InvokeAsync(StateHasChanged);
     }
 

@@ -777,7 +777,7 @@ public class LayoutFunctionService : ILayoutFunctionService
         tableProperties.ForEach(property => load.CellCSS.Add(""));
         //
         // assigning default power factor and  efficiency and Dynamic (Load) Ratio as per load category 
-        switch (load.Category)
+        switch (load.LoadType)
         {
             case "Motor":
                 if (load.Pf == default) load.Pf = 0.8f;
@@ -861,7 +861,7 @@ public class LayoutFunctionService : ILayoutFunctionService
         ;
         //
         // calculate operating power factor and operating efficiency  
-        switch (load.Category)
+        switch (load.LoadType)
         {
             case "Motor":
                 // determine operating power factor and operating efficiency as per actual (absorbed) Power, i.e., Load Factor

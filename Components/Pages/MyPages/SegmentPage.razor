@@ -272,10 +272,10 @@ else
 
         GlobalData.selectedPage = "Segments: Cable Ladders, Trays, Trenches and Sleeves";
         // Notify the MainLayout that the page title has changed
-        GlobalData.NotifyHeaderChanged();
+        GlobalData.Show3D = true;
         GlobalData.sceneCurrent = "Segment";
         GlobalData.sceneDataCable.SceneName = GlobalData.sceneCurrent;
-        
+        GlobalData.NotifyHeaderChanged();
         StateHasChanged();
         base.OnInitialized();
     }

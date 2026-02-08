@@ -69,7 +69,7 @@ public interface IGlobalDataService
     int leftSpacing { get; set; }
 
     /// <summary>Gets or sets the global data.</summary>
-    int topSpacig { get; set; }
+    int topSpacing { get; set; }
 
     /// <summary>Gets or sets the global data.</summary>
     int xGridSpacing { get; set; }
@@ -85,6 +85,8 @@ public interface IGlobalDataService
     string selectedPage { get; set; }
     // Add this event
     public event Action OnHeaderChanged;
+    
+    public bool Show3D { get; set; }
 
     // Call this whenever you update the header data
     public void NotifyHeaderChanged();
@@ -171,6 +173,10 @@ public interface IGlobalDataService
 
     /// <summary>Gets or sets the global data.</summary>
     List<Switch>? Switches { get; set; } 
+    
+    List<BusBarLink>? BusBarLinks { get; set; } 
+    List<Fuse>? Fuses { get; set; } 
+
     /// <summary>Gets or sets the global data.</summary>
     List<CableBranch>? CableBranches { get; set; }
 
@@ -448,7 +454,7 @@ public class GlobalDataService : IGlobalDataService
     public int leftSpacing { get; set; }= 100;
 
     /// <summary>Gets or sets the global data.</summary>
-    public int topSpacig { get; set; } = 150;
+    public int topSpacing { get; set; } = 150;
 
     /// <summary>Gets or sets the global data.</summary>
     public int xGridSpacing { get; set; }= 150;
@@ -458,7 +464,7 @@ public class GlobalDataService : IGlobalDataService
 
     //
     /// <summary>Gets or sets the global data.</summary>
-    public string UpdatedBy { get; set; } = "KP";
+    public string UpdatedBy { get; set; }
 
     /// <summary>Gets or sets the global data.</summary>
     public string selectedPage { get; set; } = "Encompass: The Fusion of 2D and 3D Engineering ";
@@ -468,6 +474,8 @@ public class GlobalDataService : IGlobalDataService
 
     // Call this whenever you update the header data
     public void NotifyHeaderChanged() => OnHeaderChanged?.Invoke();
+
+    public bool Show3D { get; set; } = true;
 
     /// <summary>Gets or sets the global data.</summary>
     public string sceneCurrent { get; set; } = "";
@@ -553,6 +561,9 @@ public class GlobalDataService : IGlobalDataService
 
     /// <summary>Gets or sets the global data.</summary>
     public List<Switch>? Switches { get; set; } = [];
+
+    public List<BusBarLink>? BusBarLinks { get; set; } = [];
+    public List<Fuse>? Fuses { get; set; } = [];
 
     /// <summary>Gets or sets the global data.</summary>
     public List<CableBranch>? CableBranches { get; set; } = [];
