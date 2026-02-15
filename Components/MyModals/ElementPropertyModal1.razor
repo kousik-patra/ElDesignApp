@@ -4,8 +4,7 @@
 @using System.Text.Json
 @using ElDesignApp.Models
 
-
-@typeparam T;
+@typeparam T where T : class, new()
 
 
 @inject NavigationManager MyNavigationManager
@@ -620,7 +619,7 @@
         {
             Debug.WriteLine($"Enter pressed on {property.Name}");
             // Optionally blur the input to trigger validation
-            await JSRuntime.InvokeVoidAsync("blurActiveElement");
+            //await JSRuntime.InvokeVoidAsync("blurActiveElement");
         }
         else if (e.Key == "Escape")
         {

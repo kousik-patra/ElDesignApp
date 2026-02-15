@@ -422,7 +422,8 @@ public class SystemStudyFunctionService : ISystemStudyFunctionService
             foreach (var yGroup in nodesByY)
             {
                 // Nodes at this Y level are already sorted by SwbdTag due to the sort above
-                var nodesAtY = yGroup.ToList();
+                //var nodesAtY = yGroup.ToList();
+                var nodesAtY = yGroup.OrderBy(n => n.SwbdTag ?? "zzz").ThenBy(n => n.Name).ToList();
                 
                 // Assign X values sequentially - switchboard buses will be adjacent
                 // because they're already sorted by SwbdTag

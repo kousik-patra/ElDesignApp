@@ -1,6 +1,7 @@
 ﻿import 'bootstrap';
 import sceneManager, {LAYERS} from './threejs/sceneManager'
-import {drawSLD, updateSLD, updateSLDItem, updateSLDWithStudyResults} from './mySLD';
+import {drawSLD, updateSLD, updateSLDItem, updateSLDWithStudyResults, disposeSLD} from './sld/operations';
+//import {drawSLD, updateSLD, updateSLDItem, updateSLDWithStudyResults, } from './sld/index';
 import {getModalDialogRect, setModalPosition, startModalDrag, stopModalDrag} from './modal/modal-interop';
 import {
     addPin,
@@ -224,6 +225,7 @@ window.drawSLD = drawSLD;
 window.updateSLD = updateSLD;
 window.updateSLDItem = updateSLDItem;
 window.updateSLDWithStudyResults = updateSLDWithStudyResults;
+window.disposeSLD = disposeSLD;
 
 // ============ MODAL ============
 window.startModalDrag = startModalDrag;

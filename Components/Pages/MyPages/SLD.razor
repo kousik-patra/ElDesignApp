@@ -22,6 +22,7 @@
 @using Microsoft.AspNetCore.Authorization
 @using ElDesignApp.Components.Pages.MyComponents.Table
 @using ElDesignApp.Services.SLD
+@using Microsoft.EntityFrameworkCore.Storage.ValueConversion
 
 
 <style>
@@ -374,7 +375,7 @@ else
             <div>
                 <button type="submit" @onclick="@DrawKeySLD" class="btn btn-info " style="float:left;">Draw SLD
                     - @sLD</button>
-                <button type="submit" @onclick="@UpdateSLD" class="btn btn-success " style="float:right;">Update SLD
+                <button type="submit" @onclick="@UpdateSLD" class="btn btn-success " style="float:right;">Save Updated SLD
                 </button>
                 <button type="submit" @onclick="@UpdateStudyResultsToClientPage" class="btn btn-info "
                         style="float:right;">Refresh Study Results
@@ -443,28 +444,28 @@ else
                              Text="Provide details for new item"
                              Item="modalBus"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
+                             OnClose="@UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         case "transformer":
             <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modalTransformer"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
+                             OnClose="@UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         case "cable":
             <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modalCableBranch"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
+                             OnClose="@UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         case "busduct":
             <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modalBusDuct"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
+                             OnClose="@UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         case "motor":
         case "heater":
@@ -474,21 +475,21 @@ else
                              Text="Provide details for new item"
                              Item="modalLoad"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
+                             OnClose="@UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         case "switch":
             <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modalSwitch"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
+                             OnClose="@UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
         default:
             <ElementPropertyModal1 Title="Properties"
                              Text="Provide details for new item"
                              Item="modelEquipment"
                              Fields="modalFieldList"
-                             OnClose="UpdateItemPropertyClientPage"></ElementPropertyModal1>
+                             OnClose="@UpdateItemPropertyClientPage"></ElementPropertyModal1>
             break;
     }
 }
@@ -654,18 +655,20 @@ else
 
 
     private static bool showEquipmentPropertyModal;
-    private static Load modalLoad = new();
-    private static Bus modalBus = new();
+    private static Load? modalLoad = new();
+    private static Bus? modalBus = new();
     private static Branch modalBranch = new();
-    private static CableBranch modalCableBranch = new();
-    private static BusDuct modalBusDuct = new();
-    private static Transformer modalTransformer = new();
-    private static Switch modalSwitch = new();
+    private static CableBranch? modalCableBranch = new();
+    private static BusDuct? modalBusDuct = new();
+    private static Transformer? modalTransformer = new();
+    private static Switch? modalSwitch = new();
     private object modelEquipment;
     private string[] modalFieldList;
     private string modalType;
     private string modalitemJSON;
     private string itemJSON;
+    
+    private SLDLayoutService _sldLayoutService;
 
     private static string _divString;
 
@@ -716,6 +719,7 @@ else
             
             _connectionValidationService = new ConnectionValidationService();
             _connectionEvaluationService = new ConnectionEvaluationService();
+            _sldLayoutService = new SLDLayoutService();
             
             //_loadingTables = ["Cable Catalogue", "Motor Catalogue", "Load", "Bus", "Transformer", "CableBranch", "BusDuct", "Switch", "Board","Study results","SLD Coordinates","SLD Components"];
             string logInfo = "", logWarning = "", logError = "";
@@ -966,6 +970,8 @@ else
             loadChild = true;
             _timeTaken = DateTime.Now;
             _divString = "sldPaper";
+
+            await DrawKeySLD();
 
             StateHasChanged();
         }
@@ -1335,7 +1341,7 @@ else
         List<Branch> finalBranchesResult = new List<Branch>();
         List<SLDComponent> finalSLDComponents = new List<SLDComponent>();
         
-        await Task.Run(async () =>
+        await Task.Run((Func<Task>)(async () =>
         {
         var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
         
@@ -1344,60 +1350,139 @@ else
         Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
         //
 
-        var xyCoordinateFromSystemStudy = false;
-
-        if (!xyCoordinateFromSystemStudy)
-        {
+        // var xyCoordinateFromSystemStudy = false;
+        //
+        // if (!xyCoordinateFromSystemStudy)
+        // {
             // calculate XY coordinates without the SystemStudy 
-            if (_fuses != null)
+
+            busesResult = StudyFunction.AssignVbSwingSourcesAndAutoXY(
+                _buses, _loads, _cableBranches, _busDucts, _transformers, _switches, _fuses, _busBarLinks, resultLoadConnectionCounts);
+            
+            // only the bus X,Y location is determined , accordingly the branches are placed in the JS based on from to bus.
+            branchesResult = StudyFunction.GetBranches(_cableBranches, _transformers, _busDucts);
+            // ──────────────────────────────────────────────────────────────────────────────
+            // NEW: Use SLDLayoutService for coordinate assignment
+            // ──────────────────────────────────────────────────────────────────────────────
+            
+            // Run the layout engine (discovers chains, computes tier gaps, assigns coordinates)
+            var layoutResult = _sldLayoutService.BuildLayout(
+                busesResult,
+                _cableBranches,
+                _transformers,
+                _busDucts,
+                _switches,
+                _fuses,
+                _busBarLinks,
+                GlobalData.topSpacing,
+                GlobalData.leftSpacing,
+                GlobalData.xGridSpacing,
+                resultLoadConnectionCounts);
+            
+            if (!layoutResult.Success)
             {
-                if (_switches != null)
-                {
-                    busesResult = StudyFunction.AssignVbSwingSourcesAndAutoXY(
-                        _buses, _loads, _cableBranches, _busDucts, _transformers, _switches, _fuses, _busBarLinks, resultLoadConnectionCounts);
-                    
-                    // only the bus X,Y location is determined , accordingly the branches are placed in the JS based on from to bus.
-                    branchesResult = StudyFunction.GetBranches(_cableBranches, _transformers, _busDucts);
-                }
-            }
-        }
-        if(xyCoordinateFromSystemStudy)
-        {
-            // run LF SC study to obtain all the latest data for the 1st time drawing SLD
-            var tupleResult = await MainLoadFlow(_buses, _loads, _cableBranches, _transformers, _busDucts, _switches, _fuses, _busBarLinks);
-            busesResult = tupleResult.Item1;
-            branchesResult = tupleResult.Item2;
-        }
-        
-        busesResult = busesResult.OrderBy(bus => bus.CordY).ThenBy(bus => bus.CordX).ToList();
-        // set the coordinates for the elements in the KeySLD
-        // check if there are coordinates stored in the DB
-        busesResult.ForEach(bus =>
-        {
-            // in SC study Swing buses are temporarily converted as ordinary "" bus
-            // revert them with "Swing" category
-            if (_buses.Find(b => b.Tag == bus.Tag).IsSwing) bus.IsSwing = true;
-            //
-            var sldbuses = _sldXYs.Where(b => b.SLD == sld && b.Tag == bus.Tag).ToList();
-            if (sldbuses.Count > 0)
-            {
-                // coordinate is stored by user
-                bus.CordX = sldbuses[0].CordX;
-                bus.CordY = sldbuses[0].CordY;
-                bus.Length = sldbuses[0].Length;
+                Console.WriteLine($"Layout computation failed: {layoutResult.Message}");
+                // Fallback to old logic if needed
             }
             else
             {
-                // assign as per the Auto X-Y logic from Function AssignVbSwingSourcesAndAutoXY
-                bus.CordY = GlobalData.topSpacing + GlobalData.yGridSpacing * bus.SLDY;
-                var xs = busesResult.Where(b => b.SLDY == bus.SLDY && b.SLDX <= bus.SLDX).ToList();
-                var cordX = 0;
-                xs.ForEach(item => cordX += item.SLDL);
-                bus.CordX = GlobalData.leftSpacing + cordX * GlobalData.xGridSpacing;
-                bus.Length = (int)(0.5 * GlobalData.xGridSpacing * (bus.SLDL - 0.5));
+                Console.WriteLine($"Layout computed successfully: {layoutResult.Message}");
+            
+                // Buses already have CordX/CordY updated by BuildLayout
+                busesResult = layoutResult.Buses;
+            
+                // Restore swing flag from original data
+                busesResult.ForEach(bus =>
+                {
+                    if (_buses.Find(b => b.Tag == bus.Tag)?.IsSwing == true) bus.IsSwing = true;
+                });
+            
+                // Override auto-layout with user-saved coordinates from SLDComponent table
+                // (SLDComponent stores position data as JSON in PropertyJSON field;
+                //  the deprecated SLDXY table is no longer used)
+                _sldLayoutService.ApplySavedCoordinates(
+                    _sldComponents,
+                    sld,                                    // "key" or switchboard name
+                    busesResult,
+                    layoutResult.ElementCoordinates);
             }
-        });
-        
+            
+            // Prepare chain element coordinates for JS
+            // This dictionary maps element Tag → {CordX, CordY} for branches and non-branches
+            var chainElementCoordinates = layoutResult.ElementCoordinates
+                .Select(kvp => new { Tag = kvp.Key, X = kvp.Value.X, Y = kvp.Value.Y })
+                .ToList();
+            
+            var chainElementCoordsJson = JsonSerializer.Serialize(chainElementCoordinates, jsonSerializerOptions);
+            
+            // Prepare chain data for JS (so JS knows the link sequence)
+            var chainDataForJs = layoutResult.Chains.Select(c => new
+            {
+                FromBus = c.FromBusTag,
+                ToBus = c.ToBusTag,
+                Elements = c.ElementTags,
+                ContainsBranch = c.ContainsBranch,
+                BranchTag = c.BranchTag,
+                Orientation = c.Orientation.ToString(),
+                ParallelIndex = c.ParallelIndex,
+                ParallelCount = c.ParallelCount
+            }).ToList();
+            
+            var chainsJson = JsonSerializer.Serialize(chainDataForJs, jsonSerializerOptions);
+            
+            // Serialize non-branch items for JS
+            var switchesJson = JsonSerializer.Serialize(_switches, jsonSerializerOptions);
+            var fusesJson = JsonSerializer.Serialize(_fuses, jsonSerializerOptions);
+            var busBarLinksJson = JsonSerializer.Serialize(_busBarLinks, jsonSerializerOptions);
+            
+            // ──────────────────────────────────────────────────────────────────────────────
+            // END OF NEW LAYOUT CODE
+            // ──────────────────────────────────────────────────────────────────────────────
+            
+                                            
+                                
+                                
+                                
+                    
+
+        // }
+        // if(xyCoordinateFromSystemStudy)
+        // {
+        //     // run LF SC study to obtain all the latest data for the 1st time drawing SLD
+        //     var tupleResult = await MainLoadFlow(_buses, _loads, _cableBranches, _transformers, _busDucts, _switches, _fuses, _busBarLinks);
+        //     busesResult = tupleResult.Item1;
+        //     branchesResult = tupleResult.Item2;
+        // }
+        //
+        // busesResult = busesResult.OrderBy(bus => bus.CordY).ThenBy(bus => bus.CordX).ToList();
+        // // set the coordinates for the elements in the KeySLD
+        // // check if there are coordinates stored in the DB
+        // busesResult.ForEach(bus =>
+        // {
+        //     // in SC study Swing buses are temporarily converted as ordinary "" bus
+        //     // revert them with "Swing" category
+        //     if (_buses.Find(b => b.Tag == bus.Tag).IsSwing) bus.IsSwing = true;
+        //     //
+        //     var sldbuses = _sldXYs.Where(b => b.SLD == sld && b.Tag == bus.Tag).ToList();
+        //     if (sldbuses.Count > 0)
+        //     {
+        //         // coordinate is stored by user
+        //         bus.CordX = sldbuses[0].CordX;
+        //         bus.CordY = sldbuses[0].CordY;
+        //         bus.Length = sldbuses[0].Length;
+        //     }
+        //     else
+        //     {
+        //         // assign as per the Auto X-Y logic from Function AssignVbSwingSourcesAndAutoXY
+        //         bus.CordY = GlobalData.topSpacing + GlobalData.yGridSpacing * bus.SLDY;
+        //         var xs = busesResult.Where(b => b.SLDY == bus.SLDY && b.SLDX <= bus.SLDX).ToList();
+        //         var cordX = 0;
+        //         xs.ForEach(item => cordX += item.SLDL);
+        //         bus.CordX = GlobalData.leftSpacing + cordX * GlobalData.xGridSpacing;
+        //         bus.Length = (int)(0.5 * GlobalData.xGridSpacing * (bus.SLDL - 0.5));
+        //     }
+        // });
+        //
 
         
 
@@ -1430,11 +1515,19 @@ else
         dotNetObjRefSLD = DotNetObjectReference.Create(this);
 
         await JsRuntime.InvokeVoidAsync("drawSLD", _divString,
-            xgridSize, ygridSize, GlobalData.leftSpacing, GlobalData.topSpacing, GlobalData.xGridSpacing, GlobalData.yGridSpacing,
-            buses, switchboards, branches, loads, transformers, cableBranches, busDucts, xyString, sldComponents, dotNetObjRefSLD, dotNetObjRefSLD);
+            xgridSize, ygridSize, GlobalData.leftSpacing, GlobalData.topSpacing, 
+            GlobalData.xGridSpacing, GlobalData.yGridSpacing,
+            buses, switchboards, branches, loads, transformers, cableBranches, 
+            busDucts, xyString, sldComponents, dotNetObjRefSLD, dotNetObjRefSLD,
+            chainElementCoordsJson,     // coordinates for all chain elements
+            chainsJson,                 // chain structure (element ordering, bus ends)
+            switchesJson,               // switch data
+            fusesJson,                  // fuse data
+            busBarLinksJson             // bus bar link data
+            );
         
         _timeTaken = DateTime.Now;
-        });
+        }));
         _processingMessage = "processing";
         _isProcessing = false;
         Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : _isProcessing: {_isProcessing}");
@@ -1549,17 +1642,17 @@ else
     private async Task UpdateSLD()
     {
         // for SLD
-        // invoke javascript function to send the modified SLD component data back to server so that
+        // invoke JavaScript function to send the modified SLD component data back to server so that
         // server saves the received data to the database through 'SLDComponentUpdate' function
         Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri}  - {MethodBase.GetCurrentMethod()?.Name}");
-        // the dotnet reference shall the 'this' razor page and not "Draw.cs" as the await myTable to be invoked to write data to database
-
+        // the dotnet reference shall the 'this' razor page and not "Draw.cs" as the "await myTable" to be invoked to write data to database
+        Console.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : Calling Client side updateSLD from server side.");
         await JsRuntime.InvokeVoidAsync("updateSLD");
     }
 
 
     [JSInvokable("PropertyUpdate")]
-    public async Task PropertyUpdate(string tag, string type)
+    public Task PropertyUpdate(string tag, string type)
     {
         Console.WriteLine($"Server Side:PropertyUpdate..... for Element type '{type}' tag '{tag}...");
         showEquipmentPropertyModal = true;
@@ -1572,8 +1665,7 @@ else
                 modalBus = _buses.Find(item => item.Tag == tag);
                 if (modalBus is null)
                 {
-                    modalBus = new Bus();
-                    modalBus.Tag = tag;
+                    modalBus = new Bus { Tag = tag };
                     _buses.Add(modalBus);
                 }
 
@@ -1583,8 +1675,7 @@ else
                 modalTransformer = _transformers.Find(item => item.Tag == tag);
                 if (modalTransformer is null)
                 {
-                    modalTransformer = new Transformer();
-                    modalTransformer.Tag = tag;
+                    modalTransformer = new Transformer { Tag = tag };
                     _transformers.Add(modalTransformer);
                 }
 
@@ -1594,8 +1685,7 @@ else
                 modalCableBranch = _cableBranches.Find(item => item.Tag == tag);
                 if (modalCableBranch is null)
                 {
-                    modalCableBranch = new CableBranch();
-                    modalCableBranch.Tag = tag;
+                    modalCableBranch = new CableBranch { Tag = tag };
                     _cableBranches.Add(modalCableBranch);
                 }
 
@@ -1605,8 +1695,7 @@ else
                 modalBusDuct = _busDucts.Find(item => item.Tag == tag);
                 if (modalBusDuct is null)
                 {
-                    modalBusDuct = new BusDuct();
-                    modalBusDuct.Tag = tag;
+                    modalBusDuct = new BusDuct { Tag = tag };
                     _busDucts.Add(modalBusDuct);
                 }
 
@@ -1619,8 +1708,7 @@ else
                 modalLoad = _loads.Find(item => item.Tag == tag);
                 if (modalLoad is null)
                 {
-                    modalLoad = new Load();
-                    modalLoad.Tag = tag;
+                    modalLoad = new Load { Tag = tag };
                     _loads.Add(modalLoad);
                     modalLoad.LoadType = type == "motor" ? "Motor" : type == "heater" ? "Heater" : type == "capacitor" ? "Capacitor" : "LumpLoad";
                 }
@@ -1631,8 +1719,7 @@ else
                 modalSwitch = _switches.Find(item => item.Tag == tag);
                 if (modalSwitch is null)
                 {
-                    modalSwitch = new Switch();
-                    modalSwitch.Tag = tag;
+                    modalSwitch = new Switch { Tag = tag };
                     _switches.Add(modalSwitch);
                 }
 
@@ -1648,17 +1735,27 @@ else
                 break;
         }
 
-        //StateHasChanged();
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
 
     private async Task UpdateItemPropertyClientPage((string itemJSON, string Type, string originalTag, string changedTag, string button) args)
     {
-        //TODO update this function in view of introduced fields of FromElement and ToElement 
         showEquipmentPropertyModal = false;
         Console.WriteLine($"Server Side: UpdatePropertyClientPage......{args.button} pressed");
+        
+        // before updating the SLD with the changed parameters, updating the SLD components list at the server side 
+        
+        
+        //TODO update this function in view of introduced fields of FromElement and ToElement 
+
+        
+
 
         var branches = JsonSerializer.Serialize(branchesResult);
+        
+        // Step 1: Handle Tag change
 
         if (args.originalTag != args.changedTag)
         {
@@ -1698,6 +1795,13 @@ else
             }
         }
 
+        // Step 2: Handle From Equipment / To Equipment / Connected Bus
+        //TODO: Corresponding previous links, if any, to be removed
+        //TODO: and new links to be created as per the changed connection
+        
+        // Step 3: Other parameters (SQL Table fields)
+        // _buses, _transformers, ... are updated with the newly added item or the changed parameters.
+        
         // load flow is not done unless asked by the user as it takes some time to run
         // minor changes like the tag, and ratings are only required to be reflected on the SLD only
         await JsRuntime.InvokeVoidAsync("updateSLDItem", args.itemJSON, args.Type, args.originalTag, branches);
@@ -1711,6 +1815,7 @@ else
         List<List<string>> switchboards = new();
 
         buses
+            .Where(i => !string.IsNullOrWhiteSpace(i.BoardTag))
             .GroupBy(i => i.BoardTag)
             .Select(g => g.First())
             .ToList().ForEach(bus =>
@@ -1764,9 +1869,19 @@ else
     [JSInvokable("SLDComponentUpdate")]
     public async Task SLDComponentUpdate(string sldComponentsString)
     {
-        // assumption: only changed data is received
-        Console.WriteLine("Server Side:SLDComponentUpdate......");
+        // assumption: only changed data is received since only the changed data is logged into sldState.sldComponentsJS
+        // besides the position or link break point changes, there may be changes in the SLD items parameters
 
+         UpdateOnTableChange<Bus>((new Bus(), _buses, GlobalData.Buses, "", "", "",""));
+         UpdateOnTableChange<Load>((new Load(), _loads, GlobalData.Loads, "", "", "",""));
+         UpdateOnTableChange<Board>((new Board(), _boards, GlobalData.Boards, "", "", "",""));
+         UpdateOnTableChange<CableBranch>((new CableBranch(), _cableBranches, GlobalData.CableBranches, "", "", "",""));
+         UpdateOnTableChange<BusDuct>((new BusDuct(), _busDucts, GlobalData.BusDucts, "", "", "",""));
+         UpdateOnTableChange<Switch>((new Switch(), _switches, GlobalData.Switches, "", "", "",""));
+         UpdateOnTableChange<Fuse>((new Fuse(), _fuses, GlobalData.Fuses, "", "", "",""));
+         UpdateOnTableChange<BusBarLink>((new BusBarLink(), _busBarLinks, GlobalData.BusBarLinks, "", "", "",""));
+
+         
         // read data from the database afresh, not from cache
         GlobalData.SLDComponents = await Table.GetListAsync<SLDComponent>(GlobalData.SelectedProject.Tag);
         _sldComponents = await Table.GetListAsync<SLDComponent>(GlobalData.SelectedProject.Tag);
@@ -1820,45 +1935,171 @@ else
         }
     }
 
+    
+    
     /// <summary>
-    /// this function validates all the consequences for a modified link
-    /// return outcome (success or failure) and changes in SLD item(s), if any
-    /// </summary>
-    /// <param name="linkDataString"></param>
-    /// <returns></returns>
-    [JSInvokable("SLDValidateLink")]
-    public async Task<bool> SLDValidateLink(string linkDataString)
+/// JS-callable: Traces a chain from an element's From or To end to the terminating bus.
+/// </summary>
+[JSInvokable("TraceConnectionChain")]
+public Task<string> TraceConnectionChain(string elementTag, string direction)
+{
+    if (_sldLayoutService == null)
+        return Task.FromResult(JsonSerializer.Serialize(new { Success = false, Error = "Layout service not initialized" }));
+
+    var result = _sldLayoutService.TraceChain(elementTag, direction);
+
+    var response = new
     {
-        // Parse the JSON string into a JsonDocument
-        using (var doc = JsonDocument.Parse(linkDataString))
+        result.Success,
+        result.ErrorMessage,
+        result.StartElementTag,
+        result.Direction,
+        result.TerminatingBusTag,
+        Steps = result.Steps.Select(s => new
         {
-            var root = doc.RootElement;
+            s.Tag,
+            s.Type,
+            Category = s.Category.ToString()
+        }).ToList()
+    };
 
-            // You can navigate the JsonElement and read values
-            var sourceTag = root.TryGetProperty("sourceTag", out var sourceTagElement) 
-                ? sourceTagElement.GetString() 
-                : null;
-            var targetTag = root.TryGetProperty("targetTag", out var targetTagElement) 
-                ? sourceTagElement.GetString() 
-                : null;
-            var sourcePort = root.TryGetProperty("sourcePort", out var sourcePortElement) 
-                ? sourceTagElement.GetString() 
-                : null;
-            var targetPort = root.TryGetProperty("targetPort", out var targetPortElement) 
-                ? sourceTagElement.GetString() 
-                : null;
+    return Task.FromResult(JsonSerializer.Serialize(response));
+}
 
-            Console.WriteLine($"Server Side: Source {sourceTag} Port {sourcePort} Target {targetTag} Port{targetPort} to be validated...");
+/// <summary>
+/// JS-callable: Returns valid connection candidates for an element's specified side.
+/// </summary>
+[JSInvokable("GetValidConnectionCandidates")]
+public Task<string> GetValidConnectionCandidates(string elementTag, string side)
+{
+    if (_sldLayoutService == null)
+        return Task.FromResult(JsonSerializer.Serialize(new List<object>()));
 
-        
-            
+    var candidates = _sldLayoutService.GetValidCandidates(elementTag, side);
+
+    var response = candidates.Select(c => new
+    {
+        c.Tag,
+        c.Type,
+        Category = c.Category.ToString(),
+        c.AvailableSide,
+        c.Reason
+    }).ToList();
+
+    return Task.FromResult(JsonSerializer.Serialize(response));
+}
+
+/// <summary>
+/// JS-callable: Traces the full path from an element upstream to the source (swing) bus.
+/// </summary>
+[JSInvokable("TraceToSource")]
+public Task<string> TraceToSourceFromElement(string elementTag)
+{
+    if (_sldLayoutService == null)
+        return Task.FromResult(JsonSerializer.Serialize(new { Success = false, Error = "Layout service not initialized" }));
+
+    var results = _sldLayoutService.TraceToSource(elementTag);
+
+    var response = results.Select(r => new
+    {
+        r.Success,
+        r.ErrorMessage,
+        r.StartElementTag,
+        r.Direction,
+        r.TerminatingBusTag,
+        Steps = r.Steps.Select(s => new
+        {
+            s.Tag,
+            s.Type,
+            Category = s.Category.ToString()
+        }).ToList()
+    }).ToList();
+
+    return Task.FromResult(JsonSerializer.Serialize(response));
+}
+
+
+// ============================================================================
+// STEP 6: Updated SLDValidateLink to use the new connectivity service
+// Replace the existing SLDValidateLink method with this:
+// ============================================================================
+
+[JSInvokable("SLDValidateLink")]
+public async Task<string> SLDValidateLink(string linkDataString)
+{
+    try
+    {
+        using var doc = JsonDocument.Parse(linkDataString);
+        var root = doc.RootElement;
+
+        var sourceTag = root.TryGetProperty("sourceTag", out var st) ? st.GetString() : null;
+        var targetTag = root.TryGetProperty("targetTag", out var tt) ? tt.GetString() : null;
+        var sourcePort = root.TryGetProperty("sourcePort", out var sp) ? sp.GetString() : null;
+        var targetPort = root.TryGetProperty("targetPort", out var tp) ? tp.GetString() : null;
+
+        Console.WriteLine($"Validating link: {sourceTag}[{sourcePort}] → {targetTag}[{targetPort}]");
+        Console.WriteLine($"Server Side: Source {sourceTag} Port {sourcePort} Target {targetTag} Port{targetPort} to be validated...");
+
+        if (string.IsNullOrEmpty(sourceTag) || string.IsNullOrEmpty(targetTag))
+        {
+            return JsonSerializer.Serialize(new
+            {
+                Valid = false,
+                Message = "Source or target tag is empty."
+            });
         }
-        
-        
-        
 
-        return true;
+        // Determine which side of the source this connection is on
+        // Port 0 = From (top), Port 1 = To (bottom) - adjust based on your port convention
+        string sourceSide = sourcePort == "0" ? "From" : "To";
+
+        // Get valid candidates for this element and side
+        var candidates = _sldLayoutService.GetValidCandidates(sourceTag, sourceSide);
+
+        bool isValid = candidates.Any(c => c.Tag == targetTag);
+
+        if (isValid)
+        {
+            Console.WriteLine($"  ✅ Link valid: {sourceTag} → {targetTag}");
+            return JsonSerializer.Serialize(new
+            {
+                Valid = true,
+                Message = $"Connection from '{sourceTag}' to '{targetTag}' is valid."
+            });
+        }
+        else
+        {
+            // Provide specific reason
+            string reason = "Target is not a valid candidate for this connection.";
+
+            // Check specific violations
+            if (sourceTag == targetTag)
+                reason = "Cannot connect an element to itself.";
+            else
+            {
+                // Check if it would be branch-to-branch
+                // ... add more specific checks as needed
+            }
+
+            Console.WriteLine($"  ❌ Link invalid: {sourceTag} → {targetTag}: {reason}");
+            return JsonSerializer.Serialize(new
+            {
+                Valid = false,
+                Message = reason,
+                ValidCandidates = candidates.Select(c => c.Tag).Take(10).ToList()
+            });
+        }
     }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error validating link: {ex.Message}");
+        return JsonSerializer.Serialize(new
+        {
+            Valid = false,
+            Message = $"Validation error: {ex.Message}"
+        });
+    }
+}
 
 
     [JSInvokable("SLDRemoveLink")]

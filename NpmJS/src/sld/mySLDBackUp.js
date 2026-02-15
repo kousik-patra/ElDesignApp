@@ -1,161 +1,154 @@
-﻿import {dia, elementTools, linkTools, shapes} from '@joint/core';
+﻿// import {dia, elementTools, linkTools, shapes} from '@joint/core';
+// import { CONFIG } from './sld/config/constants.js';
+// import { safeInvokeAsync, sanitizeText } from './sld/utils/helpers.js';
+//
+// import {
+//     GridElement, SwitchboardElement, NodeElement, BusElement, BusNodeElement,
+//     LoadElement, LumpLoadElement, CapacitorElement, TransformerElement,
+//     BusDuctElement, CableElement, MotorElement, HeaterElement
+// } from './sld/shapes/index.js';
+//
+// import { propertyButton, infoButton, removeButton, validateButton }
+//     from './sld/tools/buttons.js';
+//
+// import { sldState } from './sld/state/sldState';
+//
+// import {updateBus, updateTransformer, updateCable, updateBusDuct, updateSwitch , updateMotor,
+//     updateHeater, updateCapacitor, updateLumpLoad} from './sld/components/updaters'
+//
+// import { getLinkTag, getLinkData, validateLinkFromServer, removeLink, updateLinkVertices, hasLink, getPortId}
+//     from './sld/links/linkOperations'
+//
+// import {busPortDistribution, updateNodeOrBus} from './sld/utils/busPortDistribution';
+//
+// import {isOverlapping, findNearestEmptyPosition, updateItemPosition, updatePositionLength} from './sld/utils/positionUtils';
+//
+//
+//
+// export {drawSLD, updateSLD, updateSLDItem, updateSLDWithStudyResults}
 
-export {drawSLD, updateSLD, updateSLDItem, updateSLDWithStudyResults}
 
 
-const CONFIG = {
-    DEFAULT_FONT_SIZE: 10,
-    PORT_RADIUS: 3,
-    GRID_SIZE: 5,
-    STROKE_WIDTH: 2,
-    BATCH_SIZE: 10,
-    MAX_OVERLAP_ITERATIONS: 100,
-    OVERLAP_SPACING: 20
-};
 
-
-async function safeInvokeAsync(dotNetObj, methodName, ...args) {
-    if (!dotNetObj) {
-        throw new Error('DotNet object reference is null');
-    }
-
-    try {
-        return await dotNetObj.invokeMethodAsync(methodName, ...args);
-    } catch (error) {
-        console.error(`Error invoking ${methodName}:`, error);
-        throw error;
-    }
-}
-
-function sanitizeText(text) {
-    if (typeof text !== 'string') return String(text);
-    return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
 
 var dotNetObjDraw;
 var dotNetObjSLD;
 var graph, paper;
 var sldComponentsJS = [];
-var sldComponentsString1;
 
 
-var propertyButton = new elementTools.Button({
-    focusOpacity: 0.5,
-    // slightly right corner
-    x: '0%',
-    y: '50%',
-    offset: {x: 10, y: 0},
-    action: function (evt) { 
-        safeInvokeAsync(dotNetObjSLD, 'PropertyUpdate', this.model.tag, this.model.type)
-            .then(r => console.log(r)) ;
-    },
-    markup: [{
-        tagName: 'circle',
-        selector: 'button',
-        attributes: {
-            'r': 7,
-            'fill': '#001DFF',
-            'cursor': 'pointer'
-        }
-    }, {
-        tagName: 'path',
-        selector: 'icon',
-        attributes: {
-            'd': 'M -2 4 2 4 M 0 3 0 0 M -2 -1 1 -1 M -1 -4 1 -4',
-            'fill': 'none',
-            'stroke': '#FFFFFF',
-            'stroke-width': 2,
-            'pointer-events': 'none'
-        }
-    }]
-});
-
-
-var infoButton = new linkTools.Button({
-    markup: [{
-        tagName: 'circle',
-        selector: 'button',
-        attributes: {'r': 7, 'fill': '#001DFF', 'cursor': 'pointer'}
-    }, {
-        tagName: 'path',
-        selector: 'icon',
-        attributes: {
-            'd': 'M -2 4 2 4 M 0 3 0 0 M -2 -1 1 -1 M -1 -4 1 -4',
-            'fill': 'none',
-            'stroke': '#FFFFFF',
-            'stroke-width': 2,
-            'pointer-events': 'none'
-        }
-    }],
-    distance: '50%',
-    offset: 0,
-    action: function (evt) {
-        console.log('View id: ' + this.id + '\n' + 'Model id: ' + this.model.id);
-    }
-});
-
-var removeButton = new linkTools.Button({
-    markup: [{
-        tagName: 'circle',
-        selector: 'button',
-        attributes: {'r': 7, 'fill': 'red', 'cursor': 'pointer'}
-    }, {
-        tagName: 'path',
-        selector: 'icon',
-        attributes: {
-            'd': 'M -4 4 L 4 -4 M 4 4 L -4 -4',
-            'fill': 'none',
-            'stroke': '#FFFFFF',
-            'stroke-width': 2,
-            'pointer-events': 'none'
-        }
-    }],
-    distance: '25%',
-    offset: 0,
-    action: function (evt) {
-        // Get the link by its ID
-        const link = graph.getCell(this.model.id);
-        if (link && link.isLink()) {
-            removeLink(link);
-        } else {
-            console.log(`Link id '${this.id}' of link model '${this.model.id}' not available.`);
-        }
-    }
-});
-
-var validateButton = new linkTools.Button({
-    markup: [{
-        tagName: 'circle',
-        selector: 'button',
-        attributes: {'r': 7, 'fill': 'green', 'cursor': 'pointer'}
-    }, {
-        tagName: 'path',
-        selector: 'icon',
-        attributes: {
-            'd': 'M -2.5 -0.2 l 0.23 -0.24 c 0.34 0.1 1 0.35 1.7 0.72 c 0.6 -0.8 2 -1.9 2.7 -2.4 l 0.2 0.2 l -2.8 3.78 l -2 -2 z',
-            'fill': 'none',
-            'stroke': '#FFFFFF',
-            'stroke-width': 2,
-            'pointer-events': 'none'
-        }
-    }],
-    distance: '75%',
-    offset: 0,
-    action: function (evt) {
-        // Get the link by its ID
-        const link = graph.getCell(this.model.id);
-        if (link && link.isLink()) {
-            validateLinkFromServer(link);
-        } else {
-            console.log(`Link id '${this.id}' of link model '${this.model.id}' not available.`);
-        }
-    }
-});
+// var propertyButton = new elementTools.Button({
+//     focusOpacity: 0.5,
+//     // slightly right corner
+//     x: '0%',
+//     y: '50%',
+//     offset: {x: 10, y: 0},
+//     action: function (evt) { 
+//         safeInvokeAsync(dotNetObjSLD, 'PropertyUpdate', this.model.tag, this.model.type)
+//             .then(r => console.log(r)) ;
+//     },
+//     markup: [{
+//         tagName: 'circle',
+//         selector: 'button',
+//         attributes: {
+//             'r': 7,
+//             'fill': '#001DFF',
+//             'cursor': 'pointer'
+//         }
+//     }, {
+//         tagName: 'path',
+//         selector: 'icon',
+//         attributes: {
+//             'd': 'M -2 4 2 4 M 0 3 0 0 M -2 -1 1 -1 M -1 -4 1 -4',
+//             'fill': 'none',
+//             'stroke': '#FFFFFF',
+//             'stroke-width': 2,
+//             'pointer-events': 'none'
+//         }
+//     }]
+// });
+//
+//
+// var infoButton = new linkTools.Button({
+//     markup: [{
+//         tagName: 'circle',
+//         selector: 'button',
+//         attributes: {'r': 7, 'fill': '#001DFF', 'cursor': 'pointer'}
+//     }, {
+//         tagName: 'path',
+//         selector: 'icon',
+//         attributes: {
+//             'd': 'M -2 4 2 4 M 0 3 0 0 M -2 -1 1 -1 M -1 -4 1 -4',
+//             'fill': 'none',
+//             'stroke': '#FFFFFF',
+//             'stroke-width': 2,
+//             'pointer-events': 'none'
+//         }
+//     }],
+//     distance: '50%',
+//     offset: 0,
+//     action: function (evt) {
+//         console.log('View id: ' + this.id + '\n' + 'Model id: ' + this.model.id);
+//     }
+// });
+//
+// var removeButton = new linkTools.Button({
+//     markup: [{
+//         tagName: 'circle',
+//         selector: 'button',
+//         attributes: {'r': 7, 'fill': 'red', 'cursor': 'pointer'}
+//     }, {
+//         tagName: 'path',
+//         selector: 'icon',
+//         attributes: {
+//             'd': 'M -4 4 L 4 -4 M 4 4 L -4 -4',
+//             'fill': 'none',
+//             'stroke': '#FFFFFF',
+//             'stroke-width': 2,
+//             'pointer-events': 'none'
+//         }
+//     }],
+//     distance: '25%',
+//     offset: 0,
+//     action: function (evt) {
+//         // Get the link by its ID
+//         const link = graph.getCell(this.model.id);
+//         if (link && link.isLink()) {
+//             removeLink(link);
+//         } else {
+//             console.log(`Link id '${this.id}' of link model '${this.model.id}' not available.`);
+//         }
+//     }
+// });
+//
+// var validateButton = new linkTools.Button({
+//     markup: [{
+//         tagName: 'circle',
+//         selector: 'button',
+//         attributes: {'r': 7, 'fill': 'green', 'cursor': 'pointer'}
+//     }, {
+//         tagName: 'path',
+//         selector: 'icon',
+//         attributes: {
+//             'd': 'M -2.5 -0.2 l 0.23 -0.24 c 0.34 0.1 1 0.35 1.7 0.72 c 0.6 -0.8 2 -1.9 2.7 -2.4 l 0.2 0.2 l -2.8 3.78 l -2 -2 z',
+//             'fill': 'none',
+//             'stroke': '#FFFFFF',
+//             'stroke-width': 2,
+//             'pointer-events': 'none'
+//         }
+//     }],
+//     distance: '75%',
+//     offset: 0,
+//     action: function (evt) {
+//         // Get the link by its ID
+//         const link = graph.getCell(this.model.id);
+//         if (link && link.isLink()) {
+//             validateLinkFromServer(link);
+//         } else {
+//             console.log(`Link id '${this.id}' of link model '${this.model.id}' not available.`);
+//         }
+//     }
+// });
 
 
 async function updateSLD() {
@@ -318,552 +311,28 @@ function updateSLDWithStudyResults(busesString, switchboardString, switchString,
  * @param {*} dotNetObjSLDRef - .NET object reference for SLD
  * @returns {void}
  */
-function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGridSpacing, yGridSpacing,
-                 busesString, switchboardString, branchesString, loadsString, transformersString, cablesString,
-                 busDuctsString, xyString, sldComponentsString, dotNetObjRef, dotNetObjSLDRef) {
+function drawSLD(divString, xGridSize, yGridSize, 
+                 leftSpacing, topSpacing, xGridSpacing, yGridSpacing,
+                 busesString, switchboardString, branchesString, loadsString, 
+                 transformersString, cablesString, busDuctsString, 
+                 xyString, sldComponentsString, 
+                 dotNetObjRef, dotNetObjSLDRef) {
 
 
     // Define the custom drawing elements
-    // grid   
-    let GridElement = dia.Element.define('CustomGridElement', {
-        attrs: {
-            // size 40 x 40
-            body: {refWidth: '100%', refHeight: '100%', refX: '50%', refY: '10%',},
-            // textAnchor: middle: Align text to the middle horizontally
-            label: {fill: 'blue', fontWeight: 'bold', textAnchor: 'middle', fontSize: 10, refX: '50%', refY: -45,},
-            // textAnchor end: Right align text// Adjust horizontal position relative to refX
-            ratedSC: {fill: 'black', textAnchor: 'end', fontSize: 10, refX: '50%', refY: -35, dx: -2,},
-            ratedVoltage: {fill: 'black', textAnchor: 'start', fontSize: 10, refX: '50%', refY: -35, dx: 2,},
-            busFaultkA: {
-                fill: 'red',
-                fontWeight: 'bold',
-                textAnchor: 'end',
-                fontSize: 10,
-                refX: '50%',
-                refY: 5,
-                dx: -10,
-            },
-            operatingVoltage: {fill: 'blue', textAnchor: 'start', fontSize: 10, refX: '50%', refY: 5, dx: 10,}
-        },
-        ports: {
-            groups: {
-                'in': {
-                    position: {ref: 'body', name: 'absolute', args: {x: '50%', y: 10}},
-                    label: {
-                        position: {name: 'right', args: {x: 10, y: -5}},
-                        markup: [{tagName: 'text', selector: 'label'}]
-                    },
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
-                        label: {text: '1', fontSize: 8}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                },
-            },
-            items: [{id: '1', group: 'in'}] // bus can have muliple ports
-        },
-    }, {
-        markup: [
-            {
-                //https://yqnn.github.io/svg-path-editor/
-                tagName: 'path', selector: 'body',
-                attributes: {
-                    d: 'M 0 0 v -6 h -9 v -18 h 18 v 18 h -9 m -3 0 l -6 -6 l 12 -12 l 6 6 l -12 12 m 6 0 l -12 -12 l 6 -6 l 12 12 l -6 6 m 6 0 l -18 -18 m 18 0 l -18 18 z',
-                    stroke: 'blue', strokeWidth: 1, fill: 'none'
-                },
-            },
-            {tagName: 'text', selector: 'label'},
-            {tagName: 'text', selector: 'ratedSC'},
-            {tagName: 'text', selector: 'ratedVoltage'},
-            {tagName: 'text', selector: 'busFaultkA'},
-            {tagName: 'text', selector: 'operatingVoltage'},
-        ]
-    });
-
-    // switchboard    
-    let SwitchboardElement = dia.Element.define('SwitchboardElement', {
-        attrs: {
-            root: {magnet: false},
-            body: { refWidth: '100%', refHeight: '100%', refCx: '0%', refCy: '100%', strokeWidth: 1, strokeDasharray: '5,5', stroke: 'brown', fill: 'none', refX: '0%', refY: '0%',  alphaValue: 0.4},
-            tag: {ref: 'body', fill: 'blue', fontWeight: 'bold', textAnchor: 'start', fontSize: 8, refX: 5, refY: 5,},
-            '.': {'pointer-events': 'none'}
-        }
-    }, {
-        markup: [
-            {tagName: 'rect', selector: 'body'},
-            {tagName: 'text', selector: 'tag'},
-        ]
-    });
-
+    // grid
+    // switchboard
     // node 
-    let NodeElement = dia.Element.define('CustomNodeElement', {
-        attrs: {
-            root: {magnet: false},
-            label: {fill: 'blue', fontWeight: 'bold', textAnchor: 'start', fontSize: 8, refX: '0%', refY: -12},
-            ratedSC: {textAnchor: 'start', fontSize: 8, fill: 'brown', refX: '0%', refY: 5},
-            ratedVoltage: {textAnchor: 'start', fontSize: 8, fill: 'blue', refX: 25, refY: 5},
-            busFault: {textAnchor: 'end', fontSize: 8, fill: 'red', refX: '100%', refY: -12},
-            operatingVoltage: {textAnchor: 'end', fontSize: 8, fill: 'blue', refX: '100%', refY: 5}
-        },
-        ports: {
-            groups: {
-                'in': {
-                    position: {name: 'absolute', args: {x: '50%', y: 0}},
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
-                        label: {text: '1', fontSize: 8}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                },
-            },
-            items: [{id: '1', group: 'in'}] // node has only one port
-        }
-    }, {
-        markup: [
-            {tagName: 'text', selector: 'label'},
-            {tagName: 'text', selector: 'ratedSC'},
-            {tagName: 'text', selector: 'ratedVoltage'},
-            {tagName: 'text', selector: 'busFault'},
-            {tagName: 'text', selector: 'operatingVoltage'},
-        ]
-    });
-
     // bus
-    let BusElement = dia.Element.define('CustomBusElement', {
-        attrs: {
-            root: {magnet: false},
-            body: {stroke: 'blue', strokeWidth: 5, fill: 'transparent'},
-            label: {ref: 'body', fill: 'blue', fontWeight: 'bold', textAnchor: 'start', fontSize: 8, refX: '0%', refY: -12},
-            ratedSC: {ref: 'body', textAnchor: 'start', fontSize: 8, fill: 'brown', refX: '0%', refY: 5},
-            ratedVoltage: { ref: 'body',textAnchor: 'start',fontSize: 8, fill: 'blue', refX: 25, refY: 5},
-            busFault: {ref: 'body',textAnchor: 'end',fontSize: 8, fill: 'red', refX: '100%', refY: -12 },
-            operatingVoltage: {ref: 'body', textAnchor: 'end', fontSize: 8, fill: 'blue', refX: '100%', refY: 5}
-        },
-        ports: {
-            groups: {
-                'in': {
-                    position: {ref: 'body', name: 'absolute', args: {x: '50%', y: 0}},
-                    label: {
-                        position: {name: 'right', args: {x: 10, y: -5}},
-                        markup: [{tagName: 'text', selector: 'label'}]
-                    },
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
-                        label: {text: '1', fontSize: 8}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                },
-                //'out': {
-                //    position: { name: 'absolute', args: { x: '50%', y: 2 } },
-                //    label: { position: { name: 'right', args: { x: 10, y: 5 } }, markup: [{ tagName: 'text', selector: 'label' }] },
-                //    attrs: { portBody: { magnet: true, r: CONFIG.PORT_RADIUS, fill: '#E6A502', stroke: '#023047' }, label: { text: 'to', fontSize: 8, } },
-                //    markup: [{ tagName: 'circle', selector: 'portBody' }],
-                //}
-            },
-            items: [{id: '1', group: 'in'}] // bus can have muliple ports
-        }
-    }, {
-        markup: [
-            {tagName: 'line', selector: 'body'},
-            {tagName: 'text', selector: 'label'},
-            {tagName: 'text', selector: 'ratedSC'},
-            {tagName: 'text', selector: 'ratedVoltage'},
-            {tagName: 'text', selector: 'busFault'},
-            {tagName: 'text', selector: 'operatingVoltage'},
-        ]
-    });
-
-    // node 
-    let BusNodeElement = dia.Element.define('BusNodeElement', {
-        attrs: {
-            body: {
-                r: 14, // Radius of the circle
-                cx: '50%', // Center x-coordinate (relative to the element's width)
-                cy: '50%', // Center y-coordinate (relative to the element's height)
-                strokeWidth: 1,
-                stroke: '#000000',
-                fill: 'yellow',
-            }
-        }
-    }, {
-        markup: [
-            {
-                tagName: 'circle',
-                selector: 'body'
-            }
-        ]
-    });
-
+    // bus node 
     // load
-    let LoadElement = dia.Element.define('LoadElement', {
-        attrs: {
-            body: {
-                refWidth: '100%', // Full width of the element
-                refHeight: '100%', // Full height of the element
-                strokeWidth: 1,
-                stroke: '#000000',
-                fill: 'pink'
-            },
-            label: {
-                fill: 'blue',
-                fontWeight: 'bold',
-                textAnchor: 'middle', // Center-align text
-                fontSize: 8,
-                refX: 0, // Center alignment horizontally
-                refY: 35, // Adjust as needed
-            },
-            operatingPower: {
-                fill: 'blue',
-                textAnchor: 'middle', // Center-align text
-                fontSize: 8,
-                refX: 0, // Center alignment horizontally
-                refY: 45, // Adjust as needed
-            },
-            rating: {
-                fill: 'black',
-                textAnchor: 'middle', // Center-align text
-                fontSize: 8,
-                refX: 0, // Center alignment horizontally
-                refY: 55, // Adjust as needed
-            }
-        }
-    }, {
-        markup: [
-            {tagName: 'rect', selector: 'body'},
-            {tagName: 'text', selector: 'label'},
-            {tagName: 'text', selector: 'operatingPower'}, // Adjusted order
-            {tagName: 'text', selector: 'rating'} // Adjusted order
-        ]
-    });
-
     // lump load 
-    let LumpLoadElement = dia.Element.define('LumpLoadElement', {
-        attrs: {
-            root: {magnet: false},
-            body1: {refRCircumscribed: '25%', refCx: '0%', refCy: '50%', strokeWidth: 1, stroke: 'black', fill: 'cyan', refX: '0%',refY: '-15%', alphaValue: 0.4 },
-            body2: {refWidth: '100%', refHeight: '100%', refX: '0%', refY: '0%', stroke: 'black', strokeWidth: 1, fill: 'none' },
-            label: {fill: 'blue', fontWeight: 'bold', textAnchor: 'right', fontSize: 8, refX: 15, refY: -25,},
-            operatingPower: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: -15,},
-            rating: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: -5,},
-        },
-        ports: {
-            groups: {
-                'in': {
-                    position: {ref: 'body', name: 'absolute', args: {x: '0%', y: -10}},
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
-                        label: {text: '1', fontSize: 8}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                }
-            },
-            items: [{id: 'portIn', group: 'in'}]
-        }
-    }, {
-        markup: [
-            {tagName: 'circle', selector: 'body1'},
-            {
-                tagName: 'path',
-                selector: 'body2',
-                attributes: {d: 'm 0 15 L -15 15 L 0 38 L 15 15 L 0 15 m 0 0 v -20 Z'},
-            },
-            {tagName: 'text', selector: 'label'},
-            {tagName: 'text', selector: 'operatingPower'},
-            {tagName: 'text', selector: 'rating'},
-        ]
-    });
-
     // capacitor 
-    let CapacitorElement = dia.Element.define('CapacitorElement', {
-        attrs: {
-            root: {magnet: false},
-            body: {refWidth: '100%', refHeight: '100%', refX: '0%', refY: '0%', stroke: 'black', strokeWidth: 2},
-            label: {fill: 'blue', fontWeight: 'bold', textAnchor: 'right', fontSize: 8, refX: 15, refY: -25,},
-            operatingPower: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: -15,},
-            rating: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: -5,},
-        },
-        ports: {
-            groups: {
-                'in': {
-                    position: {ref: 'body', name: 'absolute', args: {x: '0%', y: -10}},
-                    label: {
-                        position: {name: 'right', args: {x: 10, y: -5}},
-                        markup: [{tagName: 'text', selector: 'label'}]
-                    },
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
-                        label: {text: '1', fontSize: 8}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                }
-            },
-            items: [{id: 'portIn', group: 'in'}]
-        }
-    }, {
-        markup: [
-            {
-                tagName: 'path',
-                selector: 'body',
-                attributes: {d: 'M -20 15 L 20 15 L -20 15 Z M -21 30 C -10 16 10 16 20 30 m 0 0 C 10 16 -10 16 -21 30 M 0 20 L 0 37 M 0 15 L 0 0 Z'},
-            },
-            {tagName: 'text', selector: 'label'},
-            {tagName: 'text', selector: 'operatingPower'},
-            {tagName: 'text', selector: 'rating'},
-        ]
-    });
-
     // transformer element   
-    let TransformerElement = dia.Element.define('TransformerElement', {
-        attrs: {
-            root: {magnet: false},
-            // primary: 100%/sqrt(2), i.e., radious is 100% of the width/heght of the element size width
-            primary: {
-                refRCircumscribed: '71%',
-                refCx: '0%',
-                refCy: '50%',
-                strokeWidth: 1,
-                stroke: 'black',
-                fill: 'aquamarine',
-                refX: '0%',
-                refY: '-75%',
-                alphaValue: 0.4
-            },
-            secondary: {
-                refRCircumscribed: '71%',
-                refCx: '0%',
-                refCy: '50%',
-                strokeWidth: 1,
-                stroke: 'black',
-                fill: 'aquamarine',
-                refX: '%',
-                refY: '75%',
-            },
-            tag: {fill: 'blue', fontWeight: 'bold', textAnchor: 'right', fontSize: 8, refX: '150%', refY: -15,},
-            voltage: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: '150%', refY: -5,},
-            kVArating: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: '150%', refY: 5,},
-            impedance: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: '150%', refY: 15,},
-            loading: {fill: 'blue', textAnchor: 'right', fontSize: 8, refX: '150%', refY: 25,}
-        },
-        ports: {
-            groups: {
-                'in': {
-                    position: {name: 'left', args: {y: -22}},
-                    label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: 'black'},
-                        label: {text: 'from', fontSize: 8}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                },
-                'out': {
-                    position: {name: 'left', args: {y: 37}},
-                    label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: 'black'},
-                        label: {text: 'to', fontSize: 8,}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                }
-            },
-            items: [{id: 'portIn', group: 'in'}, {id: 'portOut', group: 'out'}]
-        }
-    }, {
-        markup: [
-            {tagName: 'circle', selector: 'primary'},
-            {tagName: 'circle', selector: 'secondary'},
-            {tagName: 'text', selector: 'tag'},
-            {tagName: 'text', selector: 'voltage'},
-            {tagName: 'text', selector: 'kVArating'},
-            {tagName: 'text', selector: 'impedance'},
-            {tagName: 'text', selector: 'loading'}
-        ]
-    });
-
     // bus duct
-    let BusDuctElement = dia.Element.define('BusDuctElement', {
-        attrs: {
-            root: {magnet: false},
-            body: {refWidth: '100%', refHeight: '100%', refX: '0%', refY: '0%', stroke: 'black', strokeWidth: 1},
-            label: {fill: 'blue', fontWeight: 'bold', textAnchor: 'right', fontSize: 8, refX: 15, refY: -25,},
-            size: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: -15,},
-            length: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: -5,},
-            impedance: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: 5,},
-            operatingCurrent: {fill: 'blue', textAnchor: 'right', fontSize: 8, refX: 15, refY: 15,}
-        },
-        ports: {
-            groups: {
-                'in': {
-                    position: {name: 'left', args: {y: '-50%'}},
-                    label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'white', stroke: 'black'},
-                        label: {text: 'from', fontSize: 8}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                },
-                'out': {
-                    position: {name: 'left', args: {y: '50%'}},
-                    label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'white', stroke: 'black'},
-                        label: {text: 'to', fontSize: 8,}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                }
-            },
-            items: [{id: 'portIn', group: 'in'}, {id: 'portOut', group: 'out'}]
-        }
-    }, {
-        markup: [
-            {
-                //https://yqnn.github.io/svg-path-editor/
-                tagName: 'path',
-                selector: 'body',
-                attributes: {d: 'M -3 15 L -5 25 L -3 15 L -3 -15 L -5 -25 L -3 -15 M 0 -25 L 0 25 M 3 15 L 5 25 L 3 15 L 3 -15 L 5 -25 L 3 -15'},
-            },
-            {tagName: 'text', selector: 'label'},
-            {tagName: 'text', selector: 'size'},
-            {tagName: 'text', selector: 'length'},
-            {tagName: 'text', selector: 'impedance'},
-            {tagName: 'text', selector: 'operatingCurrent'}
-        ]
-    });
-
-
     // cable 
-    let CableElement = dia.Element.define('CableElement', {
-        attrs: {
-            root: {magnet: false},
-            //body: { refWidth: '100%', refHeight: '100%', strokeWidth: 1, stroke: '#A00000', fill: 'orange', refX: 0, refY: -25 },
-            body: {refWidth: '100%', refHeight: '100%', refX: '50%', refY: '10%',},
-            label: {fill: 'blue', fontWeight: 'bold', textAnchor: 'right', fontSize: 8, refX: 25, refY: -20},
-            size: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 25, refY: -10},
-            length: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 25, refY: 0},
-            impedance: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 25, refY: 10},
-            operatingCurrent: {fill: 'blue', textAnchor: 'right', fontSize: 8, refX: 25, refY: 20}
-        },
-        ports: {
-            groups: {
-                'in': {
-                    position: {name: 'left', args: {x: 5, y: -25}},
-                    label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
-                        label: {text: 'from', fontSize: 8}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                },
-                'out': {
-                    position: {name: 'left', args: {x: 5, y: 32}}, // size 10x60
-                    label: {position: {name: 'right', args: {x: 10}}, markup: [{tagName: 'text', selector: 'label'}]},
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: '#E6A502', stroke: '#023047'},
-                        label: {text: 'to', fontSize: 8,}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                }
-            },
-            items: [{id: 'portIn', group: 'in'}, {id: 'portOut', group: 'out'}]
-        }
-    }, {
-        markup: [
-            {
-                //https://yqnn.github.io/svg-path-editor/
-                tagName: 'path', selector: 'body',
-                attributes: {
-                    d: 'M 5 -25 C 3 -20 -3 -20 -5 -25 L -5 20 C -3 15 3 15 5 20 L 5 -25 C 3 -30 -3 -30 -5 -25 M -5 20 C -3 25 3 25 5 20',
-                    stroke: 'black', strokeWidth: 1, fill: 'orange'
-                },
-            },
-            //{ tagName: 'rect', selector: 'body' },
-            {tagName: 'text', selector: 'label'},
-            {tagName: 'text', selector: 'size'},
-            {tagName: 'text', selector: 'length'},
-            {tagName: 'text', selector: 'impedance'},
-            {tagName: 'text', selector: 'operatingCurrent'}
-        ]
-    });
-
     // motor
-    let MotorElement = dia.Element.define('MotorElement', {
-        attrs: {
-            root: {magnet: false},
-            body1: { refRCircumscribed: '25%', refCx: '0%', refCy: '50%', strokeWidth: 1, stroke: 'black', fill: 'azure', refX: '0%', refY: '-15%', alphaValue: 0.4},
-            body2: { refWidth: '100%', refHeight: '100%', refX: '0%', refY: '0%', stroke: 'black', strokeWidth: 1, fill: 'none' },
-            label: {fill: 'blue', fontWeight: 'bold', textAnchor: 'right', fontSize: 8, refX: 15, refY: -25,},
-            operatingPower: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: -15,},
-            rating: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: -5,},
-        },
-        ports: {
-            groups: {
-                'in': {
-                    position: {ref: 'body', name: 'absolute', args: {x: '0%', y: -10}},
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
-                        label: {text: '1', fontSize: 8}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                }
-            },
-            items: [{id: 'portIn', group: 'in'}]
-        }
-    }, {
-        markup: [
-            {tagName: 'circle', selector: 'body1'},
-            {
-                tagName: 'path',
-                selector: 'body2',
-                attributes: {d: 'm -8 30 L -8 15 L 0 25 L 8 15 L 8 30 L 8 15 L 0 25 L -8 15 L -8 30  m 8 -25 v -13 Z'},
-            },
-            {tagName: 'text', selector: 'label'},
-            {tagName: 'text', selector: 'operatingPower'},
-            {tagName: 'text', selector: 'rating'},
-        ]
-    });
-
     // heater
-    let HeaterElement = dia.Element.define('Heaterlement', {
-        attrs: {
-            root: {magnet: false},
-            body: {
-                refWidth: '100%',
-                refHeight: '100%',
-                refX: '0%',
-                refY: '0%',
-                stroke: 'black',
-                strokeWidth: 1,
-                fill: 'cornsilk'
-            },
-            label: {fill: 'blue', fontWeight: 'bold', textAnchor: 'right', fontSize: 8, refX: 15, refY: -25,},
-            operatingPower: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: -15,},
-            rating: {fill: 'black', textAnchor: 'right', fontSize: 8, refX: 15, refY: -5,},
-        },
-        ports: {
-            groups: {
-                'in': {
-                    position: {ref: 'body', name: 'absolute', args: {x: '0%', y: -10}},
-                    attrs: {
-                        portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
-                        label: {text: '1', fontSize: 8}
-                    },
-                    markup: [{tagName: 'circle', selector: 'portBody'}],
-                }
-            },
-            items: [{id: 'portIn', group: 'in'}]
-        }
-    }, {
-        markup: [
-            {
-                tagName: 'path',
-                selector: 'body',
-                attributes: {d: 'm -15 5 L 15 5 L 15 55 L -15 55 L -15 5 m 0 10 L 15 15 M 15 25 L -15 25 M -15 35 L 15 35 M 15 45 L -15 45 m 15 -40 v -14 Z'},
-            },
-            {tagName: 'text', selector: 'label'},
-            {tagName: 'text', selector: 'operatingPower'},
-            {tagName: 'text', selector: 'rating'},
-        ]
-    });
-
     // link
     let branchLink = new shapes.standard.Link({
         router: {name: 'manhattan'},
@@ -878,18 +347,10 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         }
     });
 
-
-
-
-
-
-
-
-
     dotNetObjDraw = dotNetObjRef;
     dotNetObjSLD = dotNetObjSLDRef;
 
-// Declare variables BEFORE try-catch
+    // Declare variables BEFORE try-catch
     let buses, branches, loads, transformers, cables, busDucts, sldComponents, switchboards;
 
     try {
@@ -900,7 +361,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         cables = JSON.parse(cablesString);
         busDucts = JSON.parse(busDuctsString);
         sldComponents = JSON.parse(sldComponentsString);
-        sldComponentsString1 = sldComponentsString;
+        // sldComponentsString1 = sldComponentsString;
         switchboards = JSON.parse(switchboardString);
 
         buses = Array.isArray(buses) ? buses : [];
@@ -911,7 +372,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         busDucts = Array.isArray(busDucts) ? busDucts : [];
         sldComponents = Array.isArray(sldComponents) ? sldComponents : [];
         switchboards = Array.isArray(switchboards) ? switchboards : [];
-    } catch(e) {
+    } catch (e) {
         console.error('Error parsing JSON parameters:', e);
         // Initialize with empty arrays to prevent undefined errors
         buses = [];
@@ -935,11 +396,11 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         BusDuctElement, GridElement, LumpLoadElement, CapacitorElement, NodeElement
     };
 
-    let defaultGrid = buses.filter(item => item.Category === "Swing")[0];
-    let defaultBus = buses.filter(item => item.Category !== "Swing")[0];
-    let defaultCable = cables[0];
-    let defaultTransformer = transformers[0];
-    let defaultBusduct = busDucts[0];
+    // let defaultGrid = buses.filter(item => item.Category === "Swing")[0];
+    // let defaultBus = buses.filter(item => item.Category !== "Swing")[0];
+    // let defaultCable = cables[0];
+    // let defaultTransformer = transformers[0];
+    // let defaultBusduct = busDucts[0];
 
     graph = new dia.Graph({}, {cellNamespace: namespace});
 
@@ -1036,37 +497,42 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
     });
     paper.el.style.border = '1px solid #2E2E2E';
 
-
-    // Function to check if a port has links
-    function hasLink(element, portName) {
-        // Get all links (edges) connected to the element
-        const links = graph.getLinks();
-
-        // Check if any link uses the specified port as source or target
-        return links.some(link =>
-            link.get('source').id === element.id && link.get('source').port === portName ||
-            link.get('target').id === element.id && link.get('target').port === portName
-        );
-    }
+    // ── Populate shared refs so buttons.js can read them at click time ──
+    sldState.dotNetObjSLD = dotNetObjSLD;
+    sldState.graph = graph;
+    //sldState.removeLink            = removeLink;            // still defined in mySLD.js for now
+    //sldState.validateLinkFromServer = validateLinkFromServer; // still defined in mySLD.js for now
 
 
-    // Function to get the port ID from an element and a magnet
-    function getPortId(element, magnet) {
-        // Iterate over all ports of the element
-        for (let portName in element.getPorts()) {
-            const port = element.getPort(portName);
-            // Check if the magnet matches the port element
-            if (port && port.attrs.body.el === magnet) {
-                return portName; // Return the port ID (name)
-            }
-        }
-        return null; // Port not found
-    }
+    // // Function to check if a port has links
+    // function hasLink(element, portName) {
+    //     // Get all links (edges) connected to the element
+    //     const links = graph.getLinks();
+    //
+    //     // Check if any link uses the specified port as source or target
+    //     return links.some(link =>
+    //         link.get('source').id === element.id && link.get('source').port === portName ||
+    //         link.get('target').id === element.id && link.get('target').port === portName
+    //     );
+    // }
+
+
+    // // Function to get the port ID from an element and a magnet
+    // function getPortId(element, magnet) {
+    //     // Iterate over all ports of the element
+    //     for (let portName in element.getPorts()) {
+    //         const port = element.getPort(portName);
+    //         // Check if the magnet matches the port element
+    //         if (port && port.attrs.body.el === magnet) {
+    //             return portName; // Return the port ID (name)
+    //         }
+    //     }
+    //     return null; // Port not found
+    // }
 
 
     //const rect11 = new Rectangle();
     //rect11.addTo(graph);
-
 
 
     //var Container = shapes.container.Parent;
@@ -1213,7 +679,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         console.log('Template Element ' + elementView.model.tag + 'moved to ' + x + ',' + y);
         if (isOverlapping(elementView.model, graph)) {
             // Move the element to the nearest empty position
-            const newPosition = findNearestEmptyPosition(elementView.model, graph, 50);
+            const newPosition = findNearestEmptyPosition(elementView.model, graph, paper, 50);
             elementView.model.set('position', newPosition);
         }
 
@@ -1451,7 +917,6 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
     });
 
     console.log('═══════════════════════════════════════════════════════');
-
 
 
     buses.forEach((bus, index) => {
@@ -1747,7 +1212,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         return swbdModel;
     }
 
-    
+
     branches.forEach((branch, index) => {
         var sourceBus = buses.find(bus => bus.Tag == branch.FromBus);
         var targetBus = buses.find(bus => bus.Tag == branch.ToBus);
@@ -1850,8 +1315,8 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         toLink.tag = getLinkTag(toLink);
 
         // check if exising server data has customised vertices for this link
-        fromLink = updateLinkVertices(fromLink, sldComponents);
-        toLink = updateLinkVertices(toLink, sldComponents);
+        fromLink = updateLinkVertices(fromLink, sldComponents, graph);
+        toLink = updateLinkVertices(toLink, sldComponents, graph);
         fromLink.type = "link";
         toLink.type = "link";
         // Add the link to the graph
@@ -1868,89 +1333,124 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
     });
 
 
-    function updateLinkVertices(link, sldComponents) {
-        // check if exising server data has customised vertices for this link
-        var existingLinkData = sldComponents.find(item => item.Tag == link.tag && item.Type == "link");
-        if (existingLinkData) {
-            //var verticesText = existingData.propertyJSON.replace(/'/g, '"');
-            var newVerticesText = existingLinkData.PropertyJSON;
-            var newVertices = JSON.parse(newVerticesText);
-            if (newVertices) link.vertices(newVertices);
-            //console.log(`'${bottomLink.tag}' are updated with vertices ${newVerticesText} from DB.`);
-        }
-        return link;
-    }
+    // /**
+    //  * Update link vertices from server data
+    //  * Matches links by source/target tags, not by link.tag (which may not be set yet)
+    //  * @param {Object} link - JointJS link model
+    //  * @param {Array} sldComponents - SLD components data
+    //  * @param {Object} graph - JointJS graph
+    //  * @returns {Object} Updated link
+    //  */
+    // function updateLinkVertices(link, sldComponents, graph) {
+    //     // Get source and target element tags
+    //     const sourceId = link.prop('source/id');
+    //     const targetId = link.prop('target/id');
+    //
+    //     if (!sourceId || !targetId) return link;
+    //
+    //     const sourceElement = graph.getCell(sourceId);
+    //     const targetElement = graph.getCell(targetId);
+    //
+    //     if (!sourceElement || !targetElement) return link;
+    //
+    //     const sourceTag = sourceElement.tag;
+    //     const targetTag = targetElement.tag;
+    //
+    //     // Find the saved link data by matching source/target tags
+    //     // The Tag field in database is in format "TAG1:port - TAG2:port"
+    //     // So we check if both tags appear in the saved Tag
+    //     const existingLinkData = sldComponents.find(item => {
+    //         if (item.Type !== 'link') return false;
+    //         if (!item.Tag) return false;
+    //
+    //         // Check if this Tag contains both our source and target tags
+    //         return item.Tag.includes(sourceTag) && item.Tag.includes(targetTag);
+    //     });
+    //
+    //     if (existingLinkData && existingLinkData.PropertyJSON) {
+    //         try {
+    //             const vertices = JSON.parse(existingLinkData.PropertyJSON);
+    //             if (vertices && Array.isArray(vertices) && vertices.length > 0) {
+    //                 link.vertices(vertices);
+    //             }
+    //         } catch (e) {
+    //             console.warn('Failed to parse vertices for link:', existingLinkData.Tag, e);
+    //         }
+    //     }
+    //
+    //     return link;
+    // }
 
-    function updateItemPosition(cell, sldComponents) {
-        // check if exising server data has customised position for this cell
-        var serverData = sldComponents.find(item => cell && cell.hasOwnProperty('tag') && item.Tag === cell.tag);
-        if (serverData) {
-            var newPositionText = serverData.PropertyJSON;
-            var newPosition = JSON.parse(newPositionText)
-            if (newPosition) cell.prop('position', newPosition);
-        }
-        return cell;
-    }
+    // function updateItemPosition(cell, sldComponents) {
+    //     // check if exising server data has customised position for this cell
+    //     var serverData = sldComponents.find(item => cell && cell.hasOwnProperty('tag') && item.Tag === cell.tag);
+    //     if (serverData) {
+    //         var newPositionText = serverData.PropertyJSON;
+    //         var newPosition = JSON.parse(newPositionText)
+    //         if (newPosition) cell.prop('position', newPosition);
+    //     }
+    //     return cell;
+    // }
 
-    function updatePositionLength(busModel, sldComponents) {
-        // check if exising server data has customised node?, position and length for this bus
-        var serverData = sldComponents.find(item => busModel && busModel.hasOwnProperty('tag') && item.Tag === busModel.tag);
-        if (serverData) {
-            if (busModel.hasOwnProperty('type') && busModel.type === "swing") {
-                busModel.prop('position', JSON.parse(serverData.PropertyJSON));
-            } else {
-                var newPositionLengthText = serverData.PropertyJSON;
-                var newPositionLength = JSON.parse(newPositionLengthText);
-                if (newPositionLength.position) {
+    // function updatePositionLength(busModel, sldComponents) {
+    //     // check if exising server data has customised node?, position and length for this bus
+    //     var serverData = sldComponents.find(item => busModel && busModel.hasOwnProperty('tag') && item.Tag === busModel.tag);
+    //     if (serverData) {
+    //         if (busModel.hasOwnProperty('type') && busModel.type === "swing") {
+    //             busModel.prop('position', JSON.parse(serverData.PropertyJSON));
+    //         } else {
+    //             var newPositionLengthText = serverData.PropertyJSON;
+    //             var newPositionLength = JSON.parse(newPositionLengthText);
+    //             if (newPositionLength.position) {
+    //
+    //                 busModel.prop('position', newPositionLength.position);
+    //             }
+    //             if (newPositionLength.length && busModel.type == "bus") {
+    //                 busModel.prop('size/width', newPositionLength.length);
+    //                 busModel.prop('attrs/body/x2', newPositionLength.length);
+    //             }
+    //
+    //             // check if its node or not
+    //             if (newPositionLength.node && busModel.type == "bus") {
+    //                 if (newPositionLength.node) {
+    //                     //busModel.prop('node', true);
+    //                     busModel.node = true;
+    //                 } else {
+    //                     //busModel.prop('node', false);
+    //                     busModel.node = false;
+    //                 }
+    //                 busModel = updateNodeOrBus(busModel);
+    //             }
+    //         }
+    //     }
+    //     return busModel;
+    // }
 
-                    busModel.prop('position', newPositionLength.position);
-                }
-                if (newPositionLength.length && busModel.type == "bus") {
-                    busModel.prop('size/width', newPositionLength.length);
-                    busModel.prop('attrs/body/x2', newPositionLength.length);
-                }
-
-                // check if its node or not
-                if (newPositionLength.node && busModel.type == "bus") {
-                    if (newPositionLength.node) {
-                        //busModel.prop('node', true);
-                        busModel.node = true;
-                    } else {
-                        //busModel.prop('node', false);
-                        busModel.node = false;
-                    }
-                    busModel = updateNodeOrBus(busModel);
-                }
-            }
-        }
-        return busModel;
-    }
-
-    function updateNodeOrBus(busModel) {
-        // update node status by either doubleclick or by server data
-        if (busModel.node) {
-            busModel.attr('label/textAnchor', 'end');
-            busModel.attr('label/refX', '50%');
-            busModel.attr('label/dx', -10);
-            busModel.attr('label/refY', 0);
-            busModel.attr('body/visibility', 'hidden');
-            busModel.attr('ratedSC/visibility', 'hidden');
-            busModel.attr('ratedVoltage/visibility', 'hidden');
-            busModel.attr('busFault/visibility', 'hidden');
-            busModel.attr('operatingVoltage/visibility', 'hidden');
-        } else {
-
-            //label: { ref: 'body', fill: 'blue', fontWeight: 'bold', textAnchor: 'start', fontSize: 8, refX: '0%', refY: -12 },
-            busModel.attr('label/textAnchor', 'start');
-            busModel.attr('label/refY', -12);
-            busModel.attr('body/visibility', 'visible');
-            busModel.attr('ratedSC/visibility', 'visible');
-            busModel.attr('ratedVoltage/visibility', 'visible');
-            busModel.attr('busFault/visibility', 'visible');
-            busModel.attr('operatingVoltage/visibility', 'visible');
-        }
-        return busModel;
-    }
+    // function updateNodeOrBus(busModel) {
+    //     // update node status by either doubleclick or by server data
+    //     if (busModel.node) {
+    //         busModel.attr('label/textAnchor', 'end');
+    //         busModel.attr('label/refX', '50%');
+    //         busModel.attr('label/dx', -10);
+    //         busModel.attr('label/refY', 0);
+    //         busModel.attr('body/visibility', 'hidden');
+    //         busModel.attr('ratedSC/visibility', 'hidden');
+    //         busModel.attr('ratedVoltage/visibility', 'hidden');
+    //         busModel.attr('busFault/visibility', 'hidden');
+    //         busModel.attr('operatingVoltage/visibility', 'hidden');
+    //     } else {
+    //
+    //         //label: { ref: 'body', fill: 'blue', fontWeight: 'bold', textAnchor: 'start', fontSize: 8, refX: '0%', refY: -12 },
+    //         busModel.attr('label/textAnchor', 'start');
+    //         busModel.attr('label/refY', -12);
+    //         busModel.attr('body/visibility', 'visible');
+    //         busModel.attr('ratedSC/visibility', 'visible');
+    //         busModel.attr('ratedVoltage/visibility', 'visible');
+    //         busModel.attr('busFault/visibility', 'visible');
+    //         busModel.attr('operatingVoltage/visibility', 'visible');
+    //     }
+    //     return busModel;
+    // }
 
 
     paper.on('element:mouseenter', function (elementView) {
@@ -2029,7 +1529,7 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
         sldComponentsJS = sldComponentsJS.filter(sldComponent => sldComponent.Tag != cell.tag || sldComponent.Type != cell.type || sldComponent.SLD != "key");
 
         // Creating an object using the sldComponentData constructor function
-        // add this new json string to the list
+        // add this new JSON string to the list
         //sldComponentsJS.push(new sldComponentData(cell.tag, cell.type, "key", JSON.stringify(cell.attributes.position)));
         if (cell.type == "bus") {
             // save position and length
@@ -2540,7 +2040,10 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
             position: {name: 'top', args: {y: -6}},
             markup: [{tagName: 'text', selector: 'label', className: 'label-text'}]
         },
-        attrs: {portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'}, label: {text: 'in'}},
+        attrs: {
+            portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
+            label: {text: 'in'}
+        },
         markup: [{tagName: 'circle', selector: 'portBody'}],
     };
 
@@ -2550,7 +2053,10 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
             position: {name: 'right', args: {y: 6}},
             markup: [{tagName: 'text', selector: 'label', className: 'label-text'}]
         },
-        attrs: {portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: '#E6A502', stroke: '#023047'}, label: {text: 'out'}},
+        attrs: {
+            portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: '#E6A502', stroke: '#023047'},
+            label: {text: 'out'}
+        },
         markup: [{tagName: 'circle', selector: 'portBody'}],
     };
 
@@ -2592,7 +2098,8 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
     rect.portProp(portId, 'attrs/label/text', 'just chill'); // { name: 'right', args: { y: '60%' } });
     //rect.prop('ports/items/' + portIndex + '/position', { name: 'right', args: { y: '60%' } });
 
-
+    
+    
 }
 
 
@@ -2603,361 +2110,379 @@ function drawSLD(divString, xGridSize, yGridSize, leftSpacing, topSpacing, xGrid
 //}
 
 
-function getLinkTag(link) {
-    var source = graph.getCell(link.get('source'));
-    var target = graph.getCell(link.get('target'));
-    var sourcePortId = link.prop('source/port');
-    var targetPortId = link.prop('target/port');
-    var sourcePortIndex = source.getPortIndex(sourcePortId);
-    var targetPortIndex = target.getPortIndex(targetPortId);
-
-    return (source.tag > target.tag) ?
-        `${source.tag}:${sourcePortIndex} - ${target.tag}:${targetPortIndex}` :
-        `${target.tag}:${targetPortIndex} - ${source.tag}:${sourcePortIndex}`;
-}
-
-
-function getLinkData(link) {
-    var sPort = link.prop('source/port');
-    var tPort = link.prop('target/port');
-    //var sM = graph.getCell(link.prop('source').id);
-    var sM = graph.getElements().find(el => el.id === link.prop('source').id);
-    var tM = graph.getElements().find(el => el.id === link.prop('target').id);
-
-    return {
-        'sourceTag': sM.tag,
-        'targetTag': tM.tag,
-        'sourcePort': sPort ? sPort : "",
-        'targetPort': tPort ? tPort : ""
-    };
-}
-
-
-function busPortDistribution(busId) {
-    // function to distribute the ports along the bus length
-    // as per no of links connected to this bus
-
-    // pick the bus from graph and update there, does not return any
-    var bus = graph.getCell(busId);
-    // all busses have only one port group 'in' and default one port
-    // ports are numbered with 1, 2, 3...
-    // default port 1 cannot be deleted
-
-    // check all the links connected to this bus
-    const allLinks = graph.getConnectedLinks(bus);
-
-    // check existing ports 
-    var ports = bus.getGroupPorts('in');
-    var busWidth = bus.prop('size/width'); // busWidth not required as the positions are refX in percentage
-
-    // check up-side and down-side connection requirement
-    var upLinks = [];
-    var downLinks = [];
-
-    // assign other end position (x,y) fpr filter purpose
-    allLinks.forEach(link => {
-        var source = graph.getCell(link.prop('source').id);
-        var target = graph.getCell(link.prop('target').id);
-        var otherEnd = source.id === bus.id ? target : source;
-        link.otherEndX = otherEnd.prop('position/x');
-        link.otherEndY = otherEnd.prop('position/y');
-    });
-
-    // arrange links as per the X value of the other end of the links
-    allLinks.sort((a, b) => a.otherEndX - b.otherEndX);
-
-    allLinks.forEach(link => {
-        if (link.otherEndY < bus.prop('position/y')) {
-            upLinks.push(link);
-        } else {
-            downLinks.push(link);
-        }
-
-        // below code is to compare based on the absolute position of the ports, not just element position
-        //var otherEndPortTag = source.id === bus.id ? link.prop('target/port') : link.prop('source/port');
-        //var otherEndPortPosition = otherEnd.getPortsPositions(otherEndPortTag);
-        //var otherEndPortPositionAbsoluteY = otherend.prop('position/y') + otherEndPortPosition.y;
-    });
-
-
-    // total no of ports is equal to total no of connections
-    var reqPorts = upLinks.length + downLinks.length;
-    console.log(`Bus port postion distribution for bus tag '${bus.tag}' having total ${allLinks.length} connections : ` +
-        `Upside links : ${upLinks.length} and Downside links ${downLinks.length}, total available ports ${ports.length} and required ports ${reqPorts}.`);
-
-    // Remove ports if the required no. of ports are less than the existing ports (however retain minimum 1)
-    if (reqPorts < ports.length && ports.length > 1) {
-        for (let i = ports.length; i > upLinks.length; i--) {
-            bus.removePort(`{i}`);
-        }
-    }
-
-    // Add ports if the required no. of ports are more than the existing ports
-    if (reqPorts > ports.length) {
-
-        // Define new ports
-        var newPorts = [];
-        for (let i = ports.length; i < reqPorts; i++) {
-            newPorts.push({id: `${i + 1}`, group: 'in', position: {name: 'absolute', args: {x: `0%`, y: 0}}});
-        }
-
-        // Add new ports to the element
-        newPorts.forEach(port => {
-            bus.addPort({
-                ...port,
-                attrs: {
-                    portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
-                    label: {text: port.id, fontSize: 8}
-                },
-                markup: [{tagName: 'circle', selector: 'portBody'}]
-            });
-        });
-    }
-
-    // Define new positions to the arranged ports as per final port nos
-    // and Update the ports' positions
-    for (let i = 0; i < upLinks.length; i++) {
-        // position for up-side ports
-        var pos = `${Math.round((i + 0.5) * 100 / upLinks.length)}%`;
-        console.log(`Bus tag '${bus.tag}' postion for Port #'${i + 1}' (up-link # ${i + 1}) '${pos}`);
-        bus.portProp(`${i + 1}`, 'args/x', pos);
-        bus.portProp(`${i + 1}`, 'attrs/label/refX', 3);
-        bus.portProp(`${i + 1}`, 'attrs/label/refY', -10);
-        // reassign the corresponding port for up-side links
-        var end = upLinks[i].prop('source').id == bus.id ? 'source' : 'target';
-        var portId = bus.getPorts()[i].id;
-
-        if (end == 'source') upLinks[i].set({source: {id: busId, port: portId}});
-        if (end == 'target') upLinks[i].set({target: {id: busId, port: portId}});
-
-
-        var end = upLinks[i].prop('source') == bus.id ? 'source' : 'target';
-        upLinks[i].prop(`${end}'/port`, `${i + 1}`);
-    }
-    for (let i = 0; i < downLinks.length; i++) {
-        // position for down-side ports
-        var pos = `${Math.round((i + 0.5) * 100 / downLinks.length)}%`;
-        console.log(`Bus tag '${bus.tag}' postion for Port #'${upLinks.length + i + 1}' (down-link # ${i + 1}) '${pos}`);
-        bus.portProp(`${upLinks.length + i + 1}`, 'args/x', pos);
-        bus.portProp(`${upLinks.length + i + 1}`, 'attrs/label/refX', 3);
-        bus.portProp(`${upLinks.length + i + 1}`, 'attrs/label/refY', 10);
-        // reassign the corresponding port for down-side links
-        var end = downLinks[i].prop('source').id == bus.id ? 'source' : 'target';
-        var portId = bus.getPorts()[upLinks.length + i].id;
-
-        if (end == 'source') downLinks[i].set({source: {id: busId, port: portId}});
-        if (end == 'target') downLinks[i].set({target: {id: busId, port: portId}});
-
-    }
-    // later : if up and down are same or both are odd or in LCM, there are common ports
-
-}
-
-
-async function validateLinkFromServer(link) {
-
-    let linkData = getLinkData(link);
-    
-    try {
-        const success = await safeInvokeAsync(
-            dotNetObjSLD,
-            'SLDValidateLink',
-            JSON.stringify(linkData)
-        );
-
-        link.set('valid', success);
-
-        if (!success) {
-            // Optionally notify user
-            console.warn(`Link validation failed: ${linkData.sourceTag} → ${linkData.targetTag}`);
-        }
-    } catch (e) {
-        console.error(`Validation error:`, e);
-        link.set('valid', false);
-        // Consider showing user notification
-    }
-
-    return link;
-}
-
-
-async function removeLink(link) {
-    var linkData = getLinkData(link);
-
-    var success = await safeInvokeAsync(
-            dotNetObjSLD, 'SLDRemoveLink', JSON.stringify(linkData));
-        if (success) {
-            link.remove(); // Remove the link from the graph
-            console.log(`Removal success of the Link between '${linkData.sourceTag} and ${linkData.targetTag}' : ${success}.`);
-        }
-}
-
-
-function isOverlapping(element, graph) {
-    // Function to check if an element overlaps with any other elements
-    const bbox = element.getBBox();
-    return graph.getCells().some(cell => {
-        if (cell === element) return false;
-        const cellBBox = cell.getBBox();
-        return bbox.intersect(cellBBox);
-    });
-}
-
-
-function findNearestEmptyPosition(element, graph, spacing = 20) {
-    // Function to find the nearest empty position
-    // Adjust spacing as needed
-    let position = element.get('position');
-    let newPosition = {...position};
-
-    while (isOverlapping(element, graph)) {
-        // Move the element to a new position
-        newPosition.x += spacing;
-        if (newPosition.x > paper.options.width) {
-            newPosition.x = 0;
-            newPosition.y += spacing;
-        }
-
-        // Ensure newPosition is within paper bounds
-        // and away from template (x>100) and top margin 50
-        newPosition.x = Math.max(100, Math.min(newPosition.x, paper.options.width - element.getBBox().width));
-        newPosition.y = Math.max(50, Math.min(newPosition.y, paper.options.height - element.getBBox().height));
-
-        element.set('position', newPosition);
-    }
-
-    return newPosition;
-}
-
-
-function updateBus(busModel, busInfo) {
-
-    if (!busInfo || !busModel) {
-        console.error('Invalid parameters for updateBus');
-        return busModel;
-    }
-
-    // Safe access with defaults
-    const isc = typeof busInfo.ISC === 'number' ? busInfo.ISC : 0;
-    const vr = typeof busInfo.VR === 'number' ? busInfo.VR : 0;
-
-    if (busInfo.Category === "Swing") {
-        // grid            
-        busModel.attr({
-            label: {text: "Grid" + sanitizeText(busInfo.Tag)},
-            ratedSC: {text: sanitizeText(Math.round(10 * busInfo.ISC) / 10 + "kA")},
-            ratedVoltage: {text: sanitizeText(busInfo.VR / 1000 + "kV")},
-            busFaultkA: {text: sanitizeText(Math.round(10 * busInfo.SCkAaMax) / 10 + "kA")},
-            operatingVoltage: {text: sanitizeText(Math.round(10000 * busInfo.Vo.Magnitude) / 100 + "% ∠" + Math.round(busInfo.Vo.Phase * 1800 / Math.PI) / 10 + "°")}
-        });
-    } else {
-        // the other bus
-        busModel.attr({
-            label: {text: sanitizeText(busInfo.Tag)},
-            ratedSC: {text: sanitizeText(Math.round(10 * busInfo.ISC) / 10 + "kA")},
-            ratedVoltage: {text: sanitizeText(busInfo.VR / 1000 + "kV")},
-            busFault: {text: sanitizeText(Math.round(10 * busInfo.SCkAaMax) / 10 + "kA")},
-            operatingVoltage: {text: sanitizeText(Math.round(10000 * busInfo.Vo.Magnitude) / 100 + "% ∠" + Math.round(busInfo.Vo.Phase * 1800 / Math.PI) / 10 + "°")}
-        });
-    }
-    return busModel;
-}
-
-
-function updateTransformer(trafoModel, trafoInfo, branches) {
-
-    let branch = branches.find(br => br.Tag === trafoInfo.Tag);
-
-    trafoModel.attr({
-        tag: {text: sanitizeText(trafoInfo.Tag)},
-        voltage: {text: `${trafoInfo.V1 / 1000}/${trafoInfo.V2 / 1000}kV`},
-        kVArating: {text: `${trafoInfo.KVA}kVA`},
-        impedance: {text: `Z:${trafoInfo.Z}%`},
-        loading: {text: `${Math.round(10 * branch?.KW) / 10}KW ${Math.round(10 * branch?.KVAR) / 10}kVAR`}
-    });
-    return trafoModel;
-}
-
-function updateCable(cableModel, cabledata, branches) {
-
-    var branch = branches.find(br => br.Tag === cabledata.Tag);
-
-    cableModel.attr({
-        label: {text: sanitizeText(cabledata.Tag)},
-        size: {text: cabledata.CblDesc},
-        length: {text: `${cabledata.L}m, ${cabledata.Rl}-j${cabledata.Xl}Ω/km`},
-        impedance: {text: `R:${cabledata.R}, X:${cabledata.X}`},
-        operatingCurrent: {text: `${Math.round(10 * branch?.Io.Magnitude) / 10}A ∠${Math.round(branch?.Io.Phase * 1800 / Math.PI) / 10}°`}
-    });
-
-    return cableModel;
-}
-
-function updateBusDuct(busDuctModel, busDuctdata, branches) {
-
-    var branch = branches.find(br => br.Tag == busDuctdata.Tag);
-    busDuctModel.attr({
-        label: {text: sanitizeText(busDuctdata.Tag)},
-        size: {text: `${busDuctdata.IR}A`},
-        length: {text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km`},
-        impedance: {text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}`},
-        operatingCurrent: {text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°`}
-    });
-    return busDuctModel;
-}
-
-
-function updateMotor(motorModel, motordata, branches) {
-
-    var branch = branches.find(br => br.Tag == motordata.Tag);
-    motorModel.attr({
-        // label: { text: busDuctdata.Tag },
-        // size: { text: `${busDuctdata.IR}A` },
-        // length: { text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km` },
-        // impedance: { text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}` },
-        // operatingCurrent: { text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°` }
-    });
-    return motorModel;
-}
-
-function updateHeater(heaterModel, heaterdata, branches) {
-
-    var branch = branches.find(br => br.Tag == heaterdata.Tag);
-    heaterModel.attr({
-        // label: { text: busDuctdata.Tag },
-        // size: { text: `${busDuctdata.IR}A` },
-        // length: { text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km` },
-        // impedance: { text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}` },
-        // operatingCurrent: { text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°` }
-    });
-    return heaterModel;
-}
-
-function updateCapacitor(capacitorModel, capacitordata, branches) {
-
-    var branch = branches.find(br => br.Tag == capacitordata.Tag);
-    capacitorModel.attr({
-        // label: { text: busDuctdata.Tag },
-        // size: { text: `${busDuctdata.IR}A` },
-        // length: { text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km` },
-        // impedance: { text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}` },
-        // operatingCurrent: { text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°` }
-    });
-    return capacitorModel;
-}
-
-function updateLumpLoad(lumpLoadModel, lumpLoaddata, branches) {
-
-    var branch = branches.find(br => br.Tag == lumpLoaddata.Tag);
-    lumploadModel.attr({
-        //label: { text: busDuctdata.Tag },
-        //size: { text: `${busDuctdata.IR}A` },
-        //length: { text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km` },
-        //impedance: { text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}` },
-        //operatingCurrent: { text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°` }
-    });
-    return lumploadModel;
-}
+// function getLinkTag(link) {
+//     var source = graph.getCell(link.get('source'));
+//     var target = graph.getCell(link.get('target'));
+//     var sourcePortId = link.prop('source/port');
+//     var targetPortId = link.prop('target/port');
+//     var sourcePortIndex = source.getPortIndex(sourcePortId);
+//     var targetPortIndex = target.getPortIndex(targetPortId);
+//
+//     return (source.tag > target.tag) ?
+//         `${source.tag}:${sourcePortIndex} - ${target.tag}:${targetPortIndex}` :
+//         `${target.tag}:${targetPortIndex} - ${source.tag}:${sourcePortIndex}`;
+// }
+
+
+// function getLinkData(link) {
+//     var sPort = link.prop('source/port');
+//     var tPort = link.prop('target/port');
+//     //var sM = graph.getCell(link.prop('source').id);
+//     var sM = graph.getElements().find(el => el.id === link.prop('source').id);
+//     var tM = graph.getElements().find(el => el.id === link.prop('target').id);
+//
+//     return {
+//         'sourceTag': sM.tag,
+//         'targetTag': tM.tag,
+//         'sourcePort': sPort ? sPort : "",
+//         'targetPort': tPort ? tPort : ""
+//     };
+// }
+
+// async function validateLinkFromServer(link) {
+//
+//     let linkData = getLinkData(link);
+//
+//     try {
+//         const success = await safeInvokeAsync(
+//             dotNetObjSLD,
+//             'SLDValidateLink',
+//             JSON.stringify(linkData)
+//         );
+//
+//         link.set('valid', success);
+//
+//         if (!success) {
+//             // Optionally notify user
+//             console.warn(`Link validation failed: ${linkData.sourceTag} → ${linkData.targetTag}`);
+//         }
+//     } catch (e) {
+//         console.error(`Validation error:`, e);
+//         link.set('valid', false);
+//         // Consider showing user notification
+//     }
+//
+//     return link;
+// }
+
+// async function removeLink(link) {
+//     var linkData = getLinkData(link);
+//
+//     var success = await safeInvokeAsync(
+//         dotNetObjSLD, 'SLDRemoveLink', JSON.stringify(linkData));
+//     if (success) {
+//         link.remove(); // Remove the link from the graph
+//         console.log(`Removal success of the Link between '${linkData.sourceTag} and ${linkData.targetTag}' : ${success}.`);
+//     }
+// }
+
+
+// function busPortDistribution(busId) {
+//     // function to distribute the ports along the bus length
+//     // as per no of links connected to this bus
+//
+//     // pick the bus from graph and update there, does not return any
+//     var bus = graph.getCell(busId);
+//     // all busses have only one port group 'in' and default one port
+//     // ports are numbered with 1, 2, 3...
+//     // default port 1 cannot be deleted
+//
+//     // check all the links connected to this bus
+//     const allLinks = graph.getConnectedLinks(bus);
+//
+//     // check existing ports 
+//     var ports = bus.getGroupPorts('in');
+//     var busWidth = bus.prop('size/width'); // busWidth not required as the positions are refX in percentage
+//
+//     // check up-side and down-side connection requirement
+//     var upLinks = [];
+//     var downLinks = [];
+//
+//     // assign other end position (x,y) fpr filter purpose
+//     allLinks.forEach(link => {
+//         var source = graph.getCell(link.prop('source').id);
+//         var target = graph.getCell(link.prop('target').id);
+//         var otherEnd = source.id === bus.id ? target : source;
+//         link.otherEndX = otherEnd.prop('position/x');
+//         link.otherEndY = otherEnd.prop('position/y');
+//     });
+//
+//     // arrange links as per the X value of the other end of the links
+//     allLinks.sort((a, b) => a.otherEndX - b.otherEndX);
+//
+//     allLinks.forEach(link => {
+//         if (link.otherEndY < bus.prop('position/y')) {
+//             upLinks.push(link);
+//         } else {
+//             downLinks.push(link);
+//         }
+//
+//         // below code is to compare based on the absolute position of the ports, not just element position
+//         //var otherEndPortTag = source.id === bus.id ? link.prop('target/port') : link.prop('source/port');
+//         //var otherEndPortPosition = otherEnd.getPortsPositions(otherEndPortTag);
+//         //var otherEndPortPositionAbsoluteY = otherend.prop('position/y') + otherEndPortPosition.y;
+//     });
+//
+//
+//     // total no of ports is equal to total no of connections
+//     var reqPorts = upLinks.length + downLinks.length;
+//     console.log(`Bus port postion distribution for bus tag '${bus.tag}' having total ${allLinks.length} connections : ` +
+//         `Upside links : ${upLinks.length} and Downside links ${downLinks.length}, total available ports ${ports.length} and required ports ${reqPorts}.`);
+//
+//     // Remove ports if the required no. of ports are less than the existing ports (however retain minimum 1)
+//     if (reqPorts < ports.length && ports.length > 1) {
+//         for (let i = ports.length; i > upLinks.length; i--) {
+//             bus.removePort(`{i}`);
+//         }
+//     }
+//
+//     // Add ports if the required no. of ports are more than the existing ports
+//     if (reqPorts > ports.length) {
+//
+//         // Define new ports
+//         var newPorts = [];
+//         for (let i = ports.length; i < reqPorts; i++) {
+//             newPorts.push({id: `${i + 1}`, group: 'in', position: {name: 'absolute', args: {x: `0%`, y: 0}}});
+//         }
+//
+//         // Add new ports to the element
+//         newPorts.forEach(port => {
+//             bus.addPort({
+//                 ...port,
+//                 attrs: {
+//                     portBody: {magnet: true, r: CONFIG.PORT_RADIUS, fill: 'orange', stroke: '#023047'},
+//                     label: {text: port.id, fontSize: 8}
+//                 },
+//                 markup: [{tagName: 'circle', selector: 'portBody'}]
+//             });
+//         });
+//     }
+//
+//     // Define new positions to the arranged ports as per final port nos
+//     // and Update the ports' positions
+//     for (let i = 0; i < upLinks.length; i++) {
+//         // position for up-side ports
+//         var pos = `${Math.round((i + 0.5) * 100 / upLinks.length)}%`;
+//         console.log(`Bus tag '${bus.tag}' postion for Port #'${i + 1}' (up-link # ${i + 1}) '${pos}`);
+//         bus.portProp(`${i + 1}`, 'args/x', pos);
+//         bus.portProp(`${i + 1}`, 'attrs/label/refX', 3);
+//         bus.portProp(`${i + 1}`, 'attrs/label/refY', -10);
+//         // reassign the corresponding port for up-side links
+//         var end = upLinks[i].prop('source').id == bus.id ? 'source' : 'target';
+//         var portId = bus.getPorts()[i].id;
+//
+//         if (end == 'source') upLinks[i].set({source: {id: busId, port: portId}});
+//         if (end == 'target') upLinks[i].set({target: {id: busId, port: portId}});
+//
+//
+//         var end = upLinks[i].prop('source') == bus.id ? 'source' : 'target';
+//         upLinks[i].prop(`${end}'/port`, `${i + 1}`);
+//     }
+//     for (let i = 0; i < downLinks.length; i++) {
+//         // position for down-side ports
+//         var pos = `${Math.round((i + 0.5) * 100 / downLinks.length)}%`;
+//         console.log(`Bus tag '${bus.tag}' postion for Port #'${upLinks.length + i + 1}' (down-link # ${i + 1}) '${pos}`);
+//         bus.portProp(`${upLinks.length + i + 1}`, 'args/x', pos);
+//         bus.portProp(`${upLinks.length + i + 1}`, 'attrs/label/refX', 3);
+//         bus.portProp(`${upLinks.length + i + 1}`, 'attrs/label/refY', 10);
+//         // reassign the corresponding port for down-side links
+//         var end = downLinks[i].prop('source').id == bus.id ? 'source' : 'target';
+//         var portId = bus.getPorts()[upLinks.length + i].id;
+//
+//         if (end == 'source') downLinks[i].set({source: {id: busId, port: portId}});
+//         if (end == 'target') downLinks[i].set({target: {id: busId, port: portId}});
+//
+//     }
+//     // later : if up and down are same or both are odd or in LCM, there are common ports
+//
+// }
+
+
+
+
+
+
+
+
+// function isOverlapping(element, graph) {
+//     // Function to check if an element overlaps with any other elements
+//     const bbox = element.getBBox();
+//     return graph.getCells().some(cell => {
+//         if (cell === element) return false;
+//         const cellBBox = cell.getBBox();
+//         return bbox.intersect(cellBBox);
+//     });
+// }
+
+
+// function findNearestEmptyPosition(element, graph, spacing = 20) {
+//     // Function to find the nearest empty position
+//     // Adjust spacing as needed
+//     let position = element.get('position');
+//     let newPosition = {...position};
+//
+//     while (isOverlapping(element, graph)) {
+//         // Move the element to a new position
+//         newPosition.x += spacing;
+//         if (newPosition.x > paper.options.width) {
+//             newPosition.x = 0;
+//             newPosition.y += spacing;
+//         }
+//
+//         // Ensure newPosition is within paper bounds
+//         // and away from template (x>100) and top margin 50
+//         newPosition.x = Math.max(100, Math.min(newPosition.x, paper.options.width - element.getBBox().width));
+//         newPosition.y = Math.max(50, Math.min(newPosition.y, paper.options.height - element.getBBox().height));
+//
+//         element.set('position', newPosition);
+//     }
+//
+//     return newPosition;
+// }
+
+
+// function updateBus(busModel, busInfo) {
+//
+//     if (!busInfo || !busModel) {
+//         console.error('Invalid parameters for updateBus');
+//         return busModel;
+//     }
+//
+//     // Safe access with defaults
+//     const isc = typeof busInfo.ISC === 'number' ? busInfo.ISC : 0;
+//     const vr = typeof busInfo.VR === 'number' ? busInfo.VR : 0;
+//
+//     if (busInfo.Category === "Swing") {
+//         // grid            
+//         busModel.attr({
+//             label: {text: "Grid" + sanitizeText(busInfo.Tag)},
+//             ratedSC: {text: sanitizeText(Math.round(10 * busInfo.ISC) / 10 + "kA")},
+//             ratedVoltage: {text: sanitizeText(busInfo.VR / 1000 + "kV")},
+//             busFaultkA: {text: sanitizeText(Math.round(10 * busInfo.SCkAaMax) / 10 + "kA")},
+//             operatingVoltage: {text: sanitizeText(Math.round(10000 * busInfo.Vo.Magnitude) / 100 + "% ∠" + Math.round(busInfo.Vo.Phase * 1800 / Math.PI) / 10 + "°")}
+//         });
+//     } else {
+//         // the other bus
+//         busModel.attr({
+//             label: {text: sanitizeText(busInfo.Tag)},
+//             ratedSC: {text: sanitizeText(Math.round(10 * busInfo.ISC) / 10 + "kA")},
+//             ratedVoltage: {text: sanitizeText(busInfo.VR / 1000 + "kV")},
+//             busFault: {text: sanitizeText(Math.round(10 * busInfo.SCkAaMax) / 10 + "kA")},
+//             operatingVoltage: {text: sanitizeText(Math.round(10000 * busInfo.Vo.Magnitude) / 100 + "% ∠" + Math.round(busInfo.Vo.Phase * 1800 / Math.PI) / 10 + "°")}
+//         });
+//     }
+//     return busModel;
+// }
+//
+//
+// function updateTransformer(trafoModel, trafoInfo, branches) {
+//
+//     let branch = branches.find(br => br.Tag === trafoInfo.Tag);
+//
+//     trafoModel.attr({
+//         tag: {text: sanitizeText(trafoInfo.Tag)},
+//         voltage: {text: `${trafoInfo.V1 / 1000}/${trafoInfo.V2 / 1000}kV`},
+//         kVArating: {text: `${trafoInfo.KVA}kVA`},
+//         impedance: {text: `Z:${trafoInfo.Z}%`},
+//         loading: {text: `${Math.round(10 * branch?.KW) / 10}KW ${Math.round(10 * branch?.KVAR) / 10}kVAR`}
+//     });
+//     return trafoModel;
+// }
+//
+// function updateCable(cableModel, cabledata, branches) {
+//
+//     var branch = branches.find(br => br.Tag === cabledata.Tag);
+//
+//     cableModel.attr({
+//         label: {text: sanitizeText(cabledata.Tag)},
+//         size: {text: cabledata.CblDesc},
+//         length: {text: `${cabledata.L}m, ${cabledata.Rl}-j${cabledata.Xl}Ω/km`},
+//         impedance: {text: `R:${cabledata.R}, X:${cabledata.X}`},
+//         operatingCurrent: {text: `${Math.round(10 * branch?.Io.Magnitude) / 10}A ∠${Math.round(branch?.Io.Phase * 1800 / Math.PI) / 10}°`}
+//     });
+//
+//     return cableModel;
+// }
+//
+// function updateBusDuct(busDuctModel, busDuctdata, branches) {
+//
+//     var branch = branches.find(br => br.Tag == busDuctdata.Tag);
+//     busDuctModel.attr({
+//         label: {text: sanitizeText(busDuctdata.Tag)},
+//         size: {text: `${busDuctdata.IR}A`},
+//         length: {text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km`},
+//         impedance: {text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}`},
+//         operatingCurrent: {text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°`}
+//     });
+//     return busDuctModel;
+// }
+//
+//
+// function updateMotor(motorModel, motordata, branches) {
+//
+//     var branch = branches.find(br => br.Tag == motordata.Tag);
+//     motorModel.attr({
+//         label: { text: busDuctdata.Tag },
+//         size: { text: `${busDuctdata.IR}A` },
+//         length: { text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km` },
+//         impedance: { text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}` },
+//         operatingCurrent: { text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°` }
+//     });
+//     return motorModel;
+// }
+//
+// function updateHeater(heaterModel, heaterdata, branches) {
+//
+//     var branch = branches.find(br => br.Tag == heaterdata.Tag);
+//     heaterModel.attr({
+//         label: { text: busDuctdata.Tag },
+//         size: { text: `${busDuctdata.IR}A` },
+//         length: { text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km` },
+//         impedance: { text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}` },
+//         operatingCurrent: { text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°` }
+//     });
+//     return heaterModel;
+// }
+//
+// function updateCapacitor(capacitorModel, capacitordata, branches) {
+//
+//     var branch = branches.find(br => br.Tag == capacitordata.Tag);
+//     capacitorModel.attr({
+//         label: { text: busDuctdata.Tag },
+//         size: { text: `${busDuctdata.IR}A` },
+//         length: { text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km` },
+//         impedance: { text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}` },
+//         operatingCurrent: { text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°` }
+//     });
+//     return capacitorModel;
+// }
+//
+// function updateLumpLoad(lumpLoadModel, lumpLoaddata, branches) {
+//
+//     var branch = branches.find(br => br.Tag == lumpLoaddata.Tag);
+//     lumploadModel.attr({
+//         label: { text: busDuctdata.Tag },
+//         size: { text: `${busDuctdata.IR}A` },
+//         length: { text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km` },
+//         impedance: { text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}` },
+//         operatingCurrent: { text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°` }
+//     });
+//     return lumploadModel;
+// }
+//
+// function updateSwitch(switchModel, lumpLoaddata, branches) {
+//
+//     var branch = branches.find(br => br.Tag == lumpLoaddata.Tag);
+//     lumploadModel.attr({
+//         label: { text: busDuctdata.Tag },
+//         size: { text: `${busDuctdata.IR}A` },
+//         length: { text: `${busDuctdata.L}m, ${Math.round(1000 * busDuctdata.Rl) / 1000}-j${Math.round(1000 * busDuctdata.Xl) / 1000}Ω/km` },
+//         impedance: { text: `R:${Math.round(10000 * busDuctdata.R) / 10000}, X:${Math.round(10000 * busDuctdata.X) / 10000}` },
+//         operatingCurrent: { text: `${Math.round(10 * branch.Io.Magnitude) / 10}A ∠${Math.round(branch.Io.Phase * 1800 / Math.PI) / 10}°` }
+//     });
+//     return lumploadModel;
+// }
+
 
 // Add cleanup function
 export function disposeSLD() {
