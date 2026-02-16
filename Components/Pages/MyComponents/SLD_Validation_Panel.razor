@@ -1,0 +1,138 @@
+@using ElDesignApp.Models
+
+@if (Messages != null && Messages.Any())
+{
+    <div class="position-relative mb-3">
+        @* ── Header bar ── *@
+        <div class="d-flex align-items-center justify-content-between 
+                    px-3 py-2 rounded-top border @HeaderClass">
+
+            <div class="d-flex align-items-center gap-3">
+                <strong>
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    @Title
+                </strong>
+                <span class="d-flex gap-2">
+                    @if (_errorCount > 0)
+                    {
+                        <span class="badge bg-danger border border-light">@_errorCount error@(_errorCount > 1 ? "s" : "")</span>
+                    }
+                    @if (_warnCount > 0)
+                    {
+                        <span class="badge bg-warning text-dark border border-light">@_warnCount warning@(_warnCount > 1 ? "s" : "")</span>
+                    }
+                    @if (_infoCount > 0)
+                    {
+                        <span class="badge bg-info border border-light">@_infoCount info</span>
+                    }
+                </span>
+            </div>
+
+            <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-outline-light"
+                        @onclick="TogglePanel"
+                        title="@(_expanded ? "Collapse" : "Expand")">
+                    <i class="bi @(_expanded ? "bi-chevron-up" : "bi-chevron-down")"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-light"
+                        @onclick="Dismiss"
+                        title="Dismiss">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        </div>
+
+        @* ── Scrollable message body ── *@
+        @if (_expanded)
+        {
+            <div class="border border-top-0 rounded-bottom bg-white"
+                 style="max-height: @(MaxHeight)px; overflow-y: auto;">
+
+                @foreach (var msg in Messages.OrderBy(m => SeverityOrder(m.Severity)))
+                {
+                    <div class="d-flex align-items-start gap-2 px-3 py-2 border-bottom @RowBgClass(msg.Severity)">
+                        <i class="@RowIconClass(msg.Severity) mt-1 flex-shrink-0"></i>
+                        <div class="small">
+                            @if (!string.IsNullOrEmpty(msg.Code))
+                            {
+                                <span class="fw-semibold @RowTextClass(msg.Severity)">@msg.Code</span>
+                            }
+                            <span class="text-dark ms-1">@msg.Message</span>
+                            @if (!string.IsNullOrEmpty(msg.ElementTag))
+                            {
+                                <span class="badge bg-secondary ms-1 fw-normal">@msg.ElementTag</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+
+    [Parameter] public List<ValMessage> Messages { get; set; }
+
+    [Parameter] public string Title { get; set; } = "Connection Validation";
+
+    [Parameter] public int MaxHeight { get; set; } = 240;
+
+    [Parameter] public EventCallback OnDismiss { get; set; }
+
+    private bool _expanded = true;
+    private int _errorCount;
+    private int _warnCount;
+    private int _infoCount;
+
+    protected override void OnParametersSet()
+    {
+        if (Messages != null)
+        {
+            _errorCount = Messages.Count(m => m.Severity == "error");
+            _warnCount  = Messages.Count(m => m.Severity == "warning");
+            _infoCount  = Messages.Count(m => m.Severity == "info");
+        }
+        else
+        {
+            _errorCount = _warnCount = _infoCount = 0;
+        }
+    }
+
+    private void TogglePanel() => _expanded = !_expanded;
+
+    private async Task Dismiss()
+    {
+        _expanded = false;
+        await OnDismiss.InvokeAsync();
+    }
+
+    private string HeaderClass =>
+        _errorCount > 0 ? "bg-danger text-white border-danger" :
+        _warnCount  > 0 ? "bg-warning text-dark border-warning" :
+                          "bg-info text-white border-info";
+
+    private static int SeverityOrder(string s) =>
+        s == "error" ? 0 : s == "warning" ? 1 : 2;
+
+    private static string RowBgClass(string s) => s switch
+    {
+        "error"   => "bg-danger bg-opacity-10",
+        "warning" => "bg-warning bg-opacity-10",
+        _         => "bg-info bg-opacity-10"
+    };
+
+    private static string RowIconClass(string s) => s switch
+    {
+        "error"   => "bi bi-x-circle-fill text-danger",
+        "warning" => "bi bi-exclamation-triangle-fill text-warning",
+        _         => "bi bi-info-circle-fill text-info"
+    };
+
+    private static string RowTextClass(string s) => s switch
+    {
+        "error"   => "text-danger",
+        "warning" => "text-warning",
+        _         => "text-info"
+    };
+}

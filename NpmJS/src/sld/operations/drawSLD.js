@@ -104,6 +104,9 @@ export function drawSLD(
         return;
     }
 
+    
+    
+    
     // ── Build coordinate lookup: Tag → {x, y} ──────────────────────────────
     // These are the server-computed positions for ALL chain elements
     // (branches + non-branches). Bus positions are on the bus objects themselves.
@@ -113,6 +116,11 @@ export function drawSLD(
     });
     console.log(`📍 Loaded ${Object.keys(coordMap).length} chain element coordinates from server`);
 
+// ── DIAGNOSTIC — add temporarily after coordMap is built ────────────────
+    console.log('📊 DIAGNOSTIC:');
+    console.log('  coordMap entries:', Object.keys(coordMap).length);
+    console.log('  chains:', chains.length);
+    console.log('  switches to draw:', switches.length);
 
 
     sldState.setSLDComponentsString(sldComponentsString);
@@ -262,9 +270,12 @@ export function drawSLD(
         } catch (e) {
             console.error(`Error updating position/length for bus ${bus.Tag}:`, e);
         }
+        allElementsByTag[bus.Tag] = busesElement[index];
     });
 
     console.log(`✅ Drew ${busesElement.filter(Boolean).length} bus elements`);
+
+    console.log('  buses registered:', Object.keys(allElementsByTag).length);  // move this after buses are drawn
 
     // ══════════════════════════════════════════════════════════════════════════
     //  2. DRAW SWITCHBOARDS (after buses, so bboxes are available)
@@ -430,6 +441,9 @@ export function drawSLD(
     console.log(`✅ Drew ${nbDrawn} non-branch elements (switch/fuse/busbarlink)`);
 
 
+    // After ALL elements are drawn (after non-branch section), add:
+    console.log('  allElementsByTag keys:', Object.keys(allElementsByTag));
+
     // ══════════════════════════════════════════════════════════════════════════
     //  5. DRAW LINKS BASED ON CHAIN SEQUENCES                        ← NEW
     //
@@ -444,6 +458,14 @@ export function drawSLD(
     //         ContainsBranch, BranchTag, Orientation, ParallelIndex, ParallelCount }
     // ══════════════════════════════════════════════════════════════════════════
     let linkCount = 0;
+
+    // Check what the first chain expects vs what exists:
+    if (chains.length > 0) {
+        const seq = [chains[0].FromBus, ...chains[0].Elements, chains[0].ToBus];
+        seq.forEach(tag => {
+            console.log(`    ${tag}: ${allElementsByTag[tag] ? '✅ found' : '❌ MISSING'}`);
+        });
+    }
 
     chains.forEach((chain) => {
         const { FromBus, ToBus, Elements } = chain;

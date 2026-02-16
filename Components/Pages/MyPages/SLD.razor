@@ -327,6 +327,11 @@ else
         </div>
         <br/>
     </div>
+    
+    <SLD_Validation_Panel Messages="_validationMessages"
+                     Title="Connection Validation"
+                     MaxHeight="240"
+                     OnDismiss="ClearValidationMessages" />
     <br/>
     <br/>
 
@@ -497,6 +502,14 @@ else
 
 
 @code {
+    
+    private List<ValMessage> _validationMessages = new();
+
+    private void ClearValidationMessages()
+    {
+        _validationMessages.Clear();
+        StateHasChanged();
+    }
 
     DotNetObjectReference<SLD> dotNetObjRefSLD;
     
@@ -921,46 +934,8 @@ else
             var result = processor.ProcessAllConnections(
                 _buses, _loads, _cableBranches, _transformers, _busDucts, _switches, _fuses, _busBarLinks);
 
-            if (!result.Success)
-            {
-                // Show errors - DO NOT PROCEED
-                foreach (var error in result.ValidationErrors)
-                    Console.WriteLine(error.Message);
-                return;
-            }
-
-            // Success - use evaluated data
-            _buses = result.Buses;       // With new buses if created
-            var updatedBranches = result.Branches; // With FromBus/ToBus assigned
-            resultLoadConnectionCounts = result.LoadConnectionCounts;
+            PopulateValidationMessages(result);
             
-            // Update the branch list with evaluated FromBus/ToBus ===
-            // Map back to original lists
-            foreach (var branch in updatedBranches)
-            {
-                var original = _cableBranches?.FirstOrDefault(c => c.Tag == branch.Tag);
-                if (original != null)
-                {
-                    original.FromBus = branch.FromBus;
-                    original.ToBus = branch.ToBus;
-                }
-
-                var origTrf = _transformers?.FirstOrDefault(t => t.Tag == branch.Tag);
-                if (origTrf != null)
-                {
-                    origTrf.FromBus = branch.FromBus;
-                    origTrf.ToBus = branch.ToBus;
-                }
-
-                var origBd = _busDucts?.FirstOrDefault(b => b.Tag == branch.Tag);
-                if (origBd != null)
-                {
-                    origBd.FromBus = branch.FromBus;
-                    origBd.ToBus = branch.ToBus;
-                }
-            }
-            
-                      
             _loadingStep = _loadingTables.Length;
             _loadingMessage = "Complete!";
             StateHasChanged();
@@ -971,9 +946,55 @@ else
             _timeTaken = DateTime.Now;
             _divString = "sldPaper";
 
-            await DrawKeySLD();
-
             StateHasChanged();
+            
+            if (!result.Success)
+            {
+                // Show errors - DO NOT PROCEED
+                foreach (var error in result.ValidationErrors)
+                    Console.WriteLine(error.Message);
+
+
+            }
+            else
+            {
+                // Success - use evaluated data
+                _buses = result.Buses; // With new buses if created
+                var updatedBranches = result.Branches; // With FromBus/ToBus assigned
+                resultLoadConnectionCounts = result.LoadConnectionCounts;
+
+                // Update the branch list with evaluated FromBus/ToBus ===
+                // Map back to original lists
+                foreach (var branch in updatedBranches)
+                {
+                    var original = _cableBranches?.FirstOrDefault(c => c.Tag == branch.Tag);
+                    if (original != null)
+                    {
+                        original.FromBus = branch.FromBus;
+                        original.ToBus = branch.ToBus;
+                    }
+
+                    var origTrf = _transformers?.FirstOrDefault(t => t.Tag == branch.Tag);
+                    if (origTrf != null)
+                    {
+                        origTrf.FromBus = branch.FromBus;
+                        origTrf.ToBus = branch.ToBus;
+                    }
+
+                    var origBd = _busDucts?.FirstOrDefault(b => b.Tag == branch.Tag);
+                    if (origBd != null)
+                    {
+                        origBd.FromBus = branch.FromBus;
+                        origBd.ToBus = branch.ToBus;
+                    }
+                }
+                
+                // draw SLD only if the validation is successful
+                
+                await DrawKeySLD();
+            }
+
+            
         }
     }
 
@@ -1513,6 +1534,11 @@ else
         //var dotNetObjRef = DotNetObjectReference.Create(new Draw(LayoutFunction, GlobalData, _coordinateSystemManager));
         
         dotNetObjRefSLD = DotNetObjectReference.Create(this);
+        
+        Console.WriteLine($"DEBUG: chainElementCoords count = {chainElementCoordinates?.Count}");
+        Console.WriteLine($"DEBUG: chains count = {chainDataForJs?.Count}");
+        Console.WriteLine($"DEBUG: switches count = {_switches?.Count}");
+        Console.WriteLine($"DEBUG: chainElementCoordsJson length = {chainElementCoordsJson?.Length}");
 
         await JsRuntime.InvokeVoidAsync("drawSLD", _divString,
             xgridSize, ygridSize, GlobalData.leftSpacing, GlobalData.topSpacing, 
@@ -2156,6 +2182,97 @@ public async Task<string> SLDValidateLink(string linkDataString)
     //         default: return new DefaultClass() as T;
     //     }
     // }
+    
+    
+    
+    
+    /// <summary>
+    /// Converts ProcessingResult into display messages for the ValidationPanel.
+    /// Call this right after _connectionProcessingService.ProcessAllConnections().
+    /// </summary>
+private void PopulateValidationMessages(ProcessingResult result, SLDLayoutResult layoutResult = null)
+{
+    _validationMessages.Clear();
+
+    if (result == null) return;
+
+    // ── Errors ──
+    if (result.ValidationErrors != null)
+    {
+        foreach (var e in result.ValidationErrors)
+        {
+            _validationMessages.Add(new ValMessage
+            {
+                Severity   = "error",
+                Code       = e.Code ?? "ERROR",
+                Message    = e.Message,
+                ElementTag = e.SourceElement
+            });
+        }
+    }
+
+    // ── Warnings ──
+    if (result.ValidationWarnings != null)
+    {
+        foreach (var w in result.ValidationWarnings)
+        {
+            _validationMessages.Add(new ValMessage
+            {
+                Severity   = "warning",
+                Code       = w.Code ?? "WARNING",
+                Message    = w.Message,
+                ElementTag = w.SourceElement
+            });
+        }
+    }
+
+    // ── Info — auto-created buses for loads ──
+    if (result.NewBusesCreatedForLoads != null)
+    {
+        foreach (var bus in result.NewBusesCreatedForLoads)
+        {
+            _validationMessages.Add(new ValMessage
+            {
+                Severity   = "info",
+                Code       = "AUTO_BUS",
+                Message    = $"Bus '{bus.Tag}' was auto-created to satisfy connection requirements.",
+                ElementTag = bus.Tag
+            });
+        }
+    }
+
+    // ── Evaluation alerts ──
+    if (result.EvaluationAlerts != null)
+    {
+        foreach (var a in result.EvaluationAlerts)
+        {
+            _validationMessages.Add(new ValMessage
+            {
+                Severity   = a.Severity == AlertSeverity.Error ? "error" :
+                             a.Severity == AlertSeverity.Warning ? "warning" : "info",
+                Code       = "EVAL",
+                Message    = a.Message,
+                ElementTag = a.ElementTag
+            });
+        }
+    }
+
+    // ── Layout warnings (if layout result provided) ──
+    if (layoutResult?.Warnings != null)
+    {
+        foreach (var w in layoutResult.Warnings)
+        {
+            _validationMessages.Add(new ValMessage
+            {
+                Severity = "warning",
+                Code     = "LAYOUT",
+                Message  = w
+            });
+        }
+    }
+
+    StateHasChanged();
+}
 
 
 

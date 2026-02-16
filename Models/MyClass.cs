@@ -1234,3 +1234,21 @@ public class RoundingFloatConverter : JsonConverter<float>
         writer.WriteNumberValue(MathF.Round(value, 4)); // Use Math.Round for double
     }
 }
+
+/// <summary>
+/// Validation message for display in the ValidationPanel component.
+/// </summary>
+public class ValMessage
+{
+    /// <summary>"error", "warning", or "info"</summary>
+    public string Severity { get; set; } = "info";
+
+    /// <summary>Short code, e.g. "BIDIRECTIONAL_MISMATCH" (optional)</summary>
+    public string Code { get; set; }
+
+    /// <summary>Human-readable description</summary>
+    public string Message { get; set; } = "";
+
+    /// <summary>Related element tag (optional)</summary>
+    public string ElementTag { get; set; }
+}
