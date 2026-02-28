@@ -7,6 +7,7 @@ import { sldState } from '../state/sldState.js';
 import {setupSwitch } from './switchEventHandle';
 import {setupTemplateDragHandlers } from './templateDragDrop';
 import {setupPointerOnBusBar } from './busEventHandlers';
+import { setupSelectionHandlers } from './elementSelectHandle'
 
 /**
  * Setup element event handlers
@@ -149,6 +150,7 @@ export function setupAllHandlers(paper) {
     setupTemplateDragHandlers(paper);
     setupPointerOnBusBar(paper);
     setupSwitch(paper);
+    setupSelectionHandlers(paper);
 }
 
 

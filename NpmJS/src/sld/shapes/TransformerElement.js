@@ -5,6 +5,8 @@ export const TransformerElement = dia.Element.define('TransformerElement', {
     elementType: 'transformer',
     tag: '',
     clicked: false,
+    selected: false,
+    copyIndex: 0,
     attrs: {
         root: { magnet: false },
         primary: {

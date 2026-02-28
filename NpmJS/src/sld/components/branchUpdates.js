@@ -54,8 +54,8 @@ export function updateCable(cableModel, cabledata, branches) {
  * @returns {Object} Updated bus duct model
  */
 export function updateBusDuct(busDuctModel, busDuctdata, branches) {
-    var branch = branches.find(br => br.Tag == busDuctdata.Tag);
-    
+    let branch = branches.find(br => br.Tag === busDuctdata.Tag);
+
     busDuctModel.attr({
         label: { text: sanitizeText(busDuctdata.Tag) },
         size: { text: `${busDuctdata.IR}A` },

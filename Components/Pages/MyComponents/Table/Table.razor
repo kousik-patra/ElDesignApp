@@ -19,7 +19,7 @@
 @implements IAsyncDisposable
 
 
-<div id="@_containerId" class="container-fluid float-left">
+<div id="@_containerId" class="container-fluid float-left @_fontSizeClass">
 
     <div class="row float-left">
         <h3>@Header</h3>
@@ -154,6 +154,17 @@
                                             title="Download the table">Download Template
                                     </button>
                                 </div>
+                                
+                                <!-- Font Size Button Group -->
+                                <div class="btn-group ms-2" role="group" aria-label="Font size">
+                                    <button @onclick="DecreaseFontSize" class="btn btn-outline-secondary font-size-btn"
+                                            title="Decrease font size">A↓
+                                    </button>
+                                    <button @onclick="IncreaseFontSize" class="btn btn-outline-secondary font-size-btn"
+                                            title="Increase font size">A↑
+                                    </button>
+                                </div>
+                                
                             </div>
                         </div>
                     </div>
@@ -345,13 +356,13 @@
                                                     @onclick="() => { _lastClickedCell = _currentClickedCell; _lastClickedCell.ClickedStatus = false; _currentClickedCell = _cellStatusRecord.Where(record => record.Uid == thisUid && record.FieldName == property.Name).ToList()[0]; _currentClickedCell.ClickedStatus = true; }"
                                                     @ondblclick="@(() =>
                                                                  {
-                                                                     if (_sqlFieldsNames.Contains(property.Name))
+                                                                     if (_sqlFieldsNames != null && _sqlFieldsNames.Contains(property.Name))
                                                                      {
                                                                          _lastDblClickedCell = _currentDblClickedCell;
                                                                          _lastDblClickedCell.DblClickedStatus = false;
                                                                          _currentDblClickedCell = _cellStatusRecord.Where(record => record.Uid == thisUid && record.FieldName == property.Name).ToList()[0];
                                                                          _currentDblClickedCell.DblClickedStatus = true;
-                                                                         //System.Diagnostics.Debug.WriteLine($"Last double clicked row : {lastDblClickedCell.Seq} and field: {lastDblClickedCell.FieldName}.  Current double clicked row : {currentDblClickedCell.Seq} and field: {currentDblClickedCell.FieldName} out of total {CellStatusRecord.Count} cells");
+                                                                         //System.Diagnostics.Debug.WriteLine($"Last double-clicked row : {lastDblClickedCell.Seq} and field: {lastDblClickedCell.FieldName}.  Current double clicked row : {currentDblClickedCell.Seq} and field: {currentDblClickedCell.FieldName} out of total {CellStatusRecord.Count} cells");
                                                                      }
                                                                  })"
                                                     class="@CssClassCell(thisCellStatus) @css">
@@ -528,36 +539,8 @@
             </div>
         </div>
     }
-
-    <div class="row justify-content-md-left">
-        <span style="width:900px; text-overflow:ellipsis; font-weight:lighter">@ResultMessage : @ActionMessage</span>
-        @if (SuccessMessage != "")
-        {
-            <div class="alert alert-success" role="alert">
-                @SuccessMessage
-            </div>
-        }
-        @if (InfoMessage != "")
-        {
-            <div class="alert alert-info" role="alert">
-                @InfoMessage
-            </div>
-        }
-        @if (WarningMessage != "")
-        {
-            <div class="alert alert-warning" role="alert">
-                Row @_selectedRecord, Column @_selectedColumn : @WarningMessage
-            </div>
-        }
-        @if (ErrorMessage != "")
-        {
-            <div class="alert alert-danger" role="alert">
-                Row @_selectedRecord, Column @_selectedColumn : @ErrorMessage
-            </div>
-        }
-    </div>
-
-    <div class="d-flex justify-content-center mb-4">
+    
+    <div class="d-flex justify-content-center pagination-bar">
         Showing page &#160;<b>@_displayPageNo</b>&#160; of &#160;<b>@_maxDisplayPage</b>&#160;
         pages. Filtered records: &#160;<b>@_filteredList?.Count</b>&#160; out of total &#160;<b>@_totalRecords</b>&#160;
         records.&emsp; Records per page: &#160;
@@ -597,12 +580,54 @@
         </button>
 
     </div>
+    @* Only render the row if there is at least one message to display *@
+    @if (!string.IsNullOrWhiteSpace(ResultMessage.ToString()) || !string.IsNullOrWhiteSpace(ActionMessage) || 
+         !string.IsNullOrWhiteSpace(SuccessMessage) || !string.IsNullOrWhiteSpace(InfoMessage) || 
+         !string.IsNullOrWhiteSpace(WarningMessage) || !string.IsNullOrWhiteSpace(ErrorMessage))
+    {
+        <div class="row justify-content-md-left">
+            @if (!string.IsNullOrWhiteSpace(ResultMessage.ToString()) || !string.IsNullOrWhiteSpace(ActionMessage))
+            {
+                <span style="width:900px; text-overflow:ellipsis; font-weight:lighter">
+                    @ResultMessage : @ActionMessage
+                </span>
+            }
 
-    <div class="row float-left">
-        <div class="container float-left">
-            @_displayMsgAction
+            @if (!string.IsNullOrWhiteSpace(SuccessMessage))
+            {
+                <div class="alert alert-success" role="alert">@SuccessMessage</div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(InfoMessage))
+            {
+                <div class="alert alert-info" role="alert">@InfoMessage</div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(WarningMessage))
+            {
+                <div class="alert alert-warning" role="alert">
+                    Row @_selectedRecord, Column @_selectedColumn : @WarningMessage
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+            {
+                <div class="alert alert-danger" role="alert">
+                    Row @_selectedRecord, Column @_selectedColumn : @ErrorMessage
+                </div>
+            }
         </div>
-    </div>
+    }
+
+    @* Only render the second block if _displayMsgAction has content *@
+    @if (!string.IsNullOrWhiteSpace(_displayMsgAction))
+    {
+        <div class="row float-left">
+            <div class="container float-left">
+                @_displayMsgAction
+            </div>
+        </div>
+    }
 </div>
 
 
@@ -746,6 +771,11 @@
     private CellStatus _currentCell = new(); //mousehovered
 
     private string _displayMsgAction = "";
+    
+    // Font-size control: 0=xs, 1=sm, 2=md, 3=lg, 4=xl
+    private int _fontSizeLevel = 1; // default "sm"
+    private static readonly string[] FontSizeClasses = ["table-font-xs", "table-font-sm", "table-font-md", "table-font-lg", "table-font-xl"];
+    private string _fontSizeClass => FontSizeClasses[_fontSizeLevel];
     
     private string _loginUser = "Guest";
     
@@ -1159,12 +1189,20 @@
         
         if (originalItemIndex < 0 || ListOriginal == null)
         {
-            ErrorMessage = $"Original item with UID {currentuid} not found.";
-            Debug.WriteLine($"DoSubmit: Item with UID {currentuid} not found in ListOriginal. Could be a newly added item.");
-            return;
+            // check if it's a newly added item
+
+            if (!_addedItemUiDs.Contains(currentuid))
+            {
+                ErrorMessage = $"Original item with UID {currentuid} not found.";
+                return;
+            }
+            else
+            {
+                InfoMessage = $"DoSubmit: Item with UID {currentuid} not found in ListOriginal. Could be a newly added item.";
+            }
         }
         
-        var originalItem = ListOriginal[originalItemIndex];
+        var originalItem = originalItemIndex < 0? null: ListOriginal[originalItemIndex];
         var previousValue = currentProperty.GetValue(List[currentSeq]);
         
         Debug.WriteLine($"{DateTime.Now:hh.mm.ss.ffffff} : {MyNavigationManager.Uri} Table-{typeof(T).Name} - {MethodBase.GetCurrentMethod()?.Name} " +
@@ -1235,7 +1273,6 @@
         {
             _selectedItem = newItem;
             WarningMessage = "No item was selected for copying. Therefore, a new item with default data is considered for adding as new record. All data may not be available. New Item added at the end of the table.";
-            return;
         }
 
             SuccessMessage = "Data (except tag) of the selected item is considered for adding as new record. New Item added next to the selected item.";
@@ -2463,6 +2500,19 @@ private async Task CallUpdateMethodIfExists(T item)
         WarningMessage = "";
         ErrorMessage = "";
     }
+    
+    private void IncreaseFontSize()
+    {
+        if (_fontSizeLevel < FontSizeClasses.Length - 1)
+            _fontSizeLevel++;
+    }
+
+    private void DecreaseFontSize()
+    {
+        if (_fontSizeLevel > 0)
+            _fontSizeLevel--;
+    }
+
 
 
 }

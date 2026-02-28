@@ -98,6 +98,15 @@ export function setupPointerOnBusBar(paper) {
 
     });
 
+    paper.on('element:pointerup', (elementView) => {
+        if (elementView.model.prop('elementType') !== 'bus') return;
+        
+        // reset interactive mode
+        paper.setInteractivity({elementMove: true});
+        sldState.setElementMoveInteractive(true);
+
+    });
+
     // Bus double-click: toggle node ↔ bus
     paper.on('element:pointerdblclick', (elementView) => {
         if (elementView.model.prop('elementType') !== 'bus') return;
@@ -160,7 +169,7 @@ function updateSwbdPositionSizeByBus(busTag, busesElement, switchboards, swbdEle
  * @param {Object} busModel - JointJS bus model
  * @returns {Object} Updated bus model
  */
-function updateNodeOrBus(busModel) {
+export function updateNodeOrBus(busModel) {
     if (busModel.node) {
         // Node mode - hide bus line and parameters
         busModel.attr('label/textAnchor', 'end');

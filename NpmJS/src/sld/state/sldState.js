@@ -28,6 +28,28 @@ class SLDState {
         this.sldComponents = [];
         this.switchboards = [];
         this.switches =     [];
+
+        // ── Selection & duplicate state ──────────────────────────────────────
+        // Flat lookup: Array of { category: string, tag: string }
+        // Populated once from Blazor via setAllItemTags().
+        // Used by SelectionManager to generate non-colliding copy tags.
+        this.allItemTags = [];
+
+        // Currently selected JointJS model and its ElementView
+        this.selectedModel = null;
+        this.selectedView  = null;
+
+        // Ghost mode state ('idle' | 'ghost')
+        this.selectionMode = 'idle';
+
+        // The floating clone during ghost mode
+        this.ghostModel    = null;
+
+        // requestAnimationFrame throttle flag for ghost mousemove
+        this.ghostRafPending = false;
+        this.ghostLatestCursor = null;
+        
+        
     }
 
     setDotNetObjDraw(obj) {
@@ -189,6 +211,48 @@ class SLDState {
     getElementMoveInteractive() {
         return this.elementMoveInteractive;
     }
+
+
+    setAllItemTags(tagArray) {
+        this.allItemTags = Array.isArray(tagArray) ? tagArray : [];
+    }
+    
+    getAllItemTags() {
+        return this.allItemTags;
+    }
+
+    tagExistsInCategory(category, tag) {
+        const catLower = category.toLowerCase();
+        const tagLower = tag.toLowerCase();
+        return this.allItemTags.some(
+            item => item.category.toLowerCase() === catLower &&
+                item.tag.toLowerCase()      === tagLower
+        );
+    }
+    addItemTag(category, tag) {
+        this.allItemTags.push({ category, tag });
+    }
+
+    // ghost state (copy element) accessors ────────────────────────────────
+
+    setSelectedModel(model) { this.selectedModel = model; }
+    getSelectedModel()      { return this.selectedModel; }
+
+    setSelectedView(view)   { this.selectedView = view; }
+    getSelectedView()       { return this.selectedView; }
+
+    setSelectionMode(mode)  { this.selectionMode = mode; }   // 'idle' | 'ghost'
+    getSelectionMode()      { return this.selectionMode; }
+
+    setGhostModel(model)    { this.ghostModel = model; }
+    getGhostModel()         { return this.ghostModel; }
+
+    setGhostRafPending(v)   { this.ghostRafPending = v; }
+    getGhostRafPending()    { return this.ghostRafPending; }
+
+    setGhostLatestCursor(pt){ this.ghostLatestCursor = pt; }
+    getGhostLatestCursor()  { return this.ghostLatestCursor; }
+    
 
     clear() {
         this.sldComponents = [];

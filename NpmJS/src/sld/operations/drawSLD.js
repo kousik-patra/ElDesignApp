@@ -27,6 +27,7 @@ import { updateTransformer, updateCable, updateBusDuct } from '../components/upd
 import { busPortDistribution } from '../utils/busPortDistribution.js';
 import {setupAllHandlers} from '../handlers/eventHandlers'
 import{drawTemplates} from './drawTemplates.js';
+import {updateNodeOrBus } from '../handlers/busEventHandlers'
 
 
 export function drawSLD(
@@ -40,7 +41,8 @@ export function drawSLD(
     chainsJson,                 // chain structure (element ordering, bus ends)
     switchesJson,               // switch data
     fusesJson,                  // fuse data
-    busBarLinksJson             // bus bar link data
+    busBarLinksJson,             // bus bar link data
+    tagArrayJson
 ) {
 
     // Branch link template
@@ -66,7 +68,7 @@ export function drawSLD(
 
     // ── Parse JSON ──────────────────────────────────────────────────────────
     let buses, branches, loads, transformers, cables, busDucts, sldComponents, switchboards;
-    let chainElementCoords, chains, switches, fuses, busBarLinks;
+    let chainElementCoords, chains, switches, fuses, busBarLinks, tagArray;
     try {
         buses        = JSON.parse(busesString);
         branches     = JSON.parse(branchesString);
@@ -83,6 +85,8 @@ export function drawSLD(
         fuses              = fusesJson              ? JSON.parse(fusesJson)              : [];
         busBarLinks        = busBarLinksJson         ? JSON.parse(busBarLinksJson)        : [];
 
+        tagArray        = tagArrayJson         ? JSON.parse(tagArrayJson)        : [];
+
 
         buses        = Array.isArray(buses)        ? buses        : [];
         branches     = Array.isArray(branches)     ? branches     : [];
@@ -98,6 +102,8 @@ export function drawSLD(
         switches      = Array.isArray(switches)       ? switches      : [];
         fuses         = Array.isArray(fuses)          ? fuses         : [];
         busBarLinks   = Array.isArray(busBarLinks)    ? busBarLinks   : [];
+        
+        sldState.setAllItemTags(tagArray);
         
     } catch (e) {
         console.error('drawSLD: Error parsing JSON parameters:', e);
@@ -246,7 +252,6 @@ export function drawSLD(
                     operatingVoltage: { text: operatingVoltage }
                 }
             });
-            busesElement[index].addTo(graph);
         } else {
             busesElement[index] = new BusElement({
                 tag: bus.Tag,
@@ -261,19 +266,25 @@ export function drawSLD(
                     operatingVoltage: { text: operatingVoltage }
                 }
             });
-            busesElement[index].addTo(graph);
         }
-
+        
+        
+        busesElement[index].addTo(graph);
         try {
             const updated = updatePositionLength(busesElement[index], sldComponents);
             if (updated) busesElement[index] = updated;
         } catch (e) {
             console.error(`Error updating position/length for bus ${bus.Tag}:`, e);
         }
+        if(bus.IsNode){
+            busesElement[index].node = true;
+            busesElement[index] = updateNodeOrBus(busesElement[index]);
+        }
+        
         allElementsByTag[bus.Tag] = busesElement[index];
     });
 
-    console.log(`✅ Drew ${busesElement.filter(Boolean).length} bus elements`);
+    console.log(`✅ Drew ${busesElement.filter(Boolean).length} bus elements`);8
 
     console.log('  buses registered:', Object.keys(allElementsByTag).length);  // move this after buses are drawn
 
@@ -310,7 +321,7 @@ export function drawSLD(
             return;
         }
 
-        // Server-computed centre position; fallback to legacy midpoint
+        // Server-computed center position; fallback to legacy midpoint
         let posX, posY;
         if (coord) {
             posX = coord.x;

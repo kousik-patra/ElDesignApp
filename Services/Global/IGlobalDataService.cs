@@ -34,6 +34,9 @@ public interface IGlobalDataService
     int ClickCount { get; set; }
 
     bool dbConnected { get; set; }
+    
+    
+    Dictionary<(string, string), Guid>? AllTags { get; set; } // (Category, Tag), UID
 
     // segment page
     int SegmentPageTab { get; set; }
@@ -424,6 +427,9 @@ public class GlobalDataService : IGlobalDataService
         public double SegRendererHeight { get; set; }
         
         public  bool dbConnected { get; set; }
+        
+        
+        public Dictionary<(string, string),Guid> AllTags { get; set; } = new(); // (Category, Tag), UID
 
     /// <summary>Gets or sets the  global data.</summary>
     public int CounterLF { get; set; } = 10; //10

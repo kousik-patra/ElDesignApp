@@ -346,24 +346,31 @@ public class Bus : BaseInfo, IBaseMethod
 {
     public Bus()
     {
+        _ = UpdateAsync();
+        SCFloat(SC, VR);
     }
     //Swing Bus or Slack Bus (aka reference bus): the voltage magnitude is known and voltage angle=0, real and reactive power not known
     //PV Bus or Generation bus: Real power and voltage magnitude known, reactive power and voltage angle unknown
     //PQ Bus or Load Bus: Real and reactive power known, voltage angle and magnitude unknown (motor)
     // other bus (switchboards) are "" unknown bus as none of the parameters voltage, angle, Real or Imaginary Power not known
     //public string Category { get; set; } // Type of the bus (Swing/PV/PQ/"")
-    public bool IsSwing { get; set; } // true if it's a Swing Bus
-    [Display(Name = "Rated Voltage (V)")] public float VR { get; set; } // Bus Nominal/Rated Voltage in V
+    public bool IsSwing { get; set; } = false; // true if it's a Swing Bus
+    public bool IsNode { get; set; } = false; // true if it's a Node for SLD
+    [Display(Name = "Rated Voltage (V)")] public float VR { get; set; } = 400f; // Bus Nominal/Rated Voltage in V
+
+    [Display(Name = "Rated Current (A)")] public float IR { get; set; } = 2500f; // Rated FLC (A)
 
     [RegularExpression(@"^[0-9]{1,5}?[\.]{0,1}[0-9]{0,3}[ ]{0,2}[k]?[M]?[V]?[A]?$",
         ErrorMessage = "Short Circuit value with unit kA or MVA, value should be max 5 digit. Default unit 'kA'")]
-    [Display(Name = "Rated Current (A)")] public float IR { get; set; } // Rated FLC (A)
     [IncludeExcelExport]
-    [Display(Name = "Short Circuit")] public string SC { get; set; } // Bus Short Circuit (e.g., 25kA, 325 MVA, 200MVA, 25) default unit kA
-    [Display(Name = "SC Current (kA)")] public float ISC { get; set; } // Bus Short Circuit Current in kA
+    [Display(Name = "Short Circuit")]
+    public string SC { get; set; } = "25kA"; // Bus Short Circuit (e.g., 25kA, 325 MVA, 200MVA, 25) default unit kA
+    [Display(Name = "SC Current (kA)")] public float ISC { get; set; } // Calculated : Bus Short Circuit Current in kA
     [Display(Name = "X/R Ratio")] public float XR { get; set; } = 10; // Bus X/R ratio (applicable for source
-    [Display(Name = "Switchboard Tag")] public string BoardTag { get; set; } // corresponding Switchboard Tag
-    [Display(Name = "Switchboard Section")] public string Sec { get; set; } // Switchboard Section corresponding bus section A/B/.. or blank
+    [Display(Name = "Switchboard Tag")] public string BoardTag { get; set; } = "New SwitchboardTag"; // corresponding Switchboard Tag
+
+    [Display(Name = "Switchboard Section")]
+    public string Sec { get; set; } = "A"; // Switchboard Section corresponding bus section A/B/.. or blank
     public float Vb { get; set; } // Base Voltage for this Bus in kV
     public Complex Vo { get; set; } // Bus Operating Voltage in PU
     public Complex Ybb { get; set; } // Self Admittance (sum of admittances of all connected branches)
@@ -409,7 +416,7 @@ public class Bus : BaseInfo, IBaseMethod
     public async Task UpdateAsync()
     {
         // Perform async operations if needed
-        await Task.Run(() => Update());
+        await Task.Run(Update);
         
         Debug.WriteLine($"UpdateAsync() called for {Tag}");
     }
