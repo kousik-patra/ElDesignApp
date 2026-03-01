@@ -2,7 +2,7 @@ import { dia } from '@joint/core';
 import { CONFIG } from '../config/constants.js';
 
 export const CableElement = dia.Element.define('CableElement', {
-    elementType: 'cable',
+    elementType: 'cableBranch',
     tag: '',
     clicked: false,
     attrs: {

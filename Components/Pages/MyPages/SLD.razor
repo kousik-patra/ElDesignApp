@@ -1744,7 +1744,7 @@ else
         var id          = payload.Id??"";
         var tag         = payload.Tag??"";
         var elementType = payload.ElementType??"";
-        var sourceId    = payload.SourceId??"";
+        var sourceId    = payload.SourceId;
         Console.WriteLine($"Server Side:OnElementSelected.....id:{id}  tag:{tag} elementType:{elementType} id:{sourceId}");
     }
     
@@ -1754,18 +1754,76 @@ else
         var id          = payload.Id??"";
         var tag         = payload.Tag??"";
         var elementType = payload.ElementType??"";
-        var sourceId    = payload.SourceId??"";
+        var sourceId    = payload.SourceId;
         Console.WriteLine($"Server Side:OnElementDeselected.....id:{id}  tag:{tag} elementType:{elementType} id:{sourceId}");
     }
     
     [JSInvokable("OnElementPlaced")]
-    public async Task OnElementPlaced(Payload payload)
+    public Task OnElementPlaced(Payload payload)
     {
         var id          = payload.Id??"";
         var tag         = payload.Tag??"";
         var elementType = payload.ElementType??"";
-        var sourceId    = payload.SourceId??"";
+        var sourceTag = payload.SourceTag ?? "";
+        var sourceId = payload.SourceId;
         Console.WriteLine($"Server Side:OnElementPlaced.....id:{id}  tag:{tag} elementType:{elementType} id:{sourceId}");
+        
+        switch (payload.ElementType?.ToLower())
+        {
+            case "transformer":  PlaceElementCopy(sourceId, sourceTag, tag, _transformers);  break;
+            case "bus":          PlaceElementCopy(sourceId, sourceTag, tag, _buses);         break;
+            case "load":         PlaceElementCopy(sourceId, sourceTag, tag, _loads);         break;
+            case "cablebranch":  PlaceElementCopy(sourceId, sourceTag, tag, _cableBranches); break;
+            case "busduct":      PlaceElementCopy(sourceId, sourceTag, tag, _busDucts);      break;
+            case "switch":       PlaceElementCopy(sourceId, sourceTag, tag, _switches);      break;
+            case "fuse":         PlaceElementCopy(sourceId, sourceTag, tag, _fuses);         break;
+            case "busbarlink":   PlaceElementCopy(sourceId, sourceTag, tag, _busBarLinks);   break;
+            // add other element types here
+            default:
+                Console.WriteLine($"[OnElementPlaced] Unknown elementType: {payload.ElementType}");
+                return Task.CompletedTask;
+        }
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+    
+    // Generic helper — handles any item type that implements ITaggedItem
+    private void PlaceElementCopy<T>(Guid uid, string sourceTag, string tag, List<T> targetList) where T : class, new()
+    {
+        var uidProperty = typeof(T).GetProperty("UID")
+                          ?? throw new InvalidOperationException($"Property 'UID' not found in type {typeof(T).Name}.");
+        var tagProperty = typeof(T).GetProperty("Tag")
+                          ?? throw new InvalidOperationException($"Property 'Tag' not found in type {typeof(T).Name}.");
+        var seqProperty = typeof(T).GetProperty("Seq")
+                          ?? throw new InvalidOperationException($"Property 'Seq' not found in type {typeof(T).Name}.");
+        
+        var jsonSerializerOptions = new JsonSerializerOptions { IncludeFields = true };
+    
+        // Ensure inputs are valid
+        if (uidProperty == null || tagProperty == null || seqProperty == null || tag == null || targetList == null) return;
+        
+        var sourceItem = targetList.FirstOrDefault(x => 
+            (string)tagProperty.GetValue(x) == sourceTag);
+        var newItem = JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(sourceItem, jsonSerializerOptions), jsonSerializerOptions);
+        var newUid = Guid.NewGuid();
+        tagProperty.SetValue(newItem, tag);
+        uidProperty.SetValue(newItem, newUid);
+        
+
+        var sourceTag1 = tagProperty.GetValue(sourceItem)?.ToString();
+        var serverSideDerivedTag = MiscService.BuildCopyTag(sourceTag, typeof(T).Name, _allTags);
+
+        targetList.Insert(targetList.IndexOf(sourceItem), newItem); 
+        
+        // update sequence
+        foreach (var (value, index) in targetList.Select((v, i) => (v, i)))
+        {
+            seqProperty.SetValue(value, index);
+        }
+        
+        // Register in _allTags so further copies see it
+        var key = (typeof(T).Name,  tag);
+        _allTags.TryAdd(key, newUid);
     }
 
 
@@ -1832,11 +1890,11 @@ else
                 break;
             case "transformer":
                 modalTransformer = _transformers.Find(item => item.Tag == tag);
-                if (modalTransformer is null)
-                {
-                    modalTransformer = new Transformer { Tag = tag };
-                    _transformers.Add(modalTransformer);
-                }
+                // if (modalTransformer is null)
+                // {
+                //     modalTransformer = new Transformer { Tag = tag };
+                //     _transformers.Add(modalTransformer);
+                // }
 
                 modalFieldList = _transformerFieldList;
                 break;
@@ -2412,8 +2470,9 @@ private void PopulateValidationMessages(ProcessingResult result, SLDLayoutResult
     {
         public string Id          { get; set; } = "";
         public string Tag         { get; set; } = "";
+        public string SourceTag   { get; set; } = "";
         public string ElementType { get; set; } = "";
-        public string SourceId    { get; set; } = "";
+        public Guid SourceId    { get; set; } = Guid.Empty;
     }
 
 

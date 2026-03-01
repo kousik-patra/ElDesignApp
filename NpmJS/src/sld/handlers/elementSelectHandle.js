@@ -305,6 +305,7 @@ function _placeGhost(paperX, paperY) {
 
     // Assign copy tag
     const category = sourceModel.prop('elementType') ?? '';
+    const sourceTag = sourceModel.prop('tag') ?? 'X';
     const copyTag  = _buildCopyTag(sourceModel, category);
 
     ghost.prop('tag', copyTag);
@@ -325,6 +326,7 @@ function _placeGhost(paperX, paperY) {
     // ── Notify Blazor — ONLY after final placement, never on Escape ───────────
     _notifyBlazor('OnElementPlaced', {
         id:          placed.id,
+        sourceTag: sourceTag,
         tag:         copyTag,
         elementType: category,
         sourceId:    sourceId      // Blazor uses this to clone property values in the table
@@ -336,6 +338,7 @@ function _placeGhost(paperX, paperY) {
         _applyHighlight(placed, placedView);
         _notifyBlazor('OnElementSelected', {
             id:          placed.id,
+            sourceId: sourceId,
             tag:         copyTag,
             elementType: category
         });
